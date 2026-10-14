@@ -17,7 +17,8 @@ What changes, and nothing else:
   detection, naming) move to the new `Downloads` section; the rest of the section goes.
 - `soulseek-holds.json` and `rejected-peers.json` are deleted.
 
-Every file it changes is copied to `<name>.before-no-soulseek` first. Run it again and it finds
+Every file it changes is copied to `<name>.before-no-soulseek` first (contents only: a share
+that refuses chmod must not stop the copy). Run it again and it finds
 nothing to do.
 
     python3 migrate-no-soulseek.py --config /app/config --music /music [--dry-run]
@@ -179,7 +180,7 @@ def save(path, data, dry_run):
         return
     backup = path + ".before-no-soulseek"
     if not os.path.exists(backup):
-        shutil.copy2(path, backup)
+        shutil.copyfile(path, backup)
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
@@ -231,7 +232,7 @@ def main():
             if not args.dry_run:
                 backup = path + ".before-no-soulseek"
                 if not os.path.exists(backup):
-                    shutil.copy2(path, backup)
+                    shutil.copyfile(path, backup)
                 os.remove(path)
     if not changed_any:
         print("Nothing to do.")
