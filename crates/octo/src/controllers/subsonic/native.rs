@@ -196,7 +196,7 @@ async fn try_serve_native_radio(
         .find(|part| !part.is_empty())
         .unwrap_or("")
         .to_string();
-    let reserved = is_octo_playlist_id(&id, state.settings.current().family.enabled);
+    let reserved = is_octo_playlist_id(&id);
     let is_get = request.method == Method::GET;
     if reserved && !is_get {
         return Ok(Some(error_object(

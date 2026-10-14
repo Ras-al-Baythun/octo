@@ -220,12 +220,12 @@ pub fn int_param(parameters: &Parameters, name: &str, fallback: i32) -> i32 {
     }
 }
 
-/// Octo's own playlist ids: radio stations start "or", mixes "og", and while Family is on,
-/// family playlists "of". Navidrome's ids are 22 characters of base62 that start with 0 to 7,
-/// so none can ever be one of them.
-pub fn is_octo_playlist_id(id: &str, family_on: bool) -> bool {
-    dotnet::utf16_len(id) == 22
-        && (id.starts_with("or") || id.starts_with("og") || (family_on && id.starts_with("of")))
+/// Octo's own playlist ids: radio stations start "or", mixes "og", and the playlists Octo keeps
+/// itself (family playlists, and anyone's playlists with songs from outside the library) "of".
+/// Navidrome's ids are 22 characters of base62 that start with 0 to 7, so none can ever be one
+/// of them.
+pub fn is_octo_playlist_id(id: &str) -> bool {
+    dotnet::utf16_len(id) == 22 && (id.starts_with("or") || id.starts_with("og") || id.starts_with("of"))
 }
 
 /// Whether a relayed body says `status="ok"`, read in the format the client asked for
@@ -910,19 +910,14 @@ mod tests {
     }
 
     #[test]
-    fn octo_playlist_ids_are_22_characters_starting_or_or_og() {
-        assert!(is_octo_playlist_id("or12345678901234567890", false));
-        assert!(is_octo_playlist_id("og12345678901234567890", false));
-        assert!(!is_octo_playlist_id("oa12345678901234567890", false));
-        assert!(!is_octo_playlist_id("or1234567890123456789", false));
-        assert!(!is_octo_playlist_id("OR12345678901234567890", false));
-    }
-
-    #[test]
-    fn of_ids_rejected_when_family_off() {
-        assert!(!is_octo_playlist_id("of12345678901234567890", false));
-        assert!(is_octo_playlist_id("of12345678901234567890", true));
-        assert!(!is_octo_playlist_id("of1234567890123456789", true));
+    fn octo_playlist_ids_are_22_characters_starting_or_og_or_of() {
+        assert!(is_octo_playlist_id("or12345678901234567890"));
+        assert!(is_octo_playlist_id("og12345678901234567890"));
+        assert!(is_octo_playlist_id("of12345678901234567890"));
+        assert!(!is_octo_playlist_id("oa12345678901234567890"));
+        assert!(!is_octo_playlist_id("or1234567890123456789"));
+        assert!(!is_octo_playlist_id("of1234567890123456789"));
+        assert!(!is_octo_playlist_id("OR12345678901234567890"));
     }
 
     #[test]

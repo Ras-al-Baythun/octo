@@ -658,13 +658,24 @@ async fn kid_cannot_edit() {
         .await;
     assert_eq!(renamed["status"], "ok", "{renamed}");
     assert_eq!(f.state.family_playlists.get(&id).expect("there").name, "Summer");
+    // createPlaylist with the playlist's id makes its songs exactly these.
     let replaced = f
         .json(
             "winters",
-            &format!("createPlaylist?playlistId={id}&songId=s-clean"),
+            &format!("createPlaylist?playlistId={id}&songId=s-clean&songId={OUTSIDE}"),
         )
         .await;
-    assert_eq!(replaced["error"]["code"], 50, "{replaced}");
+    assert_eq!(
+        ids(&replaced["playlist"]["entry"]),
+        ["s-clean", OUTSIDE],
+        "{replaced}"
+    );
+    assert_eq!(f.entries(&id).len(), 2);
+    let refused = f
+        .json("kid", &format!("createPlaylist?playlistId={id}&songId=s-clean"))
+        .await;
+    assert_eq!(refused["error"]["code"], 50, "{refused}");
+    assert_eq!(f.entries(&id).len(), 2);
     let deleted = f.json("winters", &format!("deletePlaylist?id={id}")).await;
     assert_eq!(deleted["status"], "ok", "{deleted}");
     assert!(f.state.family_playlists.get(&id).is_none());
@@ -672,25 +683,185 @@ async fn kid_cannot_edit() {
     assert_eq!(gone["error"]["code"], 70, "{gone}");
 }
 
+// ---- playlists Octo keeps while Family is off ----
+
 #[tokio::test]
-async fn of_ids_are_relayed_when_family_off() {
+async fn kept_playlists_are_each_accounts_own_when_family_off() {
     let f = fixture(false).await;
-    let owner = FamilyCaller::unmanaged("winters", true);
-    let made = family_playlists::create(&f.state.family_playlists, &owner, "Road trip", false, Utc::now())
-        .expect("made");
-    let answer = f.json("winters", &format!("getPlaylist?id={}", made.id)).await;
-    assert_eq!(
-        answer["error"]["message"], "Playlist not found",
-        "Navidrome's answer: {answer}"
-    );
-    let answer = f
+    // A new playlist with a song from outside the library is one Octo keeps, made for the
+    // signed-in account and answered as Navidrome answers createPlaylist.
+    let made = f
         .json(
-            "winters",
-            &format!("updatePlaylist?playlistId={}&songIdToAdd=s-clean", made.id),
+            "alex",
+            &format!("createPlaylist?name=Road%20trip&songId=s-clean&songId={OUTSIDE}"),
         )
         .await;
-    assert_eq!(answer["error"]["code"], 70, "{answer}");
-    assert!(f.entries(&made.id).is_empty());
+    let id = made["playlist"]["id"].as_str().expect("an id").to_string();
+    assert!(id.starts_with("of") && id.len() == 22, "{made}");
+    assert_eq!(ids(&made["playlist"]["entry"]), ["s-clean", OUTSIDE], "{made}");
+    assert_eq!(made["playlist"]["name"], "Road trip");
+    assert_eq!(made["playlist"]["owner"], "alex");
+    assert_eq!(made["playlist"]["public"], false);
+    assert_eq!(made["playlist"]["octoPlaylist"], true);
+    assert_eq!(made["playlist"]["readonly"], false);
+    assert_eq!(f.entries(&id).len(), 2);
+
+    // Listed for its maker, with Navidrome's own rows, and for nobody else.
+    let rows = f.json("alex", "getPlaylists").await;
+    assert_eq!(
+        ids(&rows["playlists"]["playlist"]),
+        ["p-own", "p-alex", id.as_str()],
+        "{rows}"
+    );
+    let listed = row(&rows, &id).expect("alex's row");
+    assert_eq!(listed["owner"], "alex", "{listed}");
+    assert_eq!(listed["songCount"], 2, "{listed}");
+    assert_eq!(listed["octoPlaylist"], true, "{listed}");
+    let rows = f.json("winters", "getPlaylists").await;
+    assert!(row(&rows, &id).is_none(), "{rows}");
+    let other = f.json("winters", &format!("getPlaylist?id={id}")).await;
+    assert_eq!(other["error"]["code"], 70, "{other}");
+    let other = f
+        .json(
+            "winters",
+            &format!("updatePlaylist?playlistId={id}&songIdToAdd=s-clean"),
+        )
+        .await;
+    assert_eq!(other["error"]["code"], 70, "{other}");
+    let other = f.json("winters", &format!("deletePlaylist?id={id}")).await;
+    assert_eq!(other["error"]["code"], 70, "{other}");
+    assert_eq!(f.entries(&id).len(), 2);
+
+    // The maker reads it with every song, library and outside alike.
+    let read = f.json("alex", &format!("getPlaylist?id={id}")).await;
+    assert_eq!(ids(&read["playlist"]["entry"]), ["s-clean", OUTSIDE], "{read}");
+    assert_eq!(read["playlist"]["comment"], "Octo playlist");
+}
+
+#[tokio::test]
+async fn kept_playlist_changed_and_replaced_when_family_off() {
+    let f = fixture(false).await;
+    let made = f
+        .json("alex", &format!("createPlaylist?name=Mix&songId={OUTSIDE}"))
+        .await;
+    let id = made["playlist"]["id"].as_str().expect("an id").to_string();
+
+    let added = f
+        .json(
+            "alex",
+            &format!("updatePlaylist?playlistId={id}&songIdToAdd=s-clean&songIdToAdd=s-alex"),
+        )
+        .await;
+    assert_eq!(added["status"], "ok", "{added}");
+    let read = f.json("alex", &format!("getPlaylist?id={id}")).await;
+    assert_eq!(
+        ids(&read["playlist"]["entry"]),
+        [OUTSIDE, "s-clean", "s-alex"],
+        "{read}"
+    );
+
+    let removed = f
+        .json(
+            "alex",
+            &format!("updatePlaylist?playlistId={id}&songIndexToRemove=0&name=Summer"),
+        )
+        .await;
+    assert_eq!(removed["status"], "ok", "{removed}");
+    let read = f.json("alex", &format!("getPlaylist?id={id}")).await;
+    assert_eq!(ids(&read["playlist"]["entry"]), ["s-clean", "s-alex"], "{read}");
+    assert_eq!(read["playlist"]["name"], "Summer");
+
+    // createPlaylist with the id makes its songs exactly these, in this order.
+    let replaced = f
+        .json(
+            "alex",
+            &format!("createPlaylist?playlistId={id}&songId={OUTSIDE}&songId=s-clean"),
+        )
+        .await;
+    assert_eq!(
+        ids(&replaced["playlist"]["entry"]),
+        [OUTSIDE, "s-clean"],
+        "{replaced}"
+    );
+    assert_eq!(f.entries(&id).len(), 2);
+
+    let deleted = f.json("alex", &format!("deletePlaylist?id={id}")).await;
+    assert_eq!(deleted["status"], "ok", "{deleted}");
+    assert!(f.state.family_playlists.get(&id).is_none());
+    let gone = f.json("alex", &format!("getPlaylist?id={id}")).await;
+    assert_eq!(gone["error"]["code"], 70, "{gone}");
+}
+
+#[tokio::test]
+async fn new_playlist_of_library_songs_goes_to_navidrome_unless_asked_for() {
+    let f = fixture(false).await;
+    // Library songs alone: Navidrome's playlist, as always (the fake answers ok with nothing).
+    let relayed = f.json("alex", "createPlaylist?name=Mine&songId=s-clean").await;
+    assert_eq!(relayed["status"], "ok", "{relayed}");
+    assert!(relayed.get("playlist").is_none(), "{relayed}");
+    assert!(f.state.family_playlists.list().is_empty());
+    // `octo=true` asks for one Octo keeps, so outside songs can join later.
+    let kept = f
+        .json("alex", "createPlaylist?name=Mine&octo=true&songId=s-clean")
+        .await;
+    assert_eq!(kept["playlist"]["octoPlaylist"], true, "{kept}");
+    assert_eq!(ids(&kept["playlist"]["entry"]), ["s-clean"], "{kept}");
+    assert_eq!(f.state.family_playlists.list().len(), 1);
+    // A name is needed.
+    let unnamed = f.json("alex", &format!("createPlaylist?songId={OUTSIDE}")).await;
+    assert_eq!(unnamed["error"]["code"], 10, "{unnamed}");
+    assert_eq!(f.state.family_playlists.list().len(), 1);
+}
+
+#[tokio::test]
+async fn navidrome_playlists_refuse_outside_songs() {
+    let f = fixture(false).await;
+    let refused = f
+        .json(
+            "alex",
+            &format!("updatePlaylist?playlistId=p-alex&songIdToAdd=s-clean&songIdToAdd={OUTSIDE}"),
+        )
+        .await;
+    assert_eq!(refused["error"]["code"], 70, "{refused}");
+    let message = refused["error"]["message"].as_str().unwrap_or("");
+    assert!(
+        message.contains(OUTSIDE) && message.contains("Octo playlist"),
+        "{refused}"
+    );
+    let refused = f
+        .json(
+            "alex",
+            &format!("createPlaylist?playlistId=p-alex&songId={OUTSIDE}"),
+        )
+        .await;
+    assert_eq!(refused["error"]["code"], 70, "{refused}");
+    // Library songs still reach Navidrome (whose fake knows no playlist).
+    let relayed = f
+        .json("alex", "updatePlaylist?playlistId=p-alex&songIdToAdd=s-clean")
+        .await;
+    assert_eq!(relayed["error"]["message"], "Playlist not found", "{relayed}");
+}
+
+#[tokio::test]
+async fn member_makes_family_playlist_through_create_playlist() {
+    let f = fixture(true).await;
+    let made = f
+        .json(
+            "alex",
+            &format!("createPlaylist?name=Mix&songId={OUTSIDE}&songId=s-clean"),
+        )
+        .await;
+    let id = made["playlist"]["id"].as_str().expect("an id").to_string();
+    assert_eq!(made["playlist"]["owner"], "Family", "{made}");
+    assert_eq!(made["playlist"]["octoPlaylist"], true, "{made}");
+    assert_eq!(ids(&made["playlist"]["entry"]), [OUTSIDE, "s-clean"], "{made}");
+    // Everyone in the family sees it; a kid cannot make one.
+    let rows = f.json("winters", "getPlaylists").await;
+    assert!(row(&rows, &id).is_some(), "{rows}");
+    let refused = f
+        .json("kid", &format!("createPlaylist?name=Mine&songId={OUTSIDE}"))
+        .await;
+    assert_eq!(refused["error"]["code"], 50, "{refused}");
 }
 
 // ---- kid profiles ----

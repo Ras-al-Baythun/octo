@@ -1,9 +1,13 @@
 //! `getPlaylists`, `getPlaylist`, and the playlist and internet radio mutations, which refuse
 //! Octo's own read-only ids.
 //!
-//! While Family is on, family playlists (`of` ids) are listed for the owner and every member,
-//! served per viewer, and changed through `updatePlaylist` and `deletePlaylist` by whoever
-//! may (see [`crate::services::family::family_playlists`]).
+//! The playlists Octo keeps itself (`of` ids) hold songs from outside the library beside
+//! library songs, which Navidrome's own playlists cannot. While Family is on they are the
+//! family playlists: listed for the owner and every member, served per viewer, and changed by
+//! whoever may (see [`crate::services::family::family_playlists`]). Otherwise each signed-in
+//! account keeps its own, with the owner's say over them. `createPlaylist` makes one when a
+//! `songId` is from outside the library or `octo=true` asks for it, and replaces its songs
+//! when given its `playlistId`; `updatePlaylist` and `deletePlaylist` change it.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -32,6 +36,7 @@ use super::action_helpers::{
     is_successful_subsonic_response, materialize_station, playlist_names, playlist_stations,
     queue_refresh_if_stale, xml_value,
 };
+use super::caller_checks::{self, refuse_unless_signed_in, signed_in_user};
 use crate::app::AppState;
 use crate::middleware::family_gate::{GateReading, Unverified};
 use crate::services::family::audio_gate::ExplicitMark;
@@ -114,7 +119,7 @@ pub async fn get_playlists(State(state): State<AppState>, req: Request) -> Respo
         .liked_row(&username, &call.parameters)
         .await
         .map(|row| liked_playlist_fields(builder, &row, &mix_settings));
-    let family = family_rows(&state, caller.as_ref()).await;
+    let family = kept_rows(&state, &call, caller.as_ref()).await;
     if stations.is_empty()
         && family.is_empty()
         && charts.is_empty()
@@ -373,21 +378,75 @@ fn prepend_xml(
     Some(root.to_xml_string().into_bytes())
 }
 
-/// The family playlists as playlist rows for this caller: none while Family is off or for an
-/// account outside the family.
-async fn family_rows(state: &AppState, caller: Option<&FamilyCaller>) -> Vec<serde_json::Map<String, Value>> {
-    if !state.settings.current().family.enabled {
-        return Vec::new();
-    }
-    let Some(caller) = caller else {
-        return Vec::new();
+/// The playlists Octo keeps, as rows for this caller: while Family is on, the family playlists
+/// for the owner and every member (none for an account outside the family); otherwise the
+/// signed-in account's own.
+async fn kept_rows(
+    state: &AppState,
+    call: &SubsonicCall,
+    caller: Option<&FamilyCaller>,
+) -> Vec<serde_json::Map<String, Value>> {
+    let family_on = state.settings.current().family.enabled;
+    let own;
+    let caller = if family_on {
+        let Some(caller) = caller else {
+            return Vec::new();
+        };
+        caller
+    } else {
+        // Navidrome answered getPlaylists ok, so the sign-in is good: its account is the viewer.
+        let user = signed_in_user(state, &caller_call(call))
+            .await
+            .unwrap_or_default();
+        if user.trim().is_empty() {
+            return Vec::new();
+        }
+        own = kept_caller(&user);
+        &own
     };
     let mut rows = Vec::new();
-    for playlist in family_playlists::visible_playlists(&state.family_playlists, caller) {
+    for playlist in visible_kept_playlists(state, caller) {
         let (count, seconds) = family_playlist_totals(state, &playlist, caller).await;
-        rows.push(family_playlist_fields(&playlist, caller, count, seconds));
+        rows.push(family_playlist_fields(
+            &playlist, caller, family_on, count, seconds,
+        ));
     }
     rows
+}
+
+/// The call as the caller checks read it: the same request, parameters and proxy.
+fn caller_call(call: &SubsonicCall) -> caller_checks::SubsonicCall {
+    caller_checks::SubsonicCall {
+        incoming: Arc::clone(&call.incoming),
+        parameters: call.parameters.clone(),
+        proxy: call.proxy.clone(),
+    }
+}
+
+/// With Family off, the account behind a kept playlist call: nobody manages it, and it has the
+/// owner's say over its own playlists.
+fn kept_caller(user: &str) -> FamilyCaller {
+    FamilyCaller::unmanaged(user, true)
+}
+
+/// Whether `viewer` sees this kept playlist: while Family is on, as the family rules say;
+/// otherwise only the account that made it.
+fn sees_kept_playlist(state: &AppState, viewer: &FamilyCaller, playlist: &FamilyPlaylist) -> bool {
+    state.settings.current().family.enabled || eq_ignore_case(&playlist.created_by, &viewer.user)
+}
+
+/// The kept playlists `viewer` sees.
+fn visible_kept_playlists(state: &AppState, viewer: &FamilyCaller) -> Vec<FamilyPlaylist> {
+    family_playlists::visible_playlists(&state.family_playlists, viewer)
+        .into_iter()
+        .filter(|playlist| sees_kept_playlist(state, viewer, playlist))
+        .collect()
+}
+
+/// One kept playlist, when `viewer` sees it.
+fn find_kept_playlist(state: &AppState, viewer: &FamilyCaller, id: &str) -> Option<FamilyPlaylist> {
+    family_playlists::find(&state.family_playlists, viewer, id)
+        .filter(|playlist| sees_kept_playlist(state, viewer, playlist))
 }
 
 /// What a family playlist's row counts for `viewer`: the songs they are shown and how many
@@ -483,6 +542,7 @@ fn utc_millis(at: &DateTime<Utc>) -> String {
 fn family_playlist_fields(
     playlist: &FamilyPlaylist,
     viewer: &FamilyCaller,
+    family_on: bool,
     count: usize,
     seconds: i64,
 ) -> serde_json::Map<String, Value> {
@@ -496,9 +556,17 @@ fn family_playlist_fields(
     let mut fields = serde_json::Map::new();
     fields.insert("id".into(), playlist.id.clone().into());
     fields.insert("name".into(), playlist.name.clone().into());
-    fields.insert("comment".into(), "Family playlist".into());
-    fields.insert("owner".into(), FAMILY_OWNER.into());
-    fields.insert("public".into(), true.into());
+    if family_on {
+        fields.insert("comment".into(), "Family playlist".into());
+        fields.insert("owner".into(), FAMILY_OWNER.into());
+        fields.insert("public".into(), true.into());
+    } else {
+        fields.insert("comment".into(), "Octo playlist".into());
+        fields.insert("owner".into(), playlist.created_by.clone().into());
+        fields.insert("public".into(), false.into());
+    }
+    // octoPlaylists v1: a client tells a kept playlist by this, not by its id.
+    fields.insert("octoPlaylist".into(), true.into());
     fields.insert("songCount".into(), count.into());
     fields.insert("duration".into(), seconds.into());
     fields.insert("created".into(), utc_millis(&playlist.created).into());
@@ -646,7 +714,7 @@ async fn get_playlist_inner(state: &AppState, req: Request, aborted: &RequestAbo
             .into_response();
     }
 
-    if is_family_playlist_id(state, &id) {
+    if is_kept_playlist_id(&id) {
         return family_playlist(state, &call, &id).await;
     }
 
@@ -959,7 +1027,8 @@ async fn family_action_playlist(
     )
 }
 
-/// Refuses Octo's own ids, changes family playlists, and relays everything else as
+/// Refuses Octo's own ids, changes the playlists Octo keeps (and makes one when a new
+/// playlist holds a song from outside the library), and relays everything else as
 /// `rest/<last path segment>` in the client's own spelling.
 async fn mutate(state: AppState, req: Request, id_key: &str, _fallback: &str, failure: &str) -> Response {
     let call = match SubsonicCall::read(&state, req).await {
@@ -983,16 +1052,40 @@ async fn mutate(state: AppState, req: Request, id_key: &str, _fallback: &str, fa
     {
         return answer;
     }
-    if is_family_playlist_id(&state, &id)
-        && let Some(change) = playlist_change(&call)
+    let change = playlist_change(&call);
+    if is_kept_playlist_id(&id)
+        && let Some(change) = change
     {
         return family_mutate(&state, &call, &id, change).await;
     }
-    if is_octo_playlist_id(&id, state.settings.current().family.enabled) {
+    if is_octo_playlist_id(&id) {
         return state
             .subsonic_response_builder
             .create_error(format, 70, "Octo's generated playlists are read-only")
             .into_response();
+    }
+    // A new playlist with a song from outside the library (or asked for with `octo=true`) is
+    // one Octo keeps, since Navidrome cannot hold such a song; Navidrome's own playlists
+    // refuse one rather than lose it quietly.
+    if change == Some(PlaylistChange::Create) && id.is_empty() && wants_kept_playlist(&state, &call) {
+        return create_kept_playlist(&state, &call).await;
+    }
+    let songs = match change {
+        Some(PlaylistChange::Create) => "songId",
+        Some(PlaylistChange::Update) => "songIdToAdd",
+        _ => "",
+    };
+    if !songs.is_empty()
+        && let Some(outside) = outside_song_param(&state, &call, songs)
+    {
+        return family_error(
+            &state,
+            &call,
+            70,
+            &format!(
+                "This playlist lives in Navidrome and cannot hold {outside}, a song not in the library. Put it in an Octo playlist instead."
+            ),
+        );
     }
     // The endpoint is the path's last segment, without `.view`.
     let path = call.path();
@@ -1010,9 +1103,75 @@ async fn mutate(state: AppState, req: Request, id_key: &str, _fallback: &str, fa
     }
 }
 
-/// Whether `id` is a family playlist's while Family is on.
-fn is_family_playlist_id(state: &AppState, id: &str) -> bool {
-    id.starts_with("of") && is_octo_playlist_id(id, state.settings.current().family.enabled)
+/// Whether `id` is a playlist Octo keeps itself.
+fn is_kept_playlist_id(id: &str) -> bool {
+    id.starts_with("of") && is_octo_playlist_id(id)
+}
+
+/// The first value of `key` that names a song from outside the library, if any.
+fn outside_song_param(state: &AppState, call: &SubsonicCall, key: &str) -> Option<String> {
+    call.incoming
+        .parameter_values(key)
+        .into_iter()
+        .map(|id| id.trim().to_string())
+        .find(|id| !id.is_empty() && state.local_library.parse_song_id(id).0)
+}
+
+/// Whether a new playlist is one for Octo to keep: `octo=true`, or a `songId` from outside the
+/// library.
+fn wants_kept_playlist(state: &AppState, call: &SubsonicCall) -> bool {
+    call.param("octo")
+        .is_some_and(|octo| octo.eq_ignore_ascii_case("true") || octo == "1")
+        || outside_song_param(state, call, "songId").is_some()
+}
+
+/// `createPlaylist` with no playlist id, for a playlist Octo keeps: made with its `songId`s in
+/// order, and answered with the playlist as Navidrome answers.
+async fn create_kept_playlist(state: &AppState, call: &SubsonicCall) -> Response {
+    let caller = match playlist_caller(state, call).await {
+        Ok(caller) => caller,
+        Err(answer) => return answer,
+    };
+    let Some(name) = call.param("name").map(str::trim).filter(|name| !name.is_empty()) else {
+        return family_error(state, call, 10, "Required parameter is missing: name");
+    };
+    let store = &state.family_playlists;
+    let made = match family_playlists::create(store, &caller, name, false, Utc::now()) {
+        Ok(made) => made,
+        Err(error) => return playlist_error(state, call, error),
+    };
+    if let Err(error) = add_songs(state, call, &caller, &made.id, "songId").await {
+        return playlist_error(state, call, error);
+    }
+    family_playlist(state, call, &made.id).await
+}
+
+/// Adds the songs named by every value of `key` to the end of a kept playlist.
+async fn add_songs(
+    state: &AppState,
+    call: &SubsonicCall,
+    caller: &FamilyCaller,
+    id: &str,
+    key: &str,
+) -> Result<usize, PlaylistError> {
+    let mut additions = Vec::new();
+    for song in call.incoming.parameter_values(key) {
+        if let Some(entry) = new_entry(state, &song).await {
+            additions.push(entry);
+        }
+    }
+    if additions.is_empty() {
+        return Ok(0);
+    }
+    let requests = state.family_playlist_requests.get();
+    family_playlists::add(
+        &state.family_playlists,
+        requests.as_ref(),
+        caller,
+        id,
+        additions,
+        Utc::now(),
+    )
 }
 
 /// A playlist call that may name a family playlist.
@@ -1088,15 +1247,37 @@ async fn checked_caller(state: &AppState, call: &SubsonicCall) -> Result<FamilyC
     }
 }
 
-/// A family playlist, each entry resolved for the caller: the library song (read as the caller)
+/// The caller of a kept playlist call: while Family is on, as the family gate read and checked
+/// it; otherwise the account Navidrome accepts the request's own sign-in for.
+#[allow(clippy::result_large_err)] // the error is the answer itself, sent at once
+async fn playlist_caller(state: &AppState, call: &SubsonicCall) -> Result<FamilyCaller, Response> {
+    if state.settings.current().family.enabled {
+        return checked_caller(state, call).await;
+    }
+    match refuse_unless_signed_in(state, &caller_call(call), &call.format).await {
+        Ok(None) => {}
+        Ok(Some(answer)) => return Err(answer),
+        Err(error) => return Err(error.into_response()),
+    }
+    let user = match signed_in_user(state, &caller_call(call)).await {
+        Ok(user) => user,
+        Err(error) => return Err(error.into_response()),
+    };
+    if user.trim().is_empty() {
+        return Err(family_error(state, call, 40, "Wrong username or password"));
+    }
+    Ok(kept_caller(&user))
+}
+
+/// A kept playlist, each entry resolved for the caller: the library song (read as the caller)
 /// when it is shared or the caller's own, otherwise its outside version.
 async fn family_playlist(state: &AppState, call: &SubsonicCall, id: &str) -> Response {
-    let caller = match checked_caller(state, call).await {
+    let caller = match playlist_caller(state, call).await {
         Ok(caller) => caller,
         Err(answer) => return answer,
     };
     let caller = &caller;
-    let Some(playlist) = family_playlists::find(&state.family_playlists, caller, id) else {
+    let Some(playlist) = find_kept_playlist(state, caller, id) else {
         return playlist_error(state, call, PlaylistError::NotFound);
     };
 
@@ -1124,7 +1305,8 @@ async fn family_playlist(state: &AppState, call: &SubsonicCall, id: &str) -> Res
         .iter()
         .map(|song| song.get("duration").and_then(Value::as_i64).unwrap_or(0))
         .sum();
-    let fields = family_playlist_fields(&playlist, caller, entries.len(), seconds);
+    let family_on = state.settings.current().family.enabled;
+    let fields = family_playlist_fields(&playlist, caller, family_on, entries.len(), seconds);
     state
         .subsonic_response_builder
         .create_chart_playlist_response(&call.format, fields, &entries)
@@ -1164,18 +1346,18 @@ async fn outside_song_json(state: &AppState, id: &str) -> Option<Value> {
     ))
 }
 
-/// `updatePlaylist` and `deletePlaylist` on a family playlist. `createPlaylist` never replaces
-/// one.
+/// `createPlaylist` (with the playlist's id: its songs become exactly `songId`, in order),
+/// `updatePlaylist` and `deletePlaylist` on a kept playlist.
 async fn family_mutate(state: &AppState, call: &SubsonicCall, id: &str, change: PlaylistChange) -> Response {
     let store = &state.family_playlists;
     // Nothing here goes to Navidrome, so the caller is checked before a change is made in
     // anyone's name.
-    let caller = match checked_caller(state, call).await {
+    let caller = match playlist_caller(state, call).await {
         Ok(caller) => caller,
         Err(answer) => return answer,
     };
     let caller = &caller;
-    let Some(playlist) = family_playlists::find(store, caller, id) else {
+    let Some(playlist) = find_kept_playlist(state, caller, id) else {
         return playlist_error(state, call, PlaylistError::NotFound);
     };
     let done = || {
@@ -1185,12 +1367,42 @@ async fn family_mutate(state: &AppState, call: &SubsonicCall, id: &str, change: 
             .into_response()
     };
     match change {
-        PlaylistChange::Create => family_error(
-            state,
-            call,
-            50,
-            "A family playlist cannot be replaced. Add or remove its songs instead.",
-        ),
+        PlaylistChange::Create => {
+            if !family_playlists::may_edit(caller) {
+                return playlist_error(
+                    state,
+                    call,
+                    PlaylistError::NotAllowed("This account cannot change family playlists."),
+                );
+            }
+            let name = call.param("name").map(str::trim).filter(|n| !n.is_empty());
+            if let Some(name) = name
+                && name != playlist.name
+            {
+                if !family_playlists::may_rename(caller, &playlist) {
+                    return playlist_error(
+                        state,
+                        call,
+                        PlaylistError::NotAllowed(
+                            "Only the person who made this playlist or a family manager can change it.",
+                        ),
+                    );
+                }
+                if let Err(error) = family_playlists::rename(store, caller, id, name) {
+                    return playlist_error(state, call, error);
+                }
+            }
+            // Everything the caller is shown goes, then the new list goes in.
+            let shown = family_playlists::shown_entries(&playlist, caller);
+            let all: Vec<usize> = (0..shown.len()).collect();
+            if let Err(error) = family_playlists::remove_shown(store, caller, id, &all) {
+                return playlist_error(state, call, error);
+            }
+            if let Err(error) = add_songs(state, call, caller, id, "songId").await {
+                return playlist_error(state, call, error);
+            }
+            family_playlist(state, call, id).await
+        }
         PlaylistChange::Delete => match family_playlists::delete(store, caller, id) {
             Ok(()) => done(),
             Err(error) => playlist_error(state, call, error),
@@ -1232,19 +1444,8 @@ async fn family_mutate(state: &AppState, call: &SubsonicCall, id: &str, change: 
             {
                 return playlist_error(state, call, error);
             }
-            let mut additions = Vec::new();
-            for song in call.incoming.parameter_values("songIdToAdd") {
-                if let Some(entry) = new_entry(state, &song).await {
-                    additions.push(entry);
-                }
-            }
-            if !additions.is_empty() {
-                let requests = state.family_playlist_requests.get();
-                if let Err(error) =
-                    family_playlists::add(store, requests.as_ref(), caller, id, additions, Utc::now())
-                {
-                    return playlist_error(state, call, error);
-                }
+            if let Err(error) = add_songs(state, call, caller, id, "songIdToAdd").await {
+                return playlist_error(state, call, error);
             }
             done()
         }

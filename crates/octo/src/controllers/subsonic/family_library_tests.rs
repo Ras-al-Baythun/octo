@@ -200,13 +200,21 @@ async fn songs_already_in_a_request_playlist_are_asked_for_and_it_is_emptied() {
 #[tokio::test]
 async fn other_playlists_are_relayed_as_always() {
     let fixture = Fixture::new().await;
-    fixture
+    // An outside song cannot go to a playlist of Navidrome's: refused, not relayed, so it is
+    // not lost quietly (an Octo playlist takes it).
+    let refused = fixture
         .update(&format!("playlistId=pl-trip&songIdToAdd={}", fixture.songs[0]))
         .await;
+    assert_eq!(refused["subsonic-response"]["error"]["code"], 70, "{refused}");
     assert!(fixture.state.family_request_service.requests_of("sam").is_empty());
+    assert!(fixture.updates().await.is_empty());
+    fixture.update("playlistId=pl-trip&songIdToAdd=shared-1").await;
     let updates = fixture.updates().await;
     assert_eq!(updates.len(), 1);
-    assert_eq!(updates[0].get("songIdToAdd"), Some(&fixture.songs[0]));
+    assert_eq!(
+        updates[0].get("songIdToAdd").map(String::as_str),
+        Some("shared-1")
+    );
 }
 
 #[tokio::test]

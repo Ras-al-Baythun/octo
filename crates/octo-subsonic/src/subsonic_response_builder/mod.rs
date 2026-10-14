@@ -83,8 +83,17 @@ pub const OWN_EXTENSIONS: &[(&str, &[i32])] = &[
     (IMPORTS_EXTENSION, &[1, IMPORTS_EXTENSION_VERSION]),
     (RADIO_SOURCES_EXTENSION, &[RADIO_SOURCES_EXTENSION_VERSION]),
     (LISTS_EXTENSION, &[LISTS_EXTENSION_VERSION]),
+    (PLAYLISTS_EXTENSION, &[PLAYLISTS_EXTENSION_VERSION]),
     (TRANSITIONS_EXTENSION, &[TRANSITIONS_EXTENSION_VERSION]),
 ];
+
+/// octoPlaylists v1: playlists Octo keeps itself (`of` ids), which hold songs from outside the
+/// library beside library songs. `createPlaylist` with such a `songId`, or with `octo=true`,
+/// makes one; `createPlaylist` with its `playlistId` replaces its songs; `updatePlaylist` and
+/// `deletePlaylist` change it. Its rows carry `octoPlaylist: true`. Navidrome's own playlists
+/// refuse an outside song (error 70).
+pub const PLAYLISTS_EXTENSION: &str = "octoPlaylists";
+pub const PLAYLISTS_EXTENSION_VERSION: i32 = 1;
 
 /// The OpenSubsonic extension a client checks for before it offers Spotify import (getImports,
 /// getImport, importAction). Version 2: getImportServices, importFile and importText.
