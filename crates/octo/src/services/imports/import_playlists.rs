@@ -1,15 +1,29 @@
-//! "Keep as playlist": an imported list kept as a Navidrome playlist.
+//! "Keep as playlist": an imported list kept as a playlist Octo keeps itself, whole from the
+//! start (each missing song plays from outside the library until its file arrives), or as a
+//! Navidrome playlist of the songs the library has.
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use chrono::Utc;
 use octo_core::common::dotnet::eq_ignore_case;
+use octo_core::soulseek::soulseek_metadata_service::{RoutingKind, SoulseekRouting};
 use tracing::{info, warn};
 
 use super::ImportList;
 use super::import_models::import_sources;
+use crate::services::family::{FamilyPlaylistEntry, FamilyPlaylistStore};
 use crate::services::library::NavidromePlaylistApi;
+use crate::services::soulseek::ExternalIdRegistry;
 use crate::services::subsonic::NavidromeIdentityService;
+
+/// Where a list goes when Octo keeps its playlist itself: the store of the playlists Octo
+/// keeps, and the registry that mints each song's outside id, by which a missing song plays
+/// from outside the library.
+pub struct KeptPlaylists {
+    pub store: Arc<FamilyPlaylistStore>,
+    pub ids: Arc<ExternalIdRegistry>,
+}
 
 /// How keeping a list's playlist went.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -115,6 +129,7 @@ impl PlaylistNavidrome for NavidromePlaylists {
 /// id is handed back so the next try fills that one.
 pub struct ImportPlaylists {
     navidrome: Arc<dyn PlaylistNavidrome>,
+    kept: Option<KeptPlaylists>,
 }
 
 impl ImportPlaylists {
@@ -122,10 +137,115 @@ impl ImportPlaylists {
     const ADD_CHUNK: usize = 500;
 
     pub fn new(navidrome: Arc<dyn PlaylistNavidrome>) -> Self {
-        ImportPlaylists { navidrome }
+        ImportPlaylists {
+            navidrome,
+            kept: None,
+        }
     }
 
+    /// Lets lists be kept as playlists Octo keeps itself.
+    pub fn with_kept(mut self, kept: KeptPlaylists) -> Self {
+        self.kept = Some(kept);
+        self
+    }
+
+    /// Keeps the list's playlist in Navidrome.
     pub async fn sync(&self, list: &ImportList) -> PlaylistSyncResult {
+        self.sync_as(list, true).await
+    }
+
+    /// Keeps the list's playlist the way it is kept: one Octo keeps itself (an `of` id, or a
+    /// new one unless `in_navidrome`), else Navidrome's.
+    pub async fn sync_as(&self, list: &ImportList, in_navidrome: bool) -> PlaylistSyncResult {
+        let kept_id = list.playlist_id.as_deref().is_some_and(|id| id.starts_with("of"));
+        if let Some(kept) = &self.kept
+            && (kept_id || (list.playlist_id.is_none() && !in_navidrome))
+        {
+            return Self::sync_kept(kept, list);
+        }
+        self.sync_navidrome(list).await
+    }
+
+    /// A playlist Octo keeps: made for the list's owner, then made the list's songs in order
+    /// whenever they differ. Every song has an outside id, so a missing one plays from outside
+    /// the library; one the library has carries its library song too, which is served first.
+    fn sync_kept(kept: &KeptPlaylists, list: &ImportList) -> PlaylistSyncResult {
+        let now = Utc::now();
+        let playlist = match list.playlist_id.as_deref() {
+            Some(id) => match kept.store.get(id) {
+                Some(playlist) => playlist,
+                None => {
+                    info!(
+                        "Playlist for imported list '{}' ({}) was deleted; not making it again",
+                        list.name, list.owner
+                    );
+                    return PlaylistSyncResult {
+                        ok: true,
+                        playlist_id: None,
+                        note: None,
+                        deleted: true,
+                        songs: 0,
+                    };
+                }
+            },
+            None => {
+                let made = kept.store.create(&list.name, &list.owner, now);
+                info!(
+                    "Made playlist '{}' ({}) for {}, kept by Octo",
+                    list.name, made.id, list.owner
+                );
+                made
+            }
+        };
+        let mut wanted: Vec<FamilyPlaylistEntry> = Vec::new();
+        for track in &list.tracks {
+            let outside = kept.ids.register(SoulseekRouting {
+                kind: RoutingKind::Song,
+                artist: Some(track.artist.clone()),
+                title: Some(track.title.clone()),
+                album: track.album.clone(),
+                duration: track.seconds,
+                isrc: track.isrc.clone(),
+                ..Default::default()
+            });
+            if wanted.iter().any(|entry| {
+                entry.library_id == track.library_id && entry.outside_id.as_deref() == Some(&outside)
+            }) {
+                continue;
+            }
+            wanted.push(FamilyPlaylistEntry {
+                library_id: track.library_id.clone(),
+                scope: String::new(),
+                outside_id: Some(outside),
+                added_by: list.owner.clone(),
+                added: now,
+                pending: false,
+                duration: track.seconds.map(i64::from),
+                explicit_status: None,
+            });
+        }
+        let same =
+            playlist.entries.len() == wanted.len()
+                && playlist.entries.iter().zip(&wanted).all(|(have, want)| {
+                    have.library_id == want.library_id && have.outside_id == want.outside_id
+                });
+        if !same {
+            let all: Vec<usize> = (0..playlist.entries.len()).collect();
+            if !all.is_empty() {
+                kept.store.remove_indexes(&playlist.id, &all);
+            }
+            kept.store.add_entries(&playlist.id, wanted.clone());
+        }
+        PlaylistSyncResult {
+            ok: true,
+            playlist_id: Some(playlist.id),
+            note: None,
+            deleted: false,
+            songs: wanted.len() as i32,
+        }
+    }
+
+    async fn sync_navidrome(&self, list: &ImportList) -> PlaylistSyncResult {
         let mut playlist_id = list.playlist_id.clone();
         let mut note = list.playlist_note.clone();
         let mut made = false;

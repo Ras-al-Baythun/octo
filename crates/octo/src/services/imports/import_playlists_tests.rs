@@ -142,3 +142,79 @@ async fn a_playlist_that_would_not_go_is_filled_next_time_not_made_again() {
     assert_eq!(navidrome.playlists.lock().len(), 1, "still one playlist");
     assert_eq!(navidrome.playlist("pl1"), ["a"]);
 }
+
+// ---- playlists Octo keeps itself ----
+
+fn kept_writer(
+    navidrome: &Arc<FakeNavidrome>,
+) -> (ImportPlaylists, Arc<FamilyPlaylistStore>, Arc<ExternalIdRegistry>) {
+    let store = Arc::new(FamilyPlaylistStore::in_memory());
+    let ids = Arc::new(ExternalIdRegistry::in_memory());
+    let writer = writer(navidrome).with_kept(KeptPlaylists {
+        store: store.clone(),
+        ids: ids.clone(),
+    });
+    (writer, store, ids)
+}
+
+#[tokio::test]
+async fn a_list_octo_keeps_is_whole_from_the_start_and_follows_the_library() {
+    let navidrome = Arc::new(FakeNavidrome::default());
+    let (writer, store, ids) = kept_writer(&navidrome);
+    let mut list = list("alice", &[Some("a"), None, Some("c")]);
+    let result = writer.sync_as(&list, false).await;
+    assert!(result.ok && !result.deleted);
+    let id = result.playlist_id.clone().expect("an id");
+    assert!(id.starts_with("of"), "{id}");
+    assert_eq!(result.songs, 3);
+    assert!(navidrome.calls().is_empty(), "nothing went to Navidrome");
+    let kept = store.get(&id).expect("kept");
+    assert_eq!(kept.name, "Road trip");
+    assert_eq!(kept.created_by, "alice");
+    let library: Vec<Option<&str>> = kept.entries.iter().map(|e| e.library_id.as_deref()).collect();
+    assert_eq!(library, [Some("a"), None, Some("c")]);
+    assert!(
+        kept.entries
+            .iter()
+            .all(|e| e.outside_id.as_deref().is_some_and(|o| ids.lookup(o).is_some())),
+        "every song has an outside id the registry knows: {:?}",
+        kept.entries
+    );
+
+    // An unchanged list is left as it is, whatever the setting says now.
+    list.playlist_id = Some(id.clone());
+    let before = kept.entries[0].added;
+    let again = writer.sync_as(&list, true).await;
+    assert_eq!(again.playlist_id.as_deref(), Some(id.as_str()));
+    assert_eq!(store.get(&id).expect("kept").entries[0].added, before);
+    assert!(navidrome.calls().is_empty());
+
+    // The missing song's file arrives: its entry gains the library song and keeps its outside id.
+    list.tracks[1].library_id = Some("b".into());
+    writer.sync_as(&list, false).await;
+    let entries = store.get(&id).expect("kept").entries;
+    assert_eq!(entries[1].library_id.as_deref(), Some("b"));
+    assert!(entries[1].outside_id.is_some());
+    assert_eq!(entries.len(), 3);
+
+    // Deleted by its owner: not made again.
+    assert!(store.delete(&id));
+    let gone = writer.sync_as(&list, false).await;
+    assert!(gone.ok && gone.deleted && gone.playlist_id.is_none());
+    assert!(store.list().is_empty());
+}
+
+#[tokio::test]
+async fn keep_in_navidrome_makes_navidromes_playlist_as_before() {
+    let navidrome = Arc::new(FakeNavidrome::default());
+    let (writer, store, _) = kept_writer(&navidrome);
+    let result = writer
+        .sync_as(&list("alice", &[Some("a"), None, Some("c")]), true)
+        .await;
+    assert_eq!(result.playlist_id.as_deref(), Some("pl1"));
+    assert_eq!(
+        navidrome.calls(),
+        ["create Road trip", "give pl1 alice", "add a,c"]
+    );
+    assert!(store.list().is_empty());
+}

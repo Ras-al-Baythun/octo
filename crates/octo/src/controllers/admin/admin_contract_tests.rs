@@ -749,9 +749,10 @@ async fn config_sources_masks_secrets_and_lists_lists_as_empty() {
     // country mixes' four: :CountryMixes, :Countries, :MaxCountryPlaylists and
     // :CountryLookupsPerRefresh, Lidarr:WebhookSecret, Soulseek:Enabled,
     // RadioSources:ListenBrainzRadioMode, Subsonic:StreamSizeWarmPerMinute,
-    // Subsonic:SearchDurationWaitMs, Subsonic:SearchLastFmWaitMs, Subsonic:CoverCacheMb and
-    // Subsonic:SizeFlagClients.
-    assert_eq!(rows.len(), 194);
+    // Subsonic:SearchDurationWaitMs, Subsonic:SearchLastFmWaitMs, Subsonic:CoverCacheMb,
+    // Subsonic:SizeFlagClients and Imports:KeepInNavidrome.
+    assert_eq!(rows.len(), 195);
+    assert_eq!(row("Imports:KeepInNavidrome")["IsSecret"], false);
     assert_eq!(row("Subsonic:SizeFlagClients")["IsSecret"], false);
     assert_eq!(row("Subsonic:StreamSizeWarmPerMinute")["IsSecret"], false);
     assert_eq!(row("Subsonic:CoverCacheMb")["IsSecret"], false);

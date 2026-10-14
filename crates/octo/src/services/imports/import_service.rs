@@ -1237,7 +1237,8 @@ impl ImportService {
 
     async fn write_playlist(&self, user: &str, id: &str) -> Option<ImportActionResult> {
         let list = self.store.get(user, id).filter(|list| list.keep_playlist)?;
-        let result = self.playlists.sync(&list).await;
+        let in_navidrome = self.settings.current().imports.keep_in_navidrome;
+        let result = self.playlists.sync_as(&list, in_navidrome).await;
         let entry = format!("{user}\n{id}");
         if !result.ok {
             // Keep the id of a playlist the sync left in Navidrome (one it could neither fill nor

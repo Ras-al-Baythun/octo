@@ -450,6 +450,7 @@ Absent from `appsettings.json`; read through `_config.GetSection("Imports").Get<
 | `SpotifyRedirectUri` | `IMPORTS_SPOTIFY_REDIRECT_URI` | string | `http://127.0.0.1/callback` / - / same | `EffectiveRedirectUri`: the default when blank, else trimmed. GET shows the effective value. | Live | yes |
 | `SongsPerHour` | `IMPORTS_SONGS_PER_HOUR` | int | 20 / - / `20` | `EffectiveSongsPerHour` = `Clamp(0, 600)`; 0 stops the trickle. | Live | yes |
 | `RefreshHours` | `IMPORTS_REFRESH_HOURS` | int | 6 / - / `6` | 0 reads lists again only when asked. | Live | yes |
+| `KeepInNavidrome` | `IMPORTS_KEEP_IN_NAVIDROME` | bool | false / - / `false` | Off: "Keep as playlist" makes a playlist Octo keeps, whole from the start, missing songs playable from outside the library until their files arrive. On: a Navidrome playlist of the songs the library has, as before. A list already kept one way stays that way. | Live | yes |
 
 ### 3.18 Variables for other containers (2026.10.05)
 

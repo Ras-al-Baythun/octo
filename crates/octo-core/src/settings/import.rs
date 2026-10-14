@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use crate::common::dotnet::is_blank;
 
 /// Importing songs from somewhere else: a Spotify account, a public Spotify link, or a file
-/// another service exported. Octo shows what the library already has, keeps a Navidrome playlist
-/// of it, and fetches the rest a few songs an hour through the same chain a heart uses.
+/// another service exported. Octo shows what the library already has, keeps a playlist of it,
+/// and fetches the rest a few songs an hour through the same chain a heart uses.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default, rename_all = "PascalCase")]
 pub struct ImportSettings {
@@ -32,6 +32,13 @@ pub struct ImportSettings {
     /// so new songs there reach the playlist and the trickle. 0 reads them only when asked.
     /// Environment variable: IMPORTS__REFRESHHOURS
     pub refresh_hours: i32,
+
+    /// Where "Keep as playlist" keeps a list. Off (the default): a playlist Octo keeps, whole
+    /// from the start, with each missing song playable from outside the library until its file
+    /// arrives and takes its place. On: a Navidrome playlist of the songs the library has, as
+    /// before, which fills in as the rest arrive. A list already kept one way stays that way.
+    /// Environment variable: IMPORTS__KEEPINNAVIDROME
+    pub keep_in_navidrome: bool,
 }
 
 impl ImportSettings {
@@ -57,6 +64,7 @@ impl Default for ImportSettings {
             spotify_redirect_uri: Self::DEFAULT_REDIRECT_URI.to_string(),
             songs_per_hour: 20,
             refresh_hours: 6,
+            keep_in_navidrome: false,
         }
     }
 }

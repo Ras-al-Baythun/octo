@@ -304,6 +304,7 @@ const CONFIG_SOURCE_KEYS: &[&str] = &[
     "Imports:SpotifyRedirectUri",
     "Imports:SongsPerHour",
     "Imports:RefreshHours",
+    "Imports:KeepInNavidrome",
     "Subsonic:StreamSizeWarmPerMinute",
     "Subsonic:CoverCacheMb",
     "Subsonic:SearchDurationWaitMs",

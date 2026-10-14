@@ -596,6 +596,7 @@ pub fn effective_document(state: &AppState, raw_config: bool) -> JsonObject {
             ("SpotifyRedirectUri", n_str(&imports.effective_redirect_uri())),
             ("SongsPerHour", n_num(imports.songs_per_hour)),
             ("RefreshHours", n_num(imports.refresh_hours)),
+            ("KeepInNavidrome", Node::Bool(imports.keep_in_navidrome)),
         ]),
     );
     // Family is off by default. Its section is listed once it is in use (turned on, changed

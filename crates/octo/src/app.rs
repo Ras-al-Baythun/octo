@@ -1700,9 +1700,9 @@ impl Imports {
         soulseek_link: Arc<dyn ISoulseekLink>,
     ) -> Imports {
         use crate::services::imports::{
-            ImportMatcher, ImportParts, ImportPlaylists, ImportService, ImportStore, NavidromePlaylists,
-            SpotifyAccountStore, SpotifyAuth, SpotifyLinkReader, SpotifyWebApi, TrickleQueue,
-            TrickleServices, TrickleWorker,
+            ImportMatcher, ImportParts, ImportPlaylists, ImportService, ImportStore, KeptPlaylists,
+            NavidromePlaylists, SpotifyAccountStore, SpotifyAuth, SpotifyLinkReader, SpotifyWebApi,
+            TrickleQueue, TrickleServices, TrickleWorker,
         };
         let file = |name: &str| config_dir.map(|dir| dir.join(name));
         let queue = Arc::new(TrickleQueue::new(file("imports-trickle.json")));
@@ -1729,7 +1729,11 @@ impl Imports {
             playlists: ImportPlaylists::new(Arc::new(NavidromePlaylists {
                 api: navidrome.navidrome_playlist_api.clone(),
                 identity: navidrome.navidrome_identity.clone(),
-            })),
+            }))
+            .with_kept(KeptPlaylists {
+                store: Arc::clone(&stores.family_playlists),
+                ids: stores.external_id_registry.clone(),
+            }),
             auth: Arc::new(SpotifyAuth::default()),
             accounts: Arc::new(SpotifyAccountStore::new(file("spotify-accounts.json"))),
             spotify: Arc::new(SpotifyWebApi::new(SpotifyWebApi::client())),

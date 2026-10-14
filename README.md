@@ -749,9 +749,11 @@ They are on by default, whether or not the mixes are. The dashboard's Mixes page
 ### Spotify import
 
 The dashboard's **Spotify import** page, and the same view in the Octo apps, shows what your
-library has of your Spotify liked songs and playlists. A list can be kept as a Navidrome
-playlist of the songs you have, in Spotify's order, and filled in as the rest arrive; its
-missing songs can go to the trickle, which fetches them a few an hour through the same chain
+library has of your Spotify liked songs and playlists. A list can be kept as a playlist in
+Spotify's order: one Octo keeps itself, whole from the start, where each missing song plays
+from outside your library until its file arrives and takes its place (or, with
+`IMPORTS_KEEP_IN_NAVIDROME=true`, a Navidrome playlist of the songs you have, filled in as the
+rest arrive); its missing songs can go to the trickle, which fetches them a few an hour through the same chain
 a heart uses (your library first, then each heart download source in order, Soulseek's outage
 hold, Lidarr). It never starts a song while anyone's own download runs, and waits out a Soulseek
 outage instead of taking a YouTube copy. Lists, sign-ins and the trickle live in
@@ -872,6 +874,7 @@ Octo hijacks these endpoints; everything else proxies to Navidrome unchanged:
 | `getAcquisitions`, `getAcquisition`, `clearAcquisitions` | the `octoAcquisitions` extension: the caller's downloads; version 2 adds each one's log and clearing finished ones |
 | `findSongs`, `getFoundSongs`, `pickFoundSong` | `octoAcquisitions` 2: a song's search run again on the caller's download sources, every copy found, and fetching the one picked |
 | `getImports`, `getImport`, `importAction` | the `octoImports` extension: the caller's Spotify sign-in, imported lists with what the library has of each, and the trickle |
+| `createPlaylist`, `updatePlaylist`, `deletePlaylist` | the `octoPlaylists` extension: playlists Octo keeps itself (`of` ids, `octoPlaylist: true`), which hold songs from outside the library beside library songs. `createPlaylist` with such a `songId`, or with `octo=true`, makes one; with its `playlistId` it replaces the songs. With Family off each account keeps its own; with Family on they are the family playlists. Navidrome's own playlists refuse an outside song (error 70) |
 | `getTopSongs` | the standard top songs of an artist (by name, or by id as Navidrome's `topSongsByArtistId`), for every app: ranked as `getArtistTopSongs` ranks them, songs you have as your library's own and the rest as outside songs (only yours while search discovery is off); Navidrome's answer when Octo has none |
 | `getArtistTopSongs`, `getTopChart` | the `octoTopSongs` extension: an artist's most played songs and the chart of the moment, each marked in the caller's library or playable from outside it |
 | `/api/artist/{id}`, `/api/album?artist_id=` | Navidrome's own API, for clients that use it (Feishin): an outside artist's page and its albums |

@@ -26,7 +26,7 @@ pub(crate) mod test_support;
 pub use import_file_reader::{FileList, ImportFileReader};
 pub use import_matcher::{ImportMatcher, LibraryIndex};
 pub use import_models::{ImportList, ImportTrack, TrickleJob};
-pub use import_playlists::{ImportPlaylists, NavidromePlaylists, PlaylistNavidrome};
+pub use import_playlists::{ImportPlaylists, KeptPlaylists, NavidromePlaylists, PlaylistNavidrome};
 pub use import_service::{ImportFamily, ImportParts, ImportService};
 pub use import_store::ImportStore;
 pub use import_views::ImportActionResult;
