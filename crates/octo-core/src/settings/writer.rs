@@ -33,7 +33,7 @@ pub enum SettingsWriteError {
 
 /// Reads and writes the editable settings JSON file. Writes do a deep merge
 /// on top of any existing content so partial updates from the admin UI never
-/// blow away unrelated keys (e.g. saving the LastFm tab won't drop Soulseek
+/// blow away unrelated keys (e.g. saving the LastFm tab won't drop Lidarr
 /// settings).
 ///
 /// Parsing accepts comments and trailing commas, because the configuration provider that reads

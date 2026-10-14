@@ -1,6 +1,6 @@
 //! Find songs, and the `UpgradeGate` and `LibraryActionStates` beside it.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -13,16 +13,14 @@ use octo_core::lidarr::{LidarrRelease, LidarrTrackRequest};
 use octo_core::models::download::AcquisitionCandidate;
 use octo_core::settings::{
     DownloadSource, HeartDownloadSource, LibraryAction, LibraryActionSettings, SettingsStore,
-    SoulseekSettings,
 };
-use octo_core::soulseek::soulseek_link::{OFFLINE_TEXT, SoulseekLinkState};
-use octo_core::soulseek::{RoutingKind, SoulseekFileHit};
+use octo_core::soulseek::RoutingKind;
 use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 use super::acquisition_tracker::{AcquisitionState, AcquisitionTracker, acquisition_kinds, key_of};
-use super::download_picks::{DownloadPicks, LIDARR_SOURCE, PickedCopy, SOULSEEK_SOURCE};
+use super::download_picks::{DownloadPicks, LIDARR_SOURCE, PickedCopy};
 use super::replace_anyway::{self, OtherTake, PickCompare, ReplaceCheck};
 use super::track_acquisition_queue::TrackAcquisitionQueue;
 use crate::services::common::AcquisitionTarget;
@@ -31,10 +29,7 @@ use crate::services::library::upgrade_queue::{AudioSummary, UpgradeAsk, UpgradeQ
 use crate::services::library::{NavidromeSongPathResolver, UpgradeSources};
 use crate::services::lidarr::{LidarrClient, LidarrTrackFetcher};
 use crate::services::local::ILocalLibraryService;
-use crate::services::soulseek::rejected_peer_registry::RejectedPeerRegistry;
-use crate::services::soulseek::soulseek_candidates::{self, Judged};
-use crate::services::soulseek::soulseek_download_service::SoulseekDownloadService;
-use crate::services::soulseek::{ExternalIdRegistry, ISoulseekLink, SoulseekMetadataService};
+use crate::services::soulseek::{ExternalIdRegistry, SoulseekMetadataService};
 
 /// The song Find songs looks for: an outside song by its Octo id, or a library song by its
 /// Navidrome id, with what the library holds of it now.
@@ -242,11 +237,10 @@ pub struct PickAsk {
     pub listed: Vec<FoundCopy>,
 }
 
-/// The seams, so tests run a look without slskd, Lidarr or Navidrome.
+/// The seams, so tests run a look without Lidarr or Navidrome.
 #[derive(Clone)]
 pub struct SongFinderSeams {
     pub resolve: ResolveFn,
-    pub search_soulseek: SearchFn,
     pub search_lidarr: SearchFn,
     pub sources_for: SourcesFn,
     pub fetch: FetchFn,
@@ -266,8 +260,6 @@ pub struct SongFinderServices {
     pub local_library: Option<Arc<dyn ILocalLibraryService>>,
     pub id_registry: Option<Arc<ExternalIdRegistry>>,
     pub resolver: Option<Arc<NavidromeSongPathResolver>>,
-    pub soulseek: Option<Arc<SoulseekDownloadService>>,
-    pub soulseek_link: Option<Arc<dyn ISoulseekLink>>,
     pub lidarr_fetcher: Option<Arc<LidarrTrackFetcher>>,
     pub lidarr_client: Option<Arc<LidarrClient>>,
     /// Family's write gate, once Family's services exist: a family member's pick lands in
@@ -276,20 +268,6 @@ pub struct SongFinderServices {
 }
 
 impl SongFinderServices {
-    fn soulseek_settings(&self) -> SoulseekSettings {
-        self.settings
-            .as_ref()
-            .map_or_else(SoulseekSettings::default, |s| s.current().soulseek.clone())
-    }
-
-    fn rejected(&self) -> Option<&RejectedPeerRegistry> {
-        self.soulseek.as_ref().map(|s| s.rejected_peers().as_ref())
-    }
-
-    fn remembers(&self) -> bool {
-        self.soulseek.as_ref().is_some_and(|s| s.remembers_rejections())
-    }
-
     /// Why this person may not have a library song replaced right now, or None.
     fn upgrade_refusal(&self, user: &str) -> Option<String> {
         let settings = self
@@ -304,7 +282,7 @@ impl SongFinderServices {
             &self
                 .upgrade_sources
                 .as_ref()
-                .map_or_else(|| "Soulseek".to_string(), |s| s.name()),
+                .map_or_else(|| "Lidarr".to_string(), |s| s.name()),
         )
     }
 }
@@ -354,7 +332,7 @@ impl Job {
 }
 
 /// Find songs: a person runs a song's search again, by hand, across the download sources they
-/// use (Soulseek and Lidarr), sees every copy found with its details, and picks the one to fetch.
+/// use (Lidarr), sees every copy found with its details, and picks the one to fetch.
 ///
 /// A look runs in the background and is read by its id while it goes, the way the apps already
 /// follow downloads. It never downloads anything; a pick does, through the same pipeline and
@@ -375,7 +353,7 @@ pub struct SongFinder {
 impl SongFinder {
     pub const KEEP: TimeDelta = TimeDelta::minutes(30);
     pub const CAPACITY: usize = 40;
-    /// Looks one person may have running at once. Each one asks every peer on Soulseek.
+    /// Looks one person may have running at once. Each one asks Lidarr's indexers.
     pub const RUNNING_PER_USER: usize = 2;
     /// Looks running at once across everyone, kept under [`Self::CAPACITY`] so a running look is
     /// never forgotten to make room.
@@ -419,13 +397,6 @@ impl SongFinder {
                 Arc::new(move |id, ct| {
                     let services = services.clone();
                     async move { resolve(&services, &id, &ct).await }.boxed()
-                })
-            },
-            search_soulseek: {
-                let services = services.clone();
-                Arc::new(move |target, ct| {
-                    let services = services.clone();
-                    async move { search_soulseek(&services, &target, &ct).await }.boxed()
                 })
             },
             search_lidarr: {
@@ -527,7 +498,7 @@ impl SongFinder {
         } else if state.sources.iter().all(|s| s.state == find_states::OFF) {
             state.state = find_states::FAILED.to_string();
             state.error = Some(
-                "None of your download sources can search: Soulseek or Lidarr has to be set up and switched on for hearts."
+                "None of your download sources can search: Lidarr has to be set up and switched on for hearts."
                     .to_string(),
             );
         }
@@ -629,18 +600,7 @@ impl SongFinder {
             .collect();
         futures::future::join_all(names.iter().map(|name| self.search_one(&job, name))).await;
         let take = if job.target.library_id.is_some() {
-            let listed = job.state.lock().copies.clone();
-            let settings = self.services.soulseek_settings();
-            replace_anyway::library_take(
-                &job.target,
-                replace_anyway::CheckContext {
-                    settings: &settings,
-                    rejected: self.services.rejected(),
-                    remembers: self.services.remembers(),
-                    listed: &listed,
-                },
-            )
-            .map(|(take, _)| take)
+            replace_anyway::library_take(&job.target).map(|(take, _)| take)
         } else {
             None
         };
@@ -666,14 +626,7 @@ impl SongFinder {
     }
 
     async fn search_one(&self, job: &Job, source: &str) {
-        let search = {
-            let seams = self.seams.lock();
-            if source == SOULSEEK_SOURCE {
-                seams.search_soulseek.clone()
-            } else {
-                seams.search_lidarr.clone()
-            }
-        };
+        let search = self.seams.lock().search_lidarr.clone();
         let limit = CancellationToken::new();
         let answer =
             match tokio::time::timeout(Self::SEARCH_LIMIT, search(job.target.clone(), limit.clone())).await {
@@ -794,212 +747,17 @@ impl SongFinder {
 
     /// Why a picked copy cannot replace a library song, or None when it can: only a lossless
     /// copy replaces a lossy one, which is what Better quality checks again when the file
-    /// arrives, and a Soulseek file must pass the download's own name, length and version checks
-    /// (see [`soulseek_candidates::pick_refusal`]).
-    pub fn replace_refusal(
-        target: &FindTarget,
-        copy: &FoundCopy,
-        settings: Option<&SoulseekSettings>,
-        rejected: Option<&RejectedPeerRegistry>,
-        remembers: bool,
-    ) -> Option<String> {
+    /// arrives.
+    pub fn replace_refusal(target: &FindTarget, copy: &FoundCopy) -> Option<String> {
         if is_lossless(target.owned_format.as_deref()) {
             return Some("Your copy is already lossless, so nothing would be better.".to_string());
         }
-        if copy.pick.is_soulseek() && !is_lossless(copy.shown.format.as_deref()) {
-            return Some("Only a lossless copy can take the place of the one in your library.".to_string());
-        }
-        if !copy.pick.is_soulseek()
-            && copy.pick.release().is_some()
-            && !is_lossless(first_word(copy.shown.format.as_deref()))
-        {
+        if copy.pick.release().is_some() && !is_lossless(first_word(copy.shown.format.as_deref())) {
             return Some(
                 "Only a lossless release can take the place of the one in your library.".to_string(),
             );
         }
-        let defaults = SoulseekSettings::default();
-        let hit = copy.pick.to_hit()?;
-        let why = soulseek_candidates::pick_refusal(
-            &hit,
-            judged(target, settings.unwrap_or(&defaults), rejected, remembers),
-            true,
-        )?;
-        Some(format!(
-            "{why}, so it cannot take the place of the one in your library."
-        ))
-    }
-
-    /// Why a picked copy of a song not in the library may not be fetched, or None.
-    pub fn pick_refusal(
-        target: &FindTarget,
-        copy: &FoundCopy,
-        rejected: Option<&RejectedPeerRegistry>,
-        remembers: bool,
-    ) -> Option<String> {
-        let defaults = SoulseekSettings::default();
-        let hit = copy.pick.to_hit()?;
-        let why =
-            soulseek_candidates::pick_refusal(&hit, judged(target, &defaults, rejected, remembers), false)?;
-        Some(format!("{why}, so it is not fetched again."))
-    }
-
-    // ---------------------------------------------------------------------------------------
-    // The Soulseek list
-    // ---------------------------------------------------------------------------------------
-
-    /// "998 files from 490 peers; 40 fit the song", counting the same files the list marks as
-    /// Octo's choices or "Fits too". When the list has no room for all of them, it says how many
-    /// it shows: "306 fit the song; the best 240 are listed". The whole count stays, since it is
-    /// what Soulseek really has.
-    pub fn soulseek_summary(hits: &[SoulseekFileHit], fit: usize, listed: usize) -> String {
-        if hits.is_empty() {
-            return "Nothing found".to_string();
-        }
-        let peers = crate::services::soulseek::soulseek_download_service::distinct_peers(hits);
-        let text = format!(
-            "{} files from {peers} {}; {fit} {} the song",
-            hits.len(),
-            if peers == 1 { "peer" } else { "peers" },
-            if fit == 1 { "fits" } else { "fit" }
-        );
-        if listed < fit {
-            format!("{text}; the best {listed} are listed")
-        } else {
-            text
-        }
-    }
-
-    /// Soulseek's files as the list shows them: the ones the download would try first, in its
-    /// order, then every other file, the likeliest first, each with the reason it was passed
-    /// over.
-    pub fn soulseek_copies(
-        hits: &[SoulseekFileHit],
-        ranked: &[SoulseekFileHit],
-        target: &FindTarget,
-        settings: &SoulseekSettings,
-        rejected: Option<&RejectedPeerRegistry>,
-        remembers: bool,
-    ) -> Vec<FoundCopy> {
-        Self::soulseek_found(hits, ranked, target, settings, rejected, remembers).0
-    }
-
-    /// The list, how many files fit the song, and how many of those are on it: every check the
-    /// download makes passed, which is exactly the rows with no reason against them (Octo's
-    /// choices and "Fits too"). Past [`Self::MAX_COPIES`], a few files of each reason a file was
-    /// passed over stay on the list, and the fitting copies, best first, fill the rest.
-    pub fn soulseek_found(
-        hits: &[SoulseekFileHit],
-        ranked: &[SoulseekFileHit],
-        target: &FindTarget,
-        settings: &SoulseekSettings,
-        rejected: Option<&RejectedPeerRegistry>,
-        remembers: bool,
-    ) -> (Vec<FoundCopy>, usize, usize) {
-        let mut order: HashMap<(&str, &str), i32> = HashMap::new();
-        for (i, hit) in ranked.iter().enumerate() {
-            // ToDictionary refused a second copy of a key; the ranking never repeats one.
-            order
-                .entry((hit.username.as_str(), hit.filename.as_str()))
-                .or_insert(i as i32 + 1);
-        }
-        let song = judged(target, settings, rejected, remembers);
-        struct Row<'a> {
-            hit: &'a SoulseekFileHit,
-            rank: Option<i32>,
-            note: Option<String>,
-            tier: i32,
-        }
-        let mut rows: Vec<Row> = hits
-            .iter()
-            .filter(|hit| !hit.username.is_empty() && !hit.filename.is_empty())
-            .map(|hit| {
-                let rank = order
-                    .get(&(hit.username.as_str(), hit.filename.as_str()))
-                    .copied();
-                let (why, tier) = if rank.is_some() {
-                    (None, 0)
-                } else {
-                    soulseek_candidates::judge(hit, song)
-                };
-                let note = if rank.is_none() {
-                    Some(why.unwrap_or_else(|| "Fits too; a download tries the first few".to_string()))
-                } else {
-                    None
-                };
-                Row {
-                    hit,
-                    rank,
-                    note,
-                    tier,
-                }
-            })
-            .collect();
-        // A stable sort: rows that tie keep their order.
-        rows.sort_by_key(|row| {
-            (
-                row.rank.unwrap_or(i32::MAX),
-                row.tier,
-                std::cmp::Reverse(soulseek_candidates::is_lossless(row.hit)),
-                std::cmp::Reverse(row.hit.has_free_upload_slot == Some(true)),
-                row.hit.queue_length.unwrap_or(i32::MAX),
-                std::cmp::Reverse(row.hit.size),
-            )
-        });
-        let fit = rows.iter().filter(|row| row.tier == 0).count();
-
-        let mut kept: HashSet<usize> = HashSet::new();
-        if rows.len() > Self::MAX_COPIES {
-            // Grouped by note in order of first appearance, each group's first few, then the
-            // room.
-            let mut reasons: Vec<(Option<String>, Vec<usize>)> = Vec::new();
-            for (at, row) in rows.iter().enumerate().filter(|(_, row)| row.tier > 0) {
-                match reasons.iter_mut().find(|(note, _)| *note == row.note) {
-                    Some((_, ats)) => ats.push(at),
-                    None => reasons.push((row.note.clone(), vec![at])),
-                }
-            }
-            for at in reasons
-                .iter()
-                .flat_map(|(_, ats)| ats.iter().take(Self::SKIPPED_PER_REASON))
-                .take(Self::SKIPPED_ROOM)
-            {
-                kept.insert(*at);
-            }
-        }
-        let mut at = 0;
-        while at < rows.len() && kept.len() < Self::MAX_COPIES {
-            kept.insert(at);
-            at += 1;
-        }
-
-        let listed = rows
-            .iter()
-            .enumerate()
-            .filter(|(at, row)| row.tier == 0 && kept.contains(at))
-            .count();
-        let copies = rows
-            .iter()
-            .enumerate()
-            .filter(|(at, _)| kept.contains(at))
-            .map(|(_, row)| {
-                FoundCopy::new(
-                    soulseek_candidates::of(row.hit, row.rank, row.note.as_deref()),
-                    PickedCopy {
-                        source: SOULSEEK_SOURCE.to_string(),
-                        peer: Some(row.hit.username.clone()),
-                        file: Some(row.hit.filename.clone()),
-                        size: row.hit.size,
-                        format: Some(soulseek_candidates::extension(row.hit)),
-                        bit_rate: row.hit.bit_rate,
-                        bit_depth: row.hit.bit_depth,
-                        sample_rate: row.hit.sample_rate,
-                        length: row.hit.length,
-                        ..Default::default()
-                    },
-                )
-            })
-            .collect();
-        (copies, fit, listed)
+        None
     }
 
     /// Lidarr's releases as the list shows them, Lidarr's own order kept. A release it would take
@@ -1092,17 +850,9 @@ impl SongFinder {
     }
 }
 
-/// Where a copy goes on the list: each source's own first choices, then the rest, Soulseek
-/// before Lidarr where they tie.
-fn place(copy: &FoundCopy) -> (i32, i32) {
-    (
-        copy.shown.rank.unwrap_or(i32::MAX),
-        if copy.shown.source == SOULSEEK_SOURCE {
-            0
-        } else {
-            1
-        },
-    )
+/// Where a copy goes on the list: the source's own first choices, then the rest.
+fn place(copy: &FoundCopy) -> i32 {
+    copy.shown.rank.unwrap_or(i32::MAX)
 }
 
 /// Adds one source's copies to the list, each with an id of its own, in their place. The copies
@@ -1121,23 +871,6 @@ fn merge(job: &mut JobState, mut copies: Vec<FoundCopy>) {
             .rposition(|listed| place(listed) <= place(&copy))
             .map_or(0, |last| last + 1);
         job.copies.insert(at, copy);
-    }
-}
-
-fn judged<'a>(
-    target: &'a FindTarget,
-    settings: &'a SoulseekSettings,
-    rejected: Option<&'a RejectedPeerRegistry>,
-    remembers: bool,
-) -> Judged<'a> {
-    Judged {
-        title: &target.title,
-        album: target.album.as_deref(),
-        duration: target.duration,
-        settings,
-        rejected,
-        remembers_rejections: remembers,
-        artist: Some(&target.artist),
     }
 }
 
@@ -1169,29 +902,16 @@ fn fetch(
     ask: &PickAsk,
 ) -> PickOutcome {
     if let Some(library_id) = &target.library_id {
-        let settings = services.soulseek_settings();
         let mut pick = (*copy.pick).clone();
         let mut asked: Option<String> = None;
         match ask.anyway {
             None => {
-                if let Some(refused) = SongFinder::replace_refusal(
-                    target,
-                    copy,
-                    Some(&settings),
-                    services.rejected(),
-                    services.remembers(),
-                ) {
+                if let Some(refused) = SongFinder::replace_refusal(target, copy) {
                     return PickOutcome::skipped(refused);
                 }
             }
             Some(anyway) => {
-                let cx = replace_anyway::CheckContext {
-                    settings: &settings,
-                    rejected: services.rejected(),
-                    remembers: services.remembers(),
-                    listed: &ask.listed,
-                };
-                match replace_anyway::check(target, copy, cx) {
+                match replace_anyway::check(target, copy) {
                     ReplaceCheck::Fits => {
                         // Asked first: nothing is fetched until the person says yes.
                         if !anyway {
@@ -1302,9 +1022,6 @@ fn fetch(
         );
     }
 
-    if let Some(denied) = SongFinder::pick_refusal(target, copy, services.rejected(), services.remembers()) {
-        return PickOutcome::skipped(denied);
-    }
     let external_id = target.external_id.clone().unwrap_or_default();
     let provider = SoulseekMetadataService::PROVIDER_NAME;
     let tracker = services.tracker.clone();
@@ -1355,11 +1072,7 @@ fn fetch(
         true,
         false,
         true,
-        Some(if copy.pick.is_soulseek() {
-            DownloadSource::Soulseek
-        } else {
-            DownloadSource::Lidarr
-        }),
+        Some(DownloadSource::Lidarr),
         true,
         Some(user),
         false,
@@ -1459,96 +1172,33 @@ async fn library_song(
 /// from; a library song the sources Better quality uses.
 fn default_sources(services: &SongFinderServices, target: &FindTarget) -> Vec<(String, Option<String>)> {
     let current = services.settings.as_ref().map(|s| s.current());
-    let soulseek_up = current
-        .as_ref()
-        .is_some_and(|c| UpgradeSources::soulseek_set_up(&c.soulseek));
     let lidarr_up = current
         .as_ref()
         .is_some_and(|c| UpgradeSources::lidarr_set_up(&c.lidarr));
-    let (soulseek_used, lidarr_used) = if target.library_id.is_some() {
-        let wanted = services
+    let lidarr_used = if target.library_id.is_some() {
+        services
             .upgrade_sources
             .as_ref()
-            .map_or_else(|| vec![DownloadSource::Soulseek], |s| s.wanted());
-        (
-            wanted.contains(&DownloadSource::Soulseek),
-            wanted.contains(&DownloadSource::Lidarr),
-        )
+            .map_or_else(|| vec![DownloadSource::Lidarr], |s| s.wanted())
+            .contains(&DownloadSource::Lidarr)
     } else {
-        let steps = current
+        current
             .as_ref()
             .map(|c| c.subsonic.effective_heart_download_sources())
-            .unwrap_or_default();
-        (
-            steps
-                .iter()
-                .any(|step| step.source == HeartDownloadSource::Soulseek && step.song_enabled == Some(true)),
-            steps
-                .iter()
-                .any(|step| step.source == HeartDownloadSource::Lidarr && step.song_enabled == Some(true)),
-        )
+            .unwrap_or_default()
+            .iter()
+            .any(|step| step.source == HeartDownloadSource::Lidarr && step.song_enabled == Some(true))
     };
-    vec![
-        (
-            SOULSEEK_SOURCE.to_string(),
-            if !soulseek_up {
-                Some("Soulseek is not set up on this server".to_string())
-            } else if !soulseek_used {
-                Some("Soulseek is not one of your download sources".to_string())
-            } else {
-                None
-            },
-        ),
-        (
-            LIDARR_SOURCE.to_string(),
-            if !lidarr_up {
-                Some("Lidarr is not set up on this server".to_string())
-            } else if !lidarr_used {
-                Some("Lidarr is not one of your download sources".to_string())
-            } else {
-                None
-            },
-        ),
-    ]
-}
-
-async fn search_soulseek(
-    services: &SongFinderServices,
-    target: &FindTarget,
-    ct: &CancellationToken,
-) -> anyhow::Result<SearchAnswer> {
-    let Some(soulseek) = &services.soulseek else {
-        anyhow::bail!("Soulseek is not available on this server.");
-    };
-    if let Some(link) = &services.soulseek_link
-        && link
-            .read(false)
-            .await
-            .is_some_and(|reading| reading.link == SoulseekLinkState::NotLoggedIn)
-    {
-        anyhow::bail!("{OFFLINE_TEXT}");
-    }
-
-    let found = soulseek
-        .find_copies(
-            &target.artist,
-            &target.title,
-            target.album.as_deref(),
-            target.duration,
-            ct,
-        )
-        .await?;
-    let settings = services.soulseek_settings();
-    let (copies, fit, listed) = SongFinder::soulseek_found(
-        &found.hits,
-        &found.ranked,
-        target,
-        &settings,
-        services.rejected(),
-        services.remembers(),
-    );
-    let text = SongFinder::soulseek_summary(&found.hits, fit, listed);
-    Ok((copies, found.queries, Some(text)))
+    vec![(
+        LIDARR_SOURCE.to_string(),
+        if !lidarr_up {
+            Some("Lidarr is not set up on this server".to_string())
+        } else if !lidarr_used {
+            Some("Lidarr is not one of your download sources".to_string())
+        } else {
+            None
+        },
+    )]
 }
 
 async fn search_lidarr(

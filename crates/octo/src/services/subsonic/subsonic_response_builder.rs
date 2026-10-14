@@ -6,7 +6,7 @@
 //! type, and a `Content-Length`). This module wires it to the app:
 //!
 //! - [`ExternalIdRegistry`] is its id registry;
-//! - [`new_subsonic_response_builder`] builds it from the settings, read once;
+//! - [`new_subsonic_response_builder`] builds it over the app's id registry;
 //! - [`SubsonicResponseBuilderExt`] adds the answers that take app-service types: an
 //!   acquisition snapshot, a generated mix, a library-action outcome and an upgrade job.
 
@@ -16,7 +16,7 @@ use chrono::{DateTime, Utc};
 use octo_core::common::dotnet::to_lower_invariant;
 use octo_core::json::dom::Node;
 use octo_core::library::for_you_lists;
-use octo_core::settings::{GeneratedPlaylistSettings, SubsonicSettings};
+use octo_core::settings::GeneratedPlaylistSettings;
 use octo_core::soulseek::SoulseekRouting;
 use octo_subsonic::subsonic_response_builder::{
     Fields, IdRegistry, LOOKUP_ACTION, REMOVE_ACTION, SUBSONIC_VERSION, SubsonicReply,
@@ -41,13 +41,9 @@ impl IdRegistry for ExternalIdRegistry {
     }
 }
 
-/// The app's builder: over the app's id registry, with `Subsonic:WaitForLosslessOnPlay` read once
-/// here (it decides what every row declares, and is restart-required).
-pub fn new_subsonic_response_builder(
-    id_registry: Arc<ExternalIdRegistry>,
-    subsonic: &SubsonicSettings,
-) -> SubsonicResponseBuilder {
-    SubsonicResponseBuilder::new(id_registry, subsonic)
+/// The app's builder: over the app's id registry.
+pub fn new_subsonic_response_builder(id_registry: Arc<ExternalIdRegistry>) -> SubsonicResponseBuilder {
+    SubsonicResponseBuilder::new(id_registry)
 }
 
 /// The builder's answers that take app-service types.
@@ -562,16 +558,13 @@ mod tests {
     use crate::services::library::LibraryActionState;
 
     fn builder() -> SubsonicResponseBuilder {
-        new_subsonic_response_builder(
-            Arc::new(ExternalIdRegistry::in_memory()),
-            &SubsonicSettings::default(),
-        )
+        new_subsonic_response_builder(Arc::new(ExternalIdRegistry::in_memory()))
     }
 
     #[test]
     fn the_registry_mints_the_ids_of_rows_without_one() {
         let registry = Arc::new(ExternalIdRegistry::in_memory());
-        let builder = new_subsonic_response_builder(registry.clone(), &SubsonicSettings::default());
+        let builder = new_subsonic_response_builder(registry.clone());
         let row = builder.convert_song_to_json(&octo_core::models::domain::Song {
             id: "s".into(),
             title: "Borealis".into(),

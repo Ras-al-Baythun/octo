@@ -1,6 +1,6 @@
 [package]
 name = "octo"
-description = "Octo: a Subsonic proxy that adds Soulseek, YouTube and Last.fm to a Navidrome library."
+description = "Octo: a Subsonic proxy that adds YouTube, Lidarr and Last.fm to a Navidrome library."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

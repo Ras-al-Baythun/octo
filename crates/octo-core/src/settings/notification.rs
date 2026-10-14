@@ -28,18 +28,12 @@ pub struct NotificationSettings {
     /// Environment variable: NOTIFICATIONS__DISCORDWEBHOOKURL
     pub discord_webhook_url: String,
 
-    /// A transfer actually began, saying up front whether it found lossless or is
-    /// settling for MP3. Off by default: it doubles volume for information
-    /// DownloadCompleted mostly repeats, and LosslessFallback (on by default)
-    /// already covers the settling case.
+    /// A transfer actually began, saying up front which format and source it is. Off by
+    /// default: it doubles volume for information DownloadCompleted mostly repeats.
     pub notify_download_started: bool,
 
     /// A track landed: format, source, size, album art.
     pub notify_download_completed: bool,
-
-    /// Soulseek came up empty and Octo settled for a YouTube MP3. On by default:
-    /// silent quality loss is the failure mode this whole feature exists to expose.
-    pub notify_lossless_fallback: bool,
 
     /// Both sources failed for a starred track. Stars only: a shed
     /// play-triggered acquisition is a hint, not an unmet promise.
@@ -64,7 +58,6 @@ impl Default for NotificationSettings {
             discord_webhook_url: String::new(),
             notify_download_started: false,
             notify_download_completed: true,
-            notify_lossless_fallback: true,
             notify_download_failed: true,
             notify_album_completed: true,
             notify_family_requests: true,

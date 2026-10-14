@@ -229,7 +229,7 @@ def cmd_up(args) -> None:
 
         wait_for(f"{label} ping (relayed to navidrome)", octo_ping, 180)
     if args.settle > 0:
-        log(f"  settling {args.settle}s for startup work (library detection, slskd checks)")
+        log(f"  settling {args.settle}s for startup work (library detection, service checks)")
         time.sleep(args.settle)
     log(f"up: target http://127.0.0.1:{args.port} (image {args.image}, project {args.project})")
 

@@ -152,7 +152,6 @@ function activateTab(name, { focus = false } = {}) {
   if (name === 'lastfm' && typeof loadLastFmScrobbling === 'function') loadLastFmScrobbling();
   if (name === 'lastfm' && typeof loadLastFmAccount === 'function') loadLastFmAccount();
   if (name === 'about' && typeof loadUpdate === 'function') loadUpdate();
-  if (name === 'soulseek' && typeof loadSharing === 'function') loadSharing();
   if (name === 'family' && typeof loadFamily === 'function') loadFamily();
   if (focus) {
     window.scrollTo({ top: 0 });
@@ -202,7 +201,7 @@ window.addEventListener('hashchange', followHash);
 // Activity: live progress of Octo's background work
 // ────────────────────────────────────────────────────────────────
 // One card per job (a re-tag, a covers or lyrics run, better copies, hearted downloads, a
-// Spotify read, a duplicate scan, an slskd rescan, Navidrome's scan), updated in place from
+// Spotify read, a duplicate scan, Navidrome's scan), updated in place from
 // GET /api/admin/activity, on whatever page is open. A card never repeats: a job is one card
 // for as long as it runs, then says how it ended and goes. The page that shows a job in full
 // hides its card, and is refreshed when that job starts or ends, so it is never left stale.
@@ -233,7 +232,6 @@ const ACTIVITY_PAGE_REFRESH = {
   health: () => typeof loadHealth === 'function' && loadHealth(),
   fetched: () => typeof loadFetched === 'function' && loadFetched(),
   imports: () => typeof loadImports === 'function' && loadImports(),
-  soulseek: () => typeof loadSharing === 'function' && loadSharing(),
 };
 
 // One card per job kind, so a run that becomes the next run, or a running batch that becomes
@@ -591,13 +589,10 @@ async function loadSettings() {
     else el.value = value;
   });
 
-  syncPlaybackSourceControl();
-  updateStreamSettings();
   updateRadioPublicationSettings();
   renderHeartSourceOrder(currentSettings?.Subsonic?.HeartDownloadSources);
   renderLyricsSources(currentSettings?.Metadata?.LyricsSources ?? '');
   renderRadioDiscovery(currentSettings?.LastFm?.DiscoveryStations);
-  renderRejectedPeerCount();
   renderGenreMappings(currentSettings?.Genre?.Mappings);
   renderGenreBlocklist(currentSettings?.Genre?.Blocklist);
   syncGenreUnknownRow();
@@ -629,8 +624,6 @@ async function loadSettings() {
   if (version && currentSettings?._meta?.Version) {
     version.textContent = currentSettings._meta.Version;
   }
-  renderSlskdOpen();
-
   renderOctoAddresses();
   updateDiscoveryBanner();
   buildSegments();
@@ -728,8 +721,6 @@ function revertForm(form) {
     if (field) { try { draw(field.value); } catch { /* keeps what is drawn */ } }
   });
   form.querySelectorAll('.field-error').forEach(el => { el.hidden = true; });
-  syncPlaybackSourceControl();
-  updateStreamSettings();
   updateRadioPublicationSettings();
   syncGenreUnknownRow();
   updateDiscoveryBanner();
@@ -993,7 +984,6 @@ document.querySelectorAll('form[data-section]').forEach(form => {
 // Heart acquisition is a short priority chain, not a workflow graph. Keep all
 // sources visible so disabling one never destroys the user's chosen order.
 const heartSourceMeta = {
-  Soulseek: { title: 'Soulseek', detail: 'Lossless FLAC from slskd peers', mark: 'b-slskd' },
   YouTube: { title: 'YouTube', detail: 'Lossy MP3 from the yt-dlp shim', mark: 'b-youtube' },
   Lidarr: { title: 'Lidarr', detail: 'Album automation through your Lidarr server', mark: 'b-lidarr' },
 };
@@ -1016,11 +1006,11 @@ function normalizeHeartSourceSteps(steps) {
       AlbumEnabled: Boolean(step?.AlbumEnabled ?? step?.albumEnabled ?? legacyEnabled),
     });
   });
-  ['Soulseek', 'YouTube', 'Lidarr'].forEach(source => {
+  ['YouTube', 'Lidarr'].forEach(source => {
     if (!seen.has(source)) normalized.push({
       Source: source,
-      SongEnabled: source === 'Soulseek',
-      AlbumEnabled: source === 'Soulseek',
+      SongEnabled: source === 'YouTube',
+      AlbumEnabled: source === 'YouTube',
     });
   });
   return normalized;
@@ -1072,29 +1062,6 @@ function renderHeartSourceOrder(steps = heartSourceSteps) {
   }).join('');
   syncHeartSourceInput();
 }
-
-function updateStreamSettings() {
-  const waitForLossless = document.getElementById('f-wait-for-lossless-on-play')?.checked;
-  const activeSource = waitForLossless ? 'Lossless' : 'YouTube';
-  document.querySelectorAll('[data-stream-source]').forEach(section => {
-    section.hidden = section.dataset.streamSource !== activeSource;
-  });
-}
-
-function syncPlaybackSourceControl() {
-  const control = document.getElementById('f-playback-source');
-  const wait = document.getElementById('f-wait-for-lossless-on-play');
-  if (!control || !wait) return;
-  control.value = wait.checked ? 'Lossless' : 'YouTube';
-}
-
-document.getElementById('f-playback-source')?.addEventListener('change', event => {
-  const wait = document.getElementById('f-wait-for-lossless-on-play');
-  if (!wait) return;
-  wait.checked = event.target.value === 'Lossless';
-  wait.dispatchEvent(new Event('input', { bubbles: true }));
-  updateStreamSettings();
-});
 
 function updateRadioPublicationSettings() {
   const enabled = Boolean(document.getElementById('f-radio-streams')?.checked);
@@ -1240,35 +1207,6 @@ function syncHeartSourceOrderFromDom() {
   refreshHeartSourceRowNumbers();
   syncHeartSourceInput();
 }
-
-// The count comes from _meta rather than a second fetch, so the button says how much it
-// would actually forget. A button labelled "Forget rejected peers" on an empty list looks
-// broken when clicking it changes nothing.
-function renderRejectedPeerCount() {
-  const button = document.getElementById('rejected-peers-clear');
-  if (!button) return;
-  const count = currentSettings?._meta?.RejectedPeerCount ?? 0;
-  button.textContent = count > 0 ? `Forget ${count} rejected peer${count === 1 ? '' : 's'}` : 'Nothing rejected yet';
-  button.disabled = count === 0;
-}
-
-document.getElementById('rejected-peers-clear')?.addEventListener('click', async event => {
-  const button = event.currentTarget;
-  const count = currentSettings?._meta?.RejectedPeerCount ?? 0;
-  if (!count) return;
-  if (!(await askConfirm(`Forget ${count} rejected peer${count === 1 ? '' : 's'}?`, 'Those files become downloadable again.', 'Forget'))) return;
-  try {
-    const response = await api('/api/admin/soulseek/rejected-peers/clear', { method: 'POST' });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const body = await response.json();
-    // Only the count changed. Reloading every form here threw away unsaved edits elsewhere.
-    currentSettings = await (await api('/api/admin/settings', { cache: 'no-store' })).json();
-    renderRejectedPeerCount();
-    note(button, `Forgot ${body.cleared} rejected peer${body.cleared === 1 ? '' : 's'}.`);
-  } catch (error) {
-    note(button, `Could not clear: ${error.message}`, 'error');
-  }
-});
 
 // ---- Genre mapping rules -------------------------------------------------
 //
@@ -4656,7 +4594,7 @@ function followReplacement(copyId, libraryId, plain) {
     const state = job?.state || 'queued';
     if (['queued', 'waiting', 'working'].includes(state)) {
       const pct = typeof job?.progress === 'number' ? ` ${Math.round(job.progress * 100)}%` : '';
-      const how = state === 'waiting' ? 'Waiting for Soulseek' : job?.note || (state === 'queued' ? 'Waiting its turn' : 'Getting it');
+      const how = state === 'waiting' ? 'Waiting for Lidarr' : job?.note || (state === 'queued' ? 'Waiting its turn' : 'Getting it');
       setFindStatus(copyId, { kind: 'busy', text: `Replacing...${pct} ${how}.` });
       setTimeout(step, 2000);
       return;
@@ -5216,7 +5154,6 @@ function heartSourceReachable() {
   const enabled = steps.filter(step => step.SongEnabled || step.AlbumEnabled).map(step => step.Source);
   if (!enabled.length) return { ok: false, detail: 'No heart source is switched on, so a heart downloads nothing.' };
   const reachable = enabled.filter(source => {
-    if (source === 'Soulseek') return services.slskd?.ok && !services.slskd?.warning;
     if (source === 'YouTube') return services.ytDlpShim?.ok;
     if (source === 'Lidarr') return services.lidarr?.ok && services.lidarr?.configured !== false && !services.lidarr?.warning;
     return false;
@@ -5955,7 +5892,7 @@ const lossy = { rows: [], picked: new Set(), shown: 200, timer: null, view: null
 const LOSSY_PAGE = 200;
 const LOSSY_RECENT_MS = 28 * 24 * 3600 * 1000;
 const upgradeWords = {
-  queued: 'Queued', waiting: 'Waiting for Soulseek', working: 'Looking', upgraded: 'Upgraded',
+  queued: 'Queued', waiting: 'Waiting for Lidarr', working: 'Looking', upgraded: 'Upgraded',
   notFound: 'No higher quality found', rehearsed: 'Rehearsed', skipped: 'Skipped', failed: 'Failed',
 };
 const upgradeTone = { upgraded: 'good', waiting: 'warn', notFound: 'warn', skipped: 'warn', failed: 'failed' };
@@ -6083,17 +6020,12 @@ function renderLossy() {
   const jobs = view?.jobs || [];
   const count = state => jobs.filter(job => job.state === state).length;
   const tally = [
-    [count('working'), 'running'], [count('queued'), 'waiting'], [count('waiting'), 'waiting for Soulseek'],
+    [count('working'), 'running'], [count('queued'), 'waiting'], [count('waiting'), 'waiting for Lidarr'],
     [count('upgraded'), 'upgraded'], [count('notFound'), 'with no copy found'], [count('failed'), 'failed'],
   ].filter(([n]) => n > 0).map(([n, label]) => `${n} ${label}`);
   if (tally.length) parts.push(`Queue: ${tally.join(', ')}.`);
   if (view?.source) parts.push(`Copies come from ${view.source}.`);
   if (view) parts.push(`${view.why}`);
-  // Soulseek's state matters only while Soulseek is one of the sources, and with Lidarr beside
-  // it an outage just means Lidarr is asked alone.
-  const plan = view?.plan || ['Soulseek'];
-  if (view?.soulseek?.warning && plan.includes('Soulseek'))
-    parts.push(plan.includes('Lidarr') ? `${view.soulseek.detail} Lidarr is asked alone until it is back.` : view.soulseek.detail);
   document.getElementById('lossy-status').textContent = parts.join(' ');
 
   const closed = lossyGateClosed();
@@ -6567,192 +6499,6 @@ document.getElementById('update-copy')?.addEventListener('click', () => copyComm
 document.getElementById('update-reinstall-copy')?.addEventListener('click', () => copyCommand('update-reinstall-command'));
 
 // ────────────────────────────────────────────────────────────────
-// Soulseek: Open slskd, and the Sharing card
-// ────────────────────────────────────────────────────────────────
-// The browser only ever gets slskd's address. slskd asks for its own sign-in, so the login Octo
-// uses for slskd stays on the server.
-function safeHttpUrl(value) {
-  try {
-    const url = new URL(String(value ?? '').trim());
-    return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : null;
-  } catch { return null; }
-}
-
-function slskdWebUrl() {
-  const own = safeHttpUrl(currentSettings?.Soulseek?.WebUrl);
-  if (own) return own;
-  const base = safeHttpUrl(currentSettings?.Soulseek?.BaseUrl);
-  const port = base ? (new URL(base).port || '5030') : '5030';
-  if (base) {
-    // An address or a dotted name is somewhere this browser can go too. "slskd" is a name only
-    // Docker's network knows, and localhost would be this browser's own machine.
-    const host = new URL(base).hostname;
-    const local = host === 'localhost' || host.startsWith('127.') || host === '[::1]';
-    if (!local && (host.includes('.') || host.startsWith('['))) return base;
-  }
-  return `http://${location.hostname}:${port}/`;
-}
-
-function renderSlskdOpen() {
-  const open = document.getElementById('slskd-open');
-  if (open) open.href = slskdWebUrl();
-}
-
-const shareSize = bytes => {
-  const units = ['bytes', 'KB', 'MB', 'GB', 'TB'];
-  let value = bytes, unit = 0;
-  while (value >= 1000 && unit < units.length - 1) { value /= 1000; unit++; }
-  return `${unit === 0 ? value : value.toFixed(value >= 100 ? 0 : 1)} ${units[unit]}`;
-};
-const sharePlural = (n, one, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
-// "day", "3 hours", "90 minutes": the plainest whole unit.
-const shareEvery = minutes => {
-  const [n, unit] = minutes % 1440 === 0 ? [minutes / 1440, 'day']
-    : minutes % 60 === 0 ? [minutes / 60, 'hour'] : [minutes, 'minute'];
-  return n === 1 ? unit : sharePlural(n, unit);
-};
-
-function sharePortText(port) {
-  const when = port?.checkedAt ? `, tested ${new Date(port.checkedAt).toLocaleString()}` : '';
-  const number = port?.port ?? 'unknown';
-  switch (port?.state) {
-    case 'Open': return `${number}, open: other people can connect${when}`;
-    case 'Closed': return `${number}, closed: other people cannot connect${when}`;
-    case 'Off': return `${number}, not tested (the test is off below)`;
-    default: return `${number}, ${port?.error ? `not known. ${port.error}` : 'not tested yet'}`;
-  }
-}
-
-let shareScanTimer = null;
-
-function renderSharing(report) {
-  const line = document.getElementById('share-line');
-  const facts = document.getElementById('share-facts');
-  const warnings = document.getElementById('share-warnings');
-  if (!line || !facts || !warnings) return;
-
-  const shared = (report.folders || []).filter(folder => !folder.excluded);
-  const choice = report.switch || {};
-  const toggle = document.getElementById('share-switch');
-  if (toggle && !toggle.dataset.busy) {
-    toggle.checked = !!choice.on;
-    toggle.disabled = !report.reachable;
-  }
-  const outside = choice.control === 'Outside' ? ' slskd\'s shares are set outside Octo, so the switch above stands aside.' : '';
-  if (!report.reachable) line.textContent = 'Octo cannot reach slskd right now.';
-  else if (shared.length === 0 && !choice.on && choice.control !== 'Outside')
-    line.textContent = 'Sharing is off, so nothing in your library is shared. Many people on Soulseek send files more readily to someone who shares, so turning it on can help your own downloads.';
-  else if (shared.length === 0) line.textContent = `You share nothing yet.${outside}`;
-  else {
-    let text = report.files == null ? 'Sharing.'
-      : `Sharing ${sharePlural(report.files, 'file')} in ${sharePlural(report.directories ?? 0, 'folder')}.`;
-    if (report.scanning) text += ` slskd is looking through your folders now${report.scanProgress != null ? ` (${Math.round(report.scanProgress * 100)}%)` : ''}.`;
-    if (report.networkFiles != null && report.files != null && report.networkFiles !== report.files && !report.scanning)
-      text += ` Soulseek has ${sharePlural(report.networkFiles, 'file')} on record for you.`;
-    line.textContent = text + outside;
-  }
-
-  const rows = [];
-  if (report.reachable) {
-    const folderText = folder => `${folder.alias || folder.path}${folder.alias && folder.path ? ` (${folder.path})` : ''}${folder.files != null ? `, ${sharePlural(folder.files, 'file')}` : ''}`;
-    rows.push(['Shared', shared.length ? shared.map(folderText).join('; ') : 'nothing']);
-    const kept = (report.folders || []).filter(folder => folder.excluded);
-    if (kept.length) rows.push(['Kept out', kept.map(folder => folder.path).join('; ')]);
-    const up = report.uploads;
-    rows.push(['Uploading now', `${up.sending.toLocaleString()} sending, ${up.waiting.toLocaleString()} waiting`]);
-    rows.push(['Last 7 days', up.files
-      ? `${sharePlural(up.files, 'file')}, ${shareSize(up.bytes)}, to ${sharePlural(up.people, 'person', 'people')}${up.failed ? `; ${up.failed.toLocaleString()} failed` : ''}`
-      : `nothing downloaded from you${up.failed ? `; ${up.failed.toLocaleString()} failed` : ''}`]);
-    if (up.lastUploadAt) rows.push(['Last upload', new Date(up.lastUploadAt).toLocaleString()]);
-    const slots = report.uploadSlots != null ? `${report.uploadSlots.toLocaleString()} at a time` : 'slskd did not say';
-    const speed = report.uploadSpeedLimitKiB != null ? `${report.uploadSpeedLimitKiB.toLocaleString()} KiB/s in all` : 'no speed limit';
-    rows.push(['Upload limits', `${slots}, ${speed}`]);
-    rows.push(['Rescans', report.rescanMinutes
-      ? `every ${shareEvery(report.rescanMinutes)}`
-      : 'when slskd starts, or when you press Rescan']);
-    rows.push(['Listening port', sharePortText(report.port)]);
-  }
-  facts.innerHTML = rows.map(([term, value]) => `<div><dt>${esc(term)}</dt><dd>${esc(value)}</dd></div>`).join('');
-  facts.hidden = rows.length === 0;
-
-  const list = report.warnings || [];
-  warnings.innerHTML = list.map(warning => `<div class="notice notice-warn" role="status">${esc(warning.text)}</div>`).join('');
-  warnings.hidden = list.length === 0;
-
-  document.getElementById('share-rescan').disabled = !report.reachable || shared.length === 0 || report.scanning;
-
-  // While slskd looks through the folders, look again every few seconds until the count settles.
-  clearTimeout(shareScanTimer);
-  if (report.scanning && document.querySelector('[data-pane="soulseek"].active'))
-    shareScanTimer = setTimeout(() => loadSharing(), 4000);
-  document.getElementById('share-test-port').disabled = !report.reachable || report.port?.state === 'Off' || report.listenPort == null;
-}
-
-async function loadSharing({ testPort = false } = {}) {
-  const line = document.getElementById('share-line');
-  if (!line) return null;
-  try {
-    const r = testPort
-      ? await api('/api/admin/soulseek/sharing/test-port', { method: 'POST' })
-      : await api('/api/admin/soulseek/sharing', { cache: 'no-store' });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    const report = await r.json();
-    renderSharing(report);
-    return report;
-  } catch (e) {
-    line.textContent = `Octo did not answer: ${e.message}`;
-    return null;
-  }
-}
-
-document.getElementById('share-refresh')?.addEventListener('click', () => loadSharing());
-document.getElementById('share-switch')?.addEventListener('change', async event => {
-  const toggle = event.currentTarget;
-  const on = toggle.checked;
-  toggle.dataset.busy = '1';
-  toggle.disabled = true;
-  note(document.getElementById('share-line'), on ? 'Turning sharing on…' : 'Turning sharing off…', 'busy');
-  try {
-    const r = await api('/api/admin/soulseek/sharing/share', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ on }),
-    });
-    const body = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(body.error || `HTTP ${r.status}`);
-    delete toggle.dataset.busy;
-    renderSharing(body);
-    const problem = body.switch?.problem;
-    if (problem) note(document.getElementById('share-line'), 'Saved, but slskd did not take it. See the note below.', 'error');
-    else note(document.getElementById('share-line'), on ? 'Sharing is on. slskd is looking through your library.' : 'Sharing is off. Nothing is shared.', 'ok');
-  } catch (e) {
-    delete toggle.dataset.busy;
-    toggle.checked = !on;
-    toggle.disabled = false;
-    note(document.getElementById('share-line'), e.message || 'Octo did not answer.', 'error');
-  }
-});
-document.getElementById('share-test-port')?.addEventListener('click', async event => {
-  const button = event.currentTarget;
-  button.disabled = true;
-  note(button, 'Asking Soulseek\'s port test…', 'busy');
-  const report = await loadSharing({ testPort: true });
-  const state = report?.port?.state;
-  if (state === 'Open') note(button, 'Open. Other people can connect to slskd.', 'ok');
-  else if (state === 'Closed') note(button, 'Closed. See the note below.', 'error');
-  else note(button, report?.port?.error || 'No answer from the port test.', 'info');
-});
-document.getElementById('share-rescan')?.addEventListener('click', async event => {
-  const button = event.currentTarget;
-  button.disabled = true;
-  const r = await api('/api/admin/soulseek/sharing/rescan', { method: 'POST' }).catch(() => null);
-  const body = await r?.json().catch(() => ({}));
-  if (r?.ok) note(button, 'slskd is looking through your shared folders. A big library takes a while.', 'ok');
-  else note(button, body?.error || 'Octo did not answer.', 'error');
-  setTimeout(() => loadSharing(), 2000);
-});
-
-// ────────────────────────────────────────────────────────────────
 // Import: lists from a Spotify account, a link, a file or a pasted list, the services TuneMyMusic
 // exports from, what the library has of each list, playlists kept in Navidrome, and the trickle
 // that fetches the rest
@@ -7017,7 +6763,6 @@ function renderTrickle() {
     paused: 'Paused',
     off: 'Off',
     yielding: 'Waiting for other downloads',
-    waitingForSoulseek: 'Waiting for Soulseek',
   };
   impEl('imp-trickle-title').textContent = words[t.state] ?? t.state;
   const parts = [];
@@ -7025,7 +6770,6 @@ function renderTrickle() {
   else parts.push(`Up to ${t.perHour} ${t.perHour === 1 ? 'song' : 'songs'} an hour.`);
   if (t.state === 'running' && t.nextUtc && !t.downloading) parts.push(`Next song at ${impWhen(t.nextUtc)}.`);
   if (t.state === 'yielding') parts.push('Someone\'s own downloads come first; it goes on once they finish.');
-  if (t.state === 'waitingForSoulseek') parts.push('slskd is not logged in to Soulseek; it goes on once it is back.');
   const tally = [[t.queued, 'waiting'], [t.downloading, 'fetching'], [t.done, 'fetched'], [t.notFound, 'not found'], [t.skipped, 'skipped']]
     .filter(([count]) => count > 0).map(([count, label]) => `${count} ${label}`);
   if (tally.length) parts.push(`${tally.join(', ')}.`);
@@ -7375,7 +7119,7 @@ function healthWhyNot(check, fixes) {
   const can = healthReport.can || {};
   if (can.why || fixes.all) return '';
   if (check.check === 'duplicates' && !can.remove) return 'Removing a copy needs the Delete action, which is off. Turn it on under Library actions to fix these here.';
-  if (check.check === 'noLength' && !can.upgrade) return 'Finding a higher quality copy needs the Better quality action and Soulseek or Lidarr. Turn it on under Library actions.';
+  if (check.check === 'noLength' && !can.upgrade) return 'Finding a higher quality copy needs the Better quality action and Lidarr. Turn it on under Library actions.';
   if (check.check === 'noCover' && !can.addCover) return 'This server cannot look covers up.';
   if (['noYear', 'noGenre', 'noAlbumArtist'].includes(check.check) && can.edit && !check.fixAllLabel)
     return 'No song here has an album that agrees on it, so they can only be looked up.';
@@ -8113,5 +7857,4 @@ ready.then(() => {
   activityTick();
   loadSignedIn();
   loadUpdate();
-  renderSlskdOpen();
 });

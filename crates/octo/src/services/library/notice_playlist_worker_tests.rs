@@ -157,14 +157,14 @@ fn may_submit_needs_consent_both_keys_and_a_real_run() {
             dry_run,
             ..Default::default()
         };
-        let soulseek = SoulseekSettings {
+        let downloads = DownloadSettings {
             submit_confirmed_fingerprints: consent,
             acoust_id_api_key: app_key.into(),
             acoust_id_user_api_key: user_key.into(),
             ..Default::default()
         };
         assert_eq!(
-            NoticePlaylistWorker::may_submit(&settings, &soulseek),
+            NoticePlaylistWorker::may_submit(&settings, &downloads),
             expected,
             "{consent} {dry_run} {app_key:?} {user_key:?}"
         );
@@ -189,12 +189,12 @@ fn submittable_only_what_acoust_id_could_not_place_at_the_standard_length() {
             duration_seconds: 330,
             ..Default::default()
         };
-        let soulseek = SoulseekSettings {
+        let downloads = DownloadSettings {
             fingerprint_seconds: seconds,
             ..Default::default()
         };
         assert_eq!(
-            NoticePlaylistWorker::submittable(&entry, &soulseek),
+            NoticePlaylistWorker::submittable(&entry, &downloads),
             expected,
             "{cause:?} {seconds}"
         );
@@ -203,7 +203,7 @@ fn submittable_only_what_acoust_id_could_not_place_at_the_standard_length() {
 
 #[test]
 fn submittable_without_a_length_or_a_fingerprint_is_not() {
-    let soulseek = SoulseekSettings {
+    let downloads = DownloadSettings {
         fingerprint_seconds: 120,
         ..Default::default()
     };
@@ -214,7 +214,7 @@ fn submittable_without_a_length_or_a_fingerprint_is_not() {
             fingerprint: Some("AQADtEqk".into()),
             ..Default::default()
         },
-        &soulseek
+        &downloads
     ));
     assert!(!NoticePlaylistWorker::submittable(
         &NoticeEntry {
@@ -222,6 +222,6 @@ fn submittable_without_a_length_or_a_fingerprint_is_not() {
             duration_seconds: 330,
             ..Default::default()
         },
-        &soulseek
+        &downloads
     ));
 }

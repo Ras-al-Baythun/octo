@@ -6,6 +6,7 @@
 //! methods clamp at read time.
 
 pub mod admin;
+pub mod downloads;
 pub mod family;
 pub mod generated_playlist;
 pub mod genre;
@@ -19,7 +20,6 @@ pub mod notification;
 pub mod radio_source;
 pub mod restart_tracker;
 pub mod server;
-pub mod soulseek;
 pub mod store;
 pub mod subsonic;
 mod text;
@@ -32,6 +32,7 @@ use serde::{Deserialize, Serialize};
 use crate::config::{BindWarning, ConfigTree, bind};
 
 pub use admin::AdminSettings;
+pub use downloads::DownloadSettings;
 pub use family::FamilySettings;
 pub use generated_playlist::GeneratedPlaylistSettings;
 pub use genre::{
@@ -50,7 +51,6 @@ pub use notification::NotificationSettings;
 pub use radio_source::RadioSourceSettings;
 pub use restart_tracker::RestartTracker;
 pub use server::ServerSettings;
-pub use soulseek::SoulseekSettings;
 pub use store::{RawConfig, SettingsStore};
 pub use subsonic::{
     DownloadMode, DownloadSource, ExplicitFilter, FolderStructure, HeartDownloadSource, HeartDownloadStep,
@@ -66,7 +66,7 @@ pub use writer::{JsonObject, SettingsFileCorruptError, SettingsFileWriter, Setti
 #[serde(default, rename_all = "PascalCase")]
 pub struct AppSettings {
     pub subsonic: SubsonicSettings,
-    pub soulseek: SoulseekSettings,
+    pub downloads: DownloadSettings,
     pub lidarr: LidarrSettings,
     pub last_fm: LastFmSettings,
     pub radio_sources: RadioSourceSettings,
@@ -90,7 +90,7 @@ impl AppSettings {
         "LibraryActions",
         "GeneratedPlaylists",
         "Subsonic",
-        "Soulseek",
+        "Downloads",
         "Lidarr",
         "LastFm",
         "RadioSources",
@@ -114,7 +114,7 @@ impl AppSettings {
             library_actions: bind_section(tree, "LibraryActions", &mut warnings),
             generated_playlists: bind_section(tree, "GeneratedPlaylists", &mut warnings),
             subsonic: bind_section(tree, "Subsonic", &mut warnings),
-            soulseek: bind_section(tree, "Soulseek", &mut warnings),
+            downloads: bind_section(tree, "Downloads", &mut warnings),
             lidarr: bind_section(tree, "Lidarr", &mut warnings),
             last_fm: bind_section(tree, "LastFm", &mut warnings),
             radio_sources: bind_section(tree, "RadioSources", &mut warnings),
@@ -133,8 +133,6 @@ impl AppSettings {
         if let Some(url) = settings.subsonic.url.as_mut() {
             *url = normalize_server_url(url);
         }
-        // The same for slskd's web address: read without the spaces it may have been typed with.
-        settings.soulseek.web_url = settings.soulseek.web_url.trim().to_string();
         (settings, warnings)
     }
 }
@@ -182,13 +180,13 @@ mod tests {
         assert_eq!(normalize_server_url(""), "");
     }
 
-    /// slskd's web address is read without the spaces it was typed with.
+    /// The Downloads section binds by its name, like every other section.
     #[test]
-    fn slskds_web_address_is_read_without_spaces() {
+    fn the_downloads_section_binds_by_its_name() {
         let mut tree = ConfigTree::new();
-        tree.set("Soulseek:WebUrl", Some(" http://slskd.lan:5030/ ".into()));
+        tree.set("Downloads:ParallelDownloads", Some("5".into()));
         let (settings, warnings) = AppSettings::bind(&tree);
         assert!(warnings.is_empty());
-        assert_eq!(settings.soulseek.web_url, "http://slskd.lan:5030/");
+        assert_eq!(settings.downloads.parallel_downloads, 5);
     }
 }

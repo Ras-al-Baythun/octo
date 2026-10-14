@@ -106,7 +106,7 @@ fn decide_score_below_threshold_is_inconclusive_not_a_mismatch() {
     assert_eq!(verdict.deny_reason, "");
 }
 
-/// An obscure track has no AcoustID entry, and that is the music Soulseek exists to find.
+/// An obscure track has no AcoustID entry, and that is the music Octo exists to find.
 /// Rejecting on absence would make verification worst where the library is rarest.
 #[test]
 fn decide_no_results_at_all_is_inconclusive() {
@@ -801,12 +801,12 @@ fn acoust_id_agreeing_candidate_skips_another_version() {
 /// a file is never even fingerprinted.
 #[tokio::test]
 async fn the_preview_verifier_answers_through_the_service() {
-    use octo_core::settings::{AppSettings, SoulseekSettings};
+    use octo_core::settings::{AppSettings, DownloadSettings};
 
     use crate::services::fingerprint::{AcoustIdRateLimitHandler, AcoustIdRateLimiter};
 
     let settings = Arc::new(SettingsStore::for_tests(AppSettings {
-        soulseek: SoulseekSettings {
+        downloads: DownloadSettings {
             verify_downloads: true,
             ..Default::default()
         },
@@ -825,7 +825,7 @@ async fn the_preview_verifier_answers_through_the_service() {
     let verifier: &dyn FingerprintVerifier = &service;
     // No key: nothing to ask AcoustID with.
     assert!(!verifier.is_fingerprinting_enabled());
-    assert!(service.remembers_rejections());
+    assert!(service.verifies_downloads());
     assert_eq!(
         verifier.verify("/nowhere.flac", "A", "T").await.reason,
         InconclusiveReason::Disabled

@@ -64,7 +64,7 @@ struct Token<'a> {
     rule: Option<&'a GenreMappingSettings>,
 }
 
-/// Turns whatever a downloader, a Soulseek peer or Deezer called a genre into the small set
+/// Turns whatever a downloader, a release's tagger or Deezer called a genre into the small set
 /// of genres a library can browse.
 ///
 /// Static and synchronous on purpose: the fallback lookup is the caller's async problem, and

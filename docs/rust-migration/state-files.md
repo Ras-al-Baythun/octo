@@ -30,7 +30,7 @@ Unless a file says otherwise below, the writer calls `JsonSerializer.Serialize(v
 |---|---|---|
 | Property names | **PascalCase, exactly as declared in C#**. There is no naming policy, so it is not camelCase. Only two types use `[JsonPropertyName]`: the journal lines `GenreJournalEntry` (`p`,`b`,`a`,`t`,`r`) and `CoverUpgradeJournal.Entry` (`p`,`k`,`h`,`r`). | `#[serde(rename_all = "PascalCase")]` usually works, but rename fields explicitly where the C# name has odd casing (`ETag`, `YouTubeId`, `IsLocal`...). |
 | Property order | Declaration order. For positional records, the constructor parameters come first, then properties declared in the record body (for example `LibraryActionEntry`: the 14 positional ones, then `HistoryKept`, `RevealedPath`). | Rust struct field order = output order. |
-| **Computed get-only properties are written** | STJ serializes every public getter. Unless it is marked `[JsonIgnore]`, a computed property is in the file. On read it is ignored, because there is no setter or constructor parameter. Cases: `HeldAcquisition.Key`, `SoulseekRouting.HasYouTube`/`HasArtistTitle`, `GenreBackfillRun.CanResume`, `LyricsLibraryRun.CanResume`, `LyricsPin.IsHidden` + `LyricsPin.Lyrics` (a whole nested `LyricsResult` with its own computed `HasSynced`, `HasPlain`, `HasWordTiming`, `Timing`, `IsSongsOwn`), and `LyricsLibraryRow.Found` (also a `LyricsResult`). Not written: `CoverUpgradeRun.DryRun`/`CanResume` and `NoticeEntry.IsOpen` (`[JsonIgnore]`). | Rust must **emit** these, computed the same way, to stay byte-identical (and for a C# downgrade it does no harm). On read, ignore them. |
+| **Computed get-only properties are written** | STJ serializes every public getter. Unless it is marked `[JsonIgnore]`, a computed property is in the file. On read it is ignored, because there is no setter or constructor parameter. Cases: `ExternalRouting.HasYouTube`/`HasArtistTitle`, `GenreBackfillRun.CanResume`, `LyricsLibraryRun.CanResume`, `LyricsPin.IsHidden` + `LyricsPin.Lyrics` (a whole nested `LyricsResult` with its own computed `HasSynced`, `HasPlain`, `HasWordTiming`, `Timing`, `IsSongsOwn`), and `LyricsLibraryRow.Found` (also a `LyricsResult`). Not written: `CoverUpgradeRun.DryRun`/`CanResume` and `NoticeEntry.IsOpen` (`[JsonIgnore]`). | Rust must **emit** these, computed the same way, to stay byte-identical (and for a C# downgrade it does no harm). On read, ignore them. |
 | Nulls | **Written** as `null`. No `DefaultIgnoreCondition` is set anywhere. | No `skip_serializing_if`. `Option<T>` → `null`. |
 | Enums | **Numbers** (the underlying int), except in `notice-queue.json`, which uses `JsonStringEnumConverter` with no naming policy (names exactly as declared: `"Review"`, `"SourceDisagreed"`). | `serde_repr`, plus a string enum for the notice queue. The converter also accepts integers and is case-insensitive on read. |
 | Indentation | Compact: no whitespace and **no trailing newline**. `WriteIndented = true` only for `lastfm-radio-state.json`, `.mappings.json` and `settings.json`: 2 spaces, `"key": value` with one space after the colon, `\n` line endings on Linux, no trailing newline, and empty arrays and objects written as `[]` / `{}`. | serde_json's `PrettyFormatter` matches the 2-space shape. Check the empty-collection and `": "` details in the round-trip test. |
@@ -54,10 +54,8 @@ Unless a file says otherwise below, the writer calls `JsonSerializer.Serialize(v
 | `settings.json` | yes | `settings.json.tmp` | every admin save | `lock` per writer | `{}` | the writer **refuses** to overwrite (throws `SettingsFileCorruptException`); display readers get `{}` |
 | `downloads-history.json` | yes | `.tmp` | each finished download | `lock` | empty | warn, start empty (overwritten on the next record) |
 | `lastfm-radio-state.json` | yes | `.tmp` | every change | `lock` | empty doc | warn, start empty. `Version != 1` → start empty |
-| `soulseek-holds.json` | yes | `.tmp` | every change (in the lock) | `lock` | empty | warn, empty |
 | `external-ids.json` | yes | `.tmp` | coalesced, 10 s | LRU lock, `Interlocked` dirty flag | empty | warn, cold start |
 | `browse-sessions.json` | yes | `.tmp` | create/revoke/expire, and slides at most once a day per session | save lock | empty | warn, everyone signs in again |
-| `rejected-peers.json` | yes | `.tmp` | coalesced, 10 s | LRU lock, `Interlocked` | empty | warn, cold start |
 | `genre-backfill.json` | yes | `.tmp` | coalesced, 10 s, plus immediately on `Replace` | `lock` | Idle run | warn, Idle run |
 | `genre-backfill-journal.jsonl` | **append**; rewrite atomic | `.tmp` (rewrite) | one line per changed file | `lock` | no undo | bad lines skipped (counted, warned) |
 | `cover-upgrade.json` | yes | `.tmp` | coalesced, 10 s, plus on `Replace` | `lock` | Idle run | warn, Idle run |
@@ -111,7 +109,7 @@ The fetched-songs log on the dashboard. Newest first, at most **500** entries.
 - **Writer:** `DownloadHistoryService.Record` (`Services/Local/DownloadHistoryService.cs:28`) → `SaveLocked` :73-86. Called from `BaseDownloadService` (`Services/Common/BaseDownloadService.cs:345`).
 - **Readers:** `DownloadHistoryService.GetRecent` :40 → `AdminController`. Load is lazy, on first use (`LoadLocked` :48).
 - **Schema:** a JSON array of `DownloadHistoryEntry` (`Models/Download/DownloadHistoryEntry.cs`):
-  `Artist` string, `Title` string, `Album` string|null (the writer always passes `album ?? ""`), `Path` string (absolute), `Format` string (upper-case extension or `"?"`), `Source` string (`"Soulseek"`, `"YouTube"`, ...), `CoverArtUrl` string|null, `SizeBytes` long, `TranscodedFrom` string|null, `Tagging` TagReport|null, `DownloadedAt` **string** (`ToString("o")`, 7 fraction digits), `RequestedBy` string[]|null.
+  `Artist` string, `Title` string, `Album` string|null (the writer always passes `album ?? ""`), `Path` string (absolute), `Format` string (upper-case extension or `"?"`), `Source` string (`"YouTube"`, `"Lidarr"`, ...), `CoverArtUrl` string|null, `SizeBytes` long, `TranscodedFrom` string|null, `Tagging` TagReport|null, `DownloadedAt` **string** (`ToString("o")`, 7 fraction digits), `RequestedBy` string[]|null.
   `TagReport` (positional record, `Services/Tagging/TagPlan.cs:246`): `Confidence` string (the `TagConfidence` name), `Distance` double|null (rounded to 3 places), `ReleaseTitle`, `ReleaseId`, `Source` (the `TagSource` name), `ReleaseDate` string|null, `Candidates` TagReportCandidate[], `Fields` object (string → `{"Value": string|null, "Source": string|null}`), `Notes` string[], `StageSeconds` object (string → double, 2 places), `Rehearsed` bool, `DetailsPrefetchHit` bool, `IntegratedLufs` double|null, `TruePeakDbfs` double|null.
   `TagReportCandidate`: `Source`, `Title`, `Album`, `Type`|null, `Date`|null, `Distance` double, `BiggestPenalties` string[] (`"year 0.20"`).
 - **Atomic:** yes. `lock`.
@@ -130,30 +128,19 @@ Per-user plays, stations and unplayable tracks for Last.fm radio. **Indented.**
   `LastFmRadioStation`: `Id` (`"or"` + 20 base62 characters), `Key`, `Name`, `Owner`, `Kind` int (`Starter`=0, `YourMix`=1, `Discovery`=2, `Artist`=3, `Genre`=4, `Pinned`=5), `Personalized`, `DefinitionVersion` int, `CreatedUtc`, `ChangedUtc`, `ValidUntilUtc`, `Seeds` string[], `Tracks` LastFmRadioTrack[].
   `LastFmRadioTrack`: `Artist`, `Title`, `Album`|null, `Genre`|null, `Duration`|null, `Year`|null, `Score` double, `Source`, `ResolvedId`|null, `IsLocal`, `ExternalProvider`|null, `YouTubeId`|null.
   `LastFmRadioUnavailableTrack`: `Key`, `Artist`, `Title`, `FailedAtUtc`, `RetryAfterUtc`.
-- **On load and on every write, pruning applies** (`PruneLocked` :277): plays older than `LastFm:HistoryRetentionDays` (clamped 7..365, env `LASTFM_HISTORY_RETENTION_DAYS`, default 90) are dropped, at most 2,000 plays per user; unavailable tracks whose `RetryAfterUtc` has passed are dropped, at most 500; at most 100 users by `LastSeenUtc`. After load, `ResolvedId` of non-local tracks is **recomputed** by registering them in `ExternalIdRegistry` (`RehydrateRoutes` :299), and `ExternalProvider` defaults to `"soulseek"`.
+- **On load and on every write, pruning applies** (`PruneLocked` :277): plays older than `LastFm:HistoryRetentionDays` (clamped 7..365, env `LASTFM_HISTORY_RETENTION_DAYS`, default 90) are dropped, at most 2,000 plays per user; unavailable tracks whose `RetryAfterUtc` has passed are dropped, at most 500; at most 100 users by `LastSeenUtc`. After load, `ResolvedId` of non-local tracks is **recomputed** by registering them in `ExternalIdRegistry` (`RehydrateRoutes` :299), and `ExternalProvider` defaults to the registry's provider name.
 - **Atomic:** yes. `lock`. Single writer.
 - **Missing or corrupt:** empty document. A `Version` other than 1 → empty document (warning).
 - **Fixture:** [`lastfm-radio-state.json`](fixtures/state/lastfm-radio-state.json)
-
-### 4.4 `soulseek-holds.json`
-
-Hearts waiting out a Soulseek outage.
-
-- **Writer:** `SoulseekHoldStore.Save` (`Services/Common/SoulseekHoldStore.cs:68-78`), called from `Hold` :48 and `Release` :59.
-- **Readers:** the constructor :29-40 (eager). Consumers: `HeartAcquisitionCoordinator` and `SoulseekHoldResumer` (resumes holds on startup).
-- **Schema:** an array of `HeldAcquisition` (positional record :10): `Kind` int (`Track`=0, `Album`=1; the comment says "Appended, never inserted: the file stores these as numbers"), `Provider`, `ExternalId`, `RequestedBy` string|null, `HeldSinceUtc`, **`Key`** (computed `"{Kind name}:{Provider}:{ExternalId}"`, written but ignored on read).
-- **Atomic:** yes (`path + ".tmp"`). Written inside the `lock`.
-- **Missing or corrupt:** empty (warning).
-- **Fixture:** [`soulseek-holds.json`](fixtures/state/soulseek-holds.json)
 
 ### 4.5 `external-ids.json`
 
 Maps the short opaque ids Octo hands to Subsonic clients onto routing info. Without it, a restart turns every external id a client still holds into a Navidrome "not found".
 
-- **Writer:** `ExternalIdRegistry.Flush` (`Services/Soulseek/ExternalIdRegistry.cs:243-268`). A timer every **10 s**, only when dirty. Also runs from `Dispose`.
-- **Readers:** `Load` :217-241 (constructor). Consumers: nearly everything (`SubsonicResponseBuilder`, `SubSonicController`, `SoulseekMetadataService`, `SoulseekDownloadService`, `LastFmRadioStateStore`, `HeartAcquisitionCoordinator`, `LibraryActionExecutor`, ...).
-- **Schema:** an array in **most-recently-used-first** order (replayed in order, it rebuilds the LRU) of the private record `Persisted(string Id, SoulseekRouting Routing)` :205:
-  `Id` (22 base62 characters, the first 16 bytes of the SHA-256 of a seed: `k:song|yt:{YouTubeId}|a:{Artist}|t:{Title}|d:{Duration}`, `k:album|a:{Artist}|al:{Album}` or `k:artist|a:{Artist}`), and `Routing` = `SoulseekRouting` (`Services/Soulseek/SoulseekMetadataService.cs:1140`): `Kind` int (`Song`=0, `Album`=1, `Artist`=2), `YouTubeId`, `Artist`, `Title`, `Album` (string|null), `Duration` int|null, `ExternalAlbumId`|null, `ExternalArtistId`|null, `Track`|null, `DiscNumber`|null, `TotalTracks`|null, `Isrc`|null, `ShownDuration` int|null, `ShownDurationSource` int (`LengthSource`: `None`=0, `Video`=1, `LastFm`=2, `Deezer`=3), **`HasYouTube`**, **`HasArtistTitle`** (computed, written).
+- **Writer:** `ExternalIdRegistry.Flush` (`ExternalIdRegistry.cs:243-268`). A timer every **10 s**, only when dirty. Also runs from `Dispose`.
+- **Readers:** `Load` :217-241 (constructor). Consumers: nearly everything (`SubsonicResponseBuilder`, `SubSonicController`, the outside-music metadata service, `LastFmRadioStateStore`, `HeartAcquisitionCoordinator`, `LibraryActionExecutor`, ...).
+- **Schema:** an array in **most-recently-used-first** order (replayed in order, it rebuilds the LRU) of the private record `Persisted(string Id, ExternalRouting Routing)` :205:
+  `Id` (22 base62 characters, the first 16 bytes of the SHA-256 of a seed: `k:song|yt:{YouTubeId}|a:{Artist}|t:{Title}|d:{Duration}`, `k:album|a:{Artist}|al:{Album}` or `k:artist|a:{Artist}`), and `Routing` (the external routing record): `Kind` int (`Song`=0, `Album`=1, `Artist`=2), `YouTubeId`, `Artist`, `Title`, `Album` (string|null), `Duration` int|null, `ExternalAlbumId`|null, `ExternalArtistId`|null, `Track`|null, `DiscNumber`|null, `TotalTracks`|null, `Isrc`|null, `ShownDuration` int|null, `ShownDurationSource` int (`LengthSource`: `None`=0, `Video`=1, `LastFm`=2, `Deezer`=3), **`HasYouTube`**, **`HasArtistTitle`** (computed, written).
 - **Bounds:** at most 10,000 entries (LRU). Trimmed on load as well.
 - **Atomic:** yes. Coalesced. If a write fails, the dirty flag is set again.
 - **Missing or corrupt:** cold start (warning). Entries with an empty `Id` or a null `Routing` are skipped.
@@ -170,18 +157,6 @@ Dashboard sign-ins. Only **hashes** of tokens are stored.
 - **Atomic:** yes. `_saveLock`.
 - **Missing or corrupt:** nobody is signed in (warning).
 - **Fixture:** [`browse-sessions.json`](fixtures/state/browse-sessions.json)
-
-### 4.7 `rejected-peers.json`
-
-Soulseek (peer, file) pairs that delivered the wrong song.
-
-- **Writer:** `RejectedPeerRegistry.Flush` (`Services/Soulseek/RejectedPeerRegistry.cs:183-208`). A timer every 10 s, plus `Dispose`. Entries come from `Deny` (`SoulseekDownloadService.cs:1602`, `LibraryActionExecutor.cs:569`).
-- **Readers:** `Load` :153-181. Consumers: `SoulseekDownloadService`, `LibraryActionExecutor`, `AdminController`.
-- **Schema:** an array, MRU first, of `Entry(string Username, string Filename, string Reason, string Track, DateTime RejectedUtc)` :35. The key is `"{Username}|{Filename}"`, case-insensitive.
-- **On load:** entries older than the TTL are dropped: `Soulseek:RejectedPeerTtlDays` (env `SLSKD_REJECTED_PEER_DAYS`, default 30, read live through a `Func<int>`). At most 10,000 (LRU).
-- **Atomic:** yes. Coalesced.
-- **Missing or corrupt:** cold start.
-- **Fixture:** [`rejected-peers.json`](fixtures/state/rejected-peers.json)
 
 ### 4.8 `genre-backfill.json`
 
@@ -433,7 +408,7 @@ Map from external id to the local file Octo downloaded. It lives **in the music 
 |---|---|---|
 | `downloads-history.json` (4.2) | `Key?` (the live row's `provider:id`) and `Log?` (`[{At, Kind, Text, Detail?, Candidates?[{Source, Peer?, File?, Folder?, Format?, BitRate?, BitDepth?, SampleRate?, Size?, Length?, QueueLength?, FreeSlot?, Speed?, Rank?, Note?, Title?, Album?, Quality?}]}]`, `Quality` computed). **The file is now written with `DefaultIgnoreCondition = WhenWritingNull`**: every null member is left out, at every depth. | `models::download::acquisition_event`; `json::to_string_without_nulls` |
 | `lastfm-radio-state.json` (4.3) | `RadioBans[{Key, SongId, Artist, Title, BannedAtUtc}]` after `UnavailableTracks`. | `LastFmRadioBan` |
-| `external-ids.json` (4.5) | `ExplicitContent?` (1 explicit, 3 clean, 0 neither) and `Version?` after `ShownDurationSource`. A routing whose `Version` is `clean` (not an artist) mints its id from the seed plus `|v:clean`, so a clean edit has an id of its own; every other id is unchanged. A re-registration keeps the previous `ExplicitContent` when the new one has none. | `SoulseekRouting`, `ExternalIdRegistry::make_short_id` |
+| `external-ids.json` (4.5) | `ExplicitContent?` (1 explicit, 3 clean, 0 neither) and `Version?` after `ShownDurationSource`. A routing whose `Version` is `clean` (not an artist) mints its id from the seed plus `|v:clean`, so a clean edit has an id of its own; every other id is unchanged. A re-registration keeps the previous `ExplicitContent` when the new one has none. | the external routing record, `ExternalIdRegistry::make_short_id` |
 | `library-actions.json` (4.12) | `Copy`, `DownloadAllowed` and the computed `BlocksDownloads` after `RevealedPath`; `State` 6 = `Restored` (a removed song put back). Only `BlocksDownloads` entries keep a song from downloading again. | `LibraryActionEntry::blocks_downloads` |
 | `generated-playlists.json` (4.14) | `ForYou{kind: [song JSON...]}` and `ForYouCovers[url...]` per user. | `UserMixes` |
 | `upgrades.json` (4.16) | `Pick?` (a `PickedCopy`: `Source, Peer?, File?, Size, Format?, BitRate?, BitDepth?, SampleRate?, Length?, ReleaseGuid?, IndexerId?, ReleaseTitle?`; its derived fields are `[JsonIgnore]`) after `Result`. | `services::common::download_picks` |
@@ -456,8 +431,8 @@ Map from external id to the local file Octo downloaded. It lives **in the music 
 | Found-cover thumbnails | `/app/config/cover-upgrade-found/<album id>.jpg` | `CoverUpgradeStore.SaveFoundThumb` (`CoverUpgrade.cs:153-165`, called at `:750`). **Not atomic** | A JPEG fitted to the thumbnail size. The whole folder is deleted by `ClearFoundThumbs` | `FoundThumb` :167 → `CoverUpgradeController` |
 | Covers override folder | `/app/config/covers/<list name, genre or decade>.{jpg,jpeg,png,webp}` | **User-provided**, never written | Images | `CoverArtService` (`Services/CoverArt/CoverArtService.cs:397-415`), with a path-traversal guard |
 | Quarantine folder | `<musicRoot>/.octo-trash/<yyyy-MM-dd>/<relative path>` | `LibraryActionQuarantine.Move` (rename, or copy + length check + delete) | The original audio file plus its `.octo-action.json` | `Restore`, `Sweep`, `LibraryActionJournal.Reconcile` |
-| Incoming staging | `<effective download dir>/.octo-incoming/` (`SoulseekDownloadService.IncomingFolderName`, `Services/Soulseek/SoulseekDownloadService.cs:220`): `replacement-<guid N>.<ext>` (`BaseDownloadService.StageReplacement` :1721), `lidarr/<guid N>/<file>` (`SoulseekDownloadService.cs:236`, `:286`), `lidarr-<guid N>.<ext>` copies (`Services/Lidarr/LidarrTrackFetcher.cs:135`) | downloads, replacements | A dot folder, so Navidrome does not scan it. The final placement is a single rename (`RevealReplacementAsync` :1737) | download pipeline |
-| Downloaded audio | `<effective download dir>/<layout>/...` | `BaseDownloadService` (`PathHelper.BuildLayoutPath`), slskd job dirs (`NewJobDir`) | Audio with tags written by TagLib | Navidrome |
+| Incoming staging | `<effective download dir>/.octo-incoming/`: `replacement-<guid N>.<ext>` (`BaseDownloadService.StageReplacement` :1721), `lidarr/<guid N>/<file>`, `lidarr-<guid N>.<ext>` copies (`Services/Lidarr/LidarrTrackFetcher.cs:135`) | downloads, replacements | A dot folder, so Navidrome does not scan it. The final placement is a single rename (`RevealReplacementAsync` :1737) | download pipeline |
+| Downloaded audio | `<effective download dir>/<layout>/...` | `BaseDownloadService` (`PathHelper.BuildLayoutPath`) | Audio with tags written by TagLib | Navidrome |
 | Download cache | `/tmp/octo-cache/**/{provider}_{externalId}.*` | cache-mode downloads | Audio files. Deleted after `Subsonic:CacheDurationHours` (`CACHE_DURATION_HOURS`, default 1) by `CacheCleanupService` (`Services/Common/CacheCleanupService.cs:68`), except under `radio/` | `BaseDownloadService.GetCachedFilePath` :1863 |
 | Radio cache audio | `/tmp/octo-cache/radio/<key>.mp3` | `LastFmRadioTrackCache.GetOrCreateAsync` (:35-66), atomic via `.<key>.<guid N>.tmp` | MP3. 24 h retention and a 512 MB cap (its own pruning). Access time is touched on use | `LastFmRadioStreamService` |
 | Radio transcode spool | `/tmp/octo-radio-in-<guid N>` (+ `.spectral`) | `LastFmRadioAudioTranscoder.TranscodeToMp3Async` (:60-66) | A temporary input copy, deleted afterwards | ffmpeg |

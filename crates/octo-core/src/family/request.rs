@@ -151,7 +151,7 @@ mod tests {
             artist: "Artist".into(),
             album: "Album".into(),
             cover_art: String::new(),
-            quality: RequestQuality::Flac,
+            quality: RequestQuality::Best,
             state,
             created: now() - TimeDelta::days(days_ago),
             decided_by: None,

@@ -1,4 +1,4 @@
-//! Parallel downloads, the worker part: the worker runs several requests only once slskd has
+//! Parallel downloads, the worker part: the worker runs several requests as the setting allows, since every download
 //! proven it files each download in its own folder, and never more than the width.
 
 use std::sync::Arc;
@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use octo_core::models::download::DownloadInfo;
-use octo_core::settings::{AppSettings, DownloadSource, SettingsStore, SoulseekSettings};
+use octo_core::settings::{AppSettings, DownloadSettings, DownloadSource, SettingsStore};
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
@@ -115,14 +115,13 @@ fn start_worker(width: i32) -> Running {
         release: released,
     });
     let settings = Arc::new(SettingsStore::for_tests(AppSettings {
-        soulseek: SoulseekSettings {
+        downloads: DownloadSettings {
             parallel_downloads: width,
             ..Default::default()
         },
         ..Default::default()
     }));
     let concurrency = Arc::new(DownloadConcurrency::new(Arc::clone(&settings)));
-    concurrency.prove();
     let worker = Arc::new(AcquisitionWorker::new(
         Arc::clone(&queue),
         Arc::clone(&downloads) as Arc<dyn IDownloadService>,
@@ -146,7 +145,7 @@ async fn run(width: i32, requests: usize) {
     let done: Vec<_> = (0..requests)
         .map(|i| {
             running.queue.enqueue(
-                "soulseek",
+                "outside",
                 &format!("song-{i}"),
                 true,
                 false,

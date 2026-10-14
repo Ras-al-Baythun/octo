@@ -1,5 +1,5 @@
 //! Startup validation: the result, the validator interface and the helpers every validator
-//! shares. The Subsonic and Soulseek validators and the orchestrator live with their services.
+//! shares. The Subsonic validator and the orchestrator live with their services.
 
 pub mod base_startup_validator;
 pub mod i_startup_validator;

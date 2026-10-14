@@ -1,6 +1,6 @@
 //! A heart on a song Octo found outside the library downloads it, then favorites it for whoever
 //! hearted it. A heart on a song that is already in the library is a favorite and nothing else:
-//! it never downloads, never waits behind other downloads or a Soulseek outage, and never sends
+//! it never downloads, never waits behind other downloads, and never sends
 //! Lidarr for a whole album. An owned MP3 is also queued for Better quality.
 
 use std::sync::Arc;
@@ -12,21 +12,20 @@ use octo_core::common::Clock;
 use octo_core::models::domain::{Album, Song};
 use octo_core::settings::{
     AppSettings, DownloadSource, HeartDownloadSource, HeartDownloadStep, LibraryAction,
-    LibraryActionDefinition, LibraryActionSettings, SettingsStore, SoulseekSettings, SubsonicSettings,
+    LibraryActionDefinition, LibraryActionSettings, SettingsStore, SubsonicSettings,
 };
 use octo_subsonic::SubsonicCredential;
 use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use super::*;
-use crate::services::common::test_fakes::{FakeDownloads, FakeLidarr, FakeMetadata, OfflineLink, until};
+use crate::services::common::test_fakes::{FakeDownloads, FakeLidarr, FakeMetadata, until};
 use crate::services::common::{
     AcquisitionState, AcquisitionTracker, HeartAcquisitionCoordinator, HeartCoordinatorExtras, StarOnArrival,
     TrackAcquisitionQueue,
 };
 use crate::services::library::library_ownership::Candidate;
 use crate::services::local::test_support::FakeLocalLibrary;
-use crate::services::soulseek::ISoulseekLink;
 
 type Calls = Arc<Mutex<Vec<(String, IndexMap<String, String>)>>>;
 
@@ -159,7 +158,6 @@ impl Fixture {
         &self,
         chain: &[HeartDownloadSource],
         skip_owned: bool,
-        soulseek: Option<Arc<dyn ISoulseekLink>>,
         actions: Option<LibraryActionSettings>,
     ) -> Arc<HeartAcquisitionCoordinator> {
         let settings = Arc::new(SettingsStore::for_tests(AppSettings {
@@ -176,10 +174,12 @@ impl Fixture {
                     .collect(),
                 ..Default::default()
             },
-            soulseek: SoulseekSettings {
-                base_url: Some("http://slskd:5030".into()),
-                username: Some("u".into()),
-                password: Some("p".into()),
+            lidarr: octo_core::settings::LidarrSettings {
+                base_url: Some("http://lidarr:8686".into()),
+                api_key: Some("k".into()),
+                root_folder_path: Some("/music".into()),
+                quality_profile_id: 1,
+                metadata_profile_id: 1,
                 ..Default::default()
             },
             library_actions: actions.unwrap_or_default(),
@@ -209,7 +209,7 @@ impl Fixture {
             self.metadata.clone(),
             settings.clone(),
             Some(self.upgrades.clone()),
-            Some(Arc::new(UpgradeSources::new(settings.clone(), None))),
+            Some(Arc::new(UpgradeSources::new(settings.clone()))),
         ));
         HeartAcquisitionCoordinator::new(
             settings,
@@ -218,7 +218,6 @@ impl Fixture {
             self.lidarr.clone(),
             HeartCoordinatorExtras {
                 tracker: Some(self.tracker.clone()),
-                soulseek,
                 owned: Some(hearts),
                 stars: Some(self.stars.clone()),
                 ..Default::default()
@@ -226,8 +225,8 @@ impl Fixture {
         )
     }
 
-    fn soulseek_only(&self) -> Arc<HeartAcquisitionCoordinator> {
-        self.coordinator(&[HeartDownloadSource::Soulseek], true, None, None)
+    fn youtube_only(&self) -> Arc<HeartAcquisitionCoordinator> {
+        self.coordinator(&[HeartDownloadSource::YouTube], true, None)
     }
 
     /// What the star endpoint does before it hands a song heart to the coordinator.
@@ -267,7 +266,7 @@ impl Fixture {
     async fn acquire_track(&self, coordinator: &Arc<HeartAcquisitionCoordinator>) {
         tokio::time::timeout(
             Duration::from_secs(5),
-            coordinator.acquire_track("deezer", "teardrop", Some("alice"), None),
+            coordinator.acquire_track("deezer", "teardrop", Some("alice")),
         )
         .await
         .expect("in time")
@@ -281,7 +280,7 @@ async fn a_heart_on_a_song_you_have_favorites_your_copy_and_downloads_nothing() 
     f.own(vec![owned("nd-9", "Teardrop", "flac", 1000)]);
     f.heart(false);
 
-    f.acquire_track(&f.soulseek_only()).await;
+    f.acquire_track(&f.youtube_only()).await;
 
     until(|| f.stars_sent().len() == 1).await;
     let star = &f.stars_sent()[0];
@@ -297,7 +296,7 @@ async fn a_heart_on_an_mp3_you_have_favorites_it_and_queues_better_quality() {
     f.own(vec![owned("nd-9", "Teardrop", "mp3", 320)]);
     f.heart(false);
 
-    f.acquire_track(&f.coordinator(&[HeartDownloadSource::Soulseek], true, None, Some(upgrades_on())))
+    f.acquire_track(&f.coordinator(&[HeartDownloadSource::YouTube], true, Some(upgrades_on())))
         .await;
 
     until(|| f.stars_sent().len() == 1).await;
@@ -321,13 +320,9 @@ async fn a_heart_on_a_song_you_do_not_have_downloads_it() {
     let f = Arc::new(Fixture::new());
     f.heart(false);
 
-    let coordinator = f.soulseek_only();
+    let coordinator = f.youtube_only();
     let running = coordinator.clone();
-    let chain = tokio::spawn(async move {
-        running
-            .acquire_track("deezer", "teardrop", Some("alice"), None)
-            .await
-    });
+    let chain = tokio::spawn(async move { running.acquire_track("deezer", "teardrop", Some("alice")).await });
     let download = take_download(&f).await;
 
     assert_eq!(download.external_id, "teardrop");
@@ -351,13 +346,9 @@ async fn a_heart_on_a_song_you_do_not_have_is_not_a_favorite_when_it_lands() {
     let f = Arc::new(Fixture::new());
     f.heart(false);
 
-    let coordinator = f.soulseek_only();
+    let coordinator = f.youtube_only();
     let running = coordinator.clone();
-    let chain = tokio::spawn(async move {
-        running
-            .acquire_track("deezer", "teardrop", Some("alice"), None)
-            .await
-    });
+    let chain = tokio::spawn(async move { running.acquire_track("deezer", "teardrop", Some("alice")).await });
     let download = take_download(&f).await;
     // What the download does once the file is placed.
     let placed = f.root.path().join("teardrop.flac").to_string_lossy().into_owned();
@@ -383,34 +374,14 @@ async fn a_heart_on_a_song_you_do_not_have_is_not_a_favorite_when_it_lands() {
 }
 
 #[tokio::test]
-async fn a_heart_on_a_song_you_have_never_waits_for_soulseek() {
-    let f = Fixture::new();
-    f.own(vec![owned("nd-9", "Teardrop", "flac", 1000)]);
-    f.heart(false);
-
-    // slskd is offline and a Soulseek heart would wait up to six hours.
-    f.acquire_track(&f.coordinator(
-        &[HeartDownloadSource::Soulseek],
-        true,
-        Some(Arc::new(OfflineLink)),
-        None,
-    ))
-    .await;
-
-    until(|| f.stars_sent().len() == 1).await;
-    assert!(f.queue.is_idle());
-}
-
-#[tokio::test]
 async fn a_heart_on_a_song_you_have_never_sends_lidarr_for_the_album() {
     let f = Fixture::new();
     f.own(vec![owned("nd-9", "Teardrop", "flac", 1000)]);
     f.heart(false);
 
     f.acquire_track(&f.coordinator(
-        &[HeartDownloadSource::Lidarr, HeartDownloadSource::Soulseek],
+        &[HeartDownloadSource::Lidarr, HeartDownloadSource::YouTube],
         true,
-        None,
         None,
     ))
     .await;
@@ -426,7 +397,7 @@ async fn from_octos_own_apps_a_song_you_have_is_left_as_it_is() {
     f.own(vec![owned("nd-9", "Teardrop", "flac", 1000)]);
     f.heart(true);
 
-    f.acquire_track(&f.soulseek_only()).await;
+    f.acquire_track(&f.youtube_only()).await;
 
     assert!(f.queue.is_idle());
     assert!(f.stars_sent().is_empty());
@@ -440,10 +411,10 @@ async fn with_the_check_off_every_heart_downloads() {
     f.own(vec![owned("nd-9", "Teardrop", "flac", 1000)]);
     f.heart(false);
 
-    let coordinator = f.coordinator(&[HeartDownloadSource::Soulseek], false, None, None);
+    let coordinator = f.coordinator(&[HeartDownloadSource::YouTube], false, None);
     tokio::spawn(async move {
         let _ = coordinator
-            .acquire_track("deezer", "teardrop", Some("alice"), None)
+            .acquire_track("deezer", "teardrop", Some("alice"))
             .await;
     });
     let download = take_download(&f).await;
@@ -467,8 +438,8 @@ async fn an_album_you_have_whole_is_favorited_and_nothing_downloads() {
 
     tokio::time::timeout(
         Duration::from_secs(5),
-        f.soulseek_only()
-            .acquire_album("deezer", "mezzanine", Some("alice"), None),
+        f.youtube_only()
+            .acquire_album("deezer", "mezzanine", Some("alice")),
     )
     .await
     .expect("in time")
@@ -491,8 +462,8 @@ async fn an_album_you_have_partly_goes_to_fetch_the_rest() {
 
     tokio::time::timeout(
         Duration::from_secs(5),
-        f.soulseek_only()
-            .acquire_album("deezer", "mezzanine", Some("alice"), None),
+        f.youtube_only()
+            .acquire_album("deezer", "mezzanine", Some("alice")),
     )
     .await
     .expect("in time")
@@ -504,5 +475,5 @@ async fn an_album_you_have_partly_goes_to_fetch_the_rest() {
         (calls[0].0.as_str(), calls[0].1.as_str()),
         ("deezer", "mezzanine")
     );
-    assert_eq!(calls[0].2, DownloadSource::Soulseek);
+    assert_eq!(calls[0].2, DownloadSource::YouTube);
 }

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Builds the stub bodies made with ffmpeg, into parity/stubs/bodies/: the two files the slskd stub
-# hands Octo in 95-acquisition, and the large cover the iTunes stub serves in 17 and 96.
+# Builds the stub bodies made with ffmpeg, into parity/stubs/bodies/: two audio files a download
+# stub can hand Octo (no corpus file uses them now), and the large cover the iTunes stub serves in
+# 17 and 96.
 # Check the output in, like the music library: encoder output differs between ffmpeg builds, and
 # the stub advertises each file's exact size ({{size:bodies/...}}), Navidrome reports size and bit
 # rate, and the tags Octo writes sit on top of these bytes. Re-record after regenerating.
@@ -11,8 +12,7 @@
 #                     the spectrum check answer Unknown (under 44.1 kHz), so it never holds it back.
 #   paper-moons.m4a   244 s, 11025 Hz mono sine, AAC in MP4, about 0.5 MB. Served under the name
 #                     "Paper Moons.flac" (85bba0f renames it to .m4a). Under 700000 bytes, so
-#                     with Soulseek__MinFileSizeBytes=700000 Find songs calls it too small and the
-#                     heart never tries it; only a pick fetches it.
+#                     Find songs never picks it for a heart; only a pick fetches it.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 out="$here/../stubs/bodies"

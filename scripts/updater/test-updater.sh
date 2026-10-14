@@ -33,19 +33,19 @@ if [ "$1" = compose ]; then
       if [ "${2:-}" = --services ]; then
         printf 'octo\n'
         [ -n "${FAKE_NO_SONIC:-}" ] || echo octo-sonic
-        printf 'slskd\nunrelated\nyt-dlp-shim\n'
+        printf 'navidrome\nunrelated\nyt-dlp-shim\n'
       else
         # As docker compose config prints it: services in name order, octo-sonic's image
-        # quoted and the shim's not, slskd someone else's image, a volume list after. The
+        # quoted and the shim's not, navidrome someone else's image, a volume list after. The
         # -source services are in a profile that is off, so they are absent.
         r="${FAKE_REGISTRY:-ghcr.io/winters27}"
         t="${FAKE_IMAGE_TAG:-$(release)}"
         printf 'name: octo\nservices:\n'
         printf '  octo:\n'
         [ "${FAKE_OCTO:-pull}" = build ] && printf '    build:\n      context: %s\n' "$OCTO_DIR"
-        printf '    image: %s/octo:%s\n    depends_on:\n      slskd:\n        condition: service_started\n' "$r" "$t"
+        printf '    image: %s/octo:%s\n    depends_on:\n      navidrome:\n        condition: service_started\n' "$r" "$t"
         [ -n "${FAKE_NO_SONIC:-}" ] || printf '  octo-sonic:\n    image: "%s/octo-sonic:%s"\n' "$r" "$t"
-        printf '  slskd:\n    image: slskd/slskd:latest\n'
+        printf '  navidrome:\n    image: deluan/navidrome:latest\n'
         printf '  unrelated:\n    image: %s/octopus:1\n' "$r"
         printf '  yt-dlp-shim:\n    image: %s/octo-yt-dlp-shim:%s\n' "$r" "$t"
         printf 'volumes:\n  ytdlp-bin:\n    name: octo_ytdlp-bin\n'
@@ -77,8 +77,8 @@ export PATH="$work/bin:$PATH" FAKE_LOG="$work/docker.log"
 # The newer releases carry a helper of their own, whose installer only says it ran (or fails,
 # with FAKE_REFRESH_FAIL), so a run can be seen reinstalling the helper. 2026.10.01 names its
 # release in octo.csproj, as 2026.10.05 and earlier did; from 2026.10.04 on it is the VERSION
-# file, and octo.csproj (the C# app kept beside the Rust one) is left behind on purpose, to show
-# it is no longer read.
+# file, and octo.csproj (still in the folder as build.rs's fallback) is left behind on purpose,
+# to show it is no longer read.
 (
   cd "$work/origin-src" || exit 1
   git init -q -b main . && git config user.email test@example.com && git config user.name test
@@ -243,7 +243,7 @@ expect "describes itself as an image install" test "$(helper_says mode)" = image
 copied; request 2026.10.04
 FAKE_IMAGE_TAG=latest check "an install that is not a clone pulls instead" "done" none ""
 expect "describes itself as version 2, image" test "$(helper_says version) $(helper_says mode)" = "2 image"
-expect "pulled Octo and its sidecars, not slskd" grep -qx 'docker compose pull octo octo-sonic yt-dlp-shim' "$FAKE_LOG"
+expect "pulled Octo and its sidecars, not navidrome" grep -qx 'docker compose pull octo octo-sonic yt-dlp-shim' "$FAKE_LOG"
 expect "restarted Octo and its sidecars" grep -qx 'docker compose up -d octo octo-sonic yt-dlp-shim' "$FAKE_LOG"
 expect "it never builds" never 'compose .*build'
 

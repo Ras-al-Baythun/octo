@@ -10,7 +10,7 @@ use octo_core::settings::SettingsStore;
 use parking_lot::Mutex;
 use tracing::{info, warn};
 
-use octo_core::family::abilities::{AddToLibrary, RequestQuality};
+use octo_core::family::abilities::AddToLibrary;
 
 use crate::services::family::FamilyStore;
 use crate::services::subsonic::SubsonicProxyService;
@@ -169,9 +169,6 @@ impl LibraryActionPlaylistProvisioner {
         let mut titles = Vec::new();
         if abilities.add_to_library == AddToLibrary::Request {
             titles.push(REQUEST_PLAYLIST.to_string());
-            if abilities.request_quality.rank() >= RequestQuality::Flac.rank() {
-                titles.push(REQUEST_FLAC_PLAYLIST.to_string());
-            }
         }
         titles.push(REMOVE_PLAYLIST.to_string());
         titles
@@ -180,9 +177,6 @@ impl LibraryActionPlaylistProvisioner {
 
 /// A family member's playlist: songs added to it are asked for (best quality).
 pub const REQUEST_PLAYLIST: &str = "Request a copy";
-
-/// A family member's playlist: songs added to it are asked for in FLAC.
-pub const REQUEST_FLAC_PLAYLIST: &str = "Request a copy in FLAC";
 
 /// A family member's playlist: songs added to it leave their own library.
 pub const REMOVE_PLAYLIST: &str = "Remove from my library";
@@ -315,7 +309,7 @@ mod family_tests {
     async fn members_get_their_own_request_and_remove_playlists() {
         assert_eq!(
             created_for("sam", true).await,
-            [REQUEST_PLAYLIST, REQUEST_FLAC_PLAYLIST, REMOVE_PLAYLIST]
+            [REQUEST_PLAYLIST, REMOVE_PLAYLIST]
         );
         // A kid may ask for MP3 copies only.
         assert_eq!(

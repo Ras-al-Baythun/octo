@@ -131,12 +131,12 @@ pub async fn get_open_subsonic_extensions(State(state): State<AppState>, req: Re
     reply.into_response()
 }
 
-/// Whether a source Better quality searches (Soulseek, Lidarr) is set up here at all.
+/// Whether a source Better quality searches (Lidarr) is set up here at all.
 fn upgrade_ready(state: &AppState) -> bool {
     state.upgrade_sources.ready()
 }
 
-/// Where Better quality looks, in words: "Soulseek", "Lidarr", or "Soulseek or Lidarr".
+/// Where Better quality looks, in words: "Lidarr".
 fn upgrade_source_name(state: &AppState) -> String {
     state.upgrade_sources.name()
 }

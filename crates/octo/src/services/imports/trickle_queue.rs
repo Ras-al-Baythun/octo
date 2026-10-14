@@ -3,7 +3,7 @@
 //! theirs, on disk so a restart carries on where it was. A job running when Octo stopped is
 //! queued again; the library check it starts with catches one that arrived meanwhile.
 //!
-//! A song that could not be found is tried again after two weeks, since what Soulseek has
+//! A song that could not be found is tried again after two weeks, since what the sources have
 //! changes; one someone skipped stays skipped until they ask for it again.
 
 use std::path::{Path, PathBuf};
@@ -20,7 +20,7 @@ use super::{ImportTrack, TrickleJob};
 use crate::services::framework::DotnetDictionary;
 use crate::services::state_file::null_as_default;
 
-/// A song that could not be found is tried again after two weeks, since what Soulseek has
+/// A song that could not be found is tried again after two weeks, since what the sources have
 /// changes.
 pub const RETRY_NOT_FOUND_AFTER: TimeDelta = TimeDelta::days(14);
 

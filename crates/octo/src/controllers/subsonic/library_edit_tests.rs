@@ -13,8 +13,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 use octo_core::models::domain::Song;
 use octo_core::settings::{
-    AppSettings, LibraryAction, LibraryActionDefinition, LibraryActionSettings, SoulseekSettings,
-    SubsonicSettings,
+    AppSettings, LibraryAction, LibraryActionDefinition, LibraryActionSettings, SubsonicSettings,
 };
 use octo_media::tags::TagFile;
 use octo_media::tags::kept_identity::{KeptIdentity, KeptIdentityTags};
@@ -146,10 +145,6 @@ impl Factory {
                 auto_detect_download_path: false,
                 admin_username: Some("admin".into()),
                 admin_password: Some("admin-password".into()),
-                ..Default::default()
-            },
-            soulseek: SoulseekSettings {
-                base_url: Some("http://127.0.0.1:1".into()),
                 ..Default::default()
             },
             library_actions: LibraryActionSettings {
@@ -429,7 +424,7 @@ async fn put_back_links_the_outside_song_to_the_file_again() {
     library
         .register_downloaded_song(
             &Song {
-                external_provider: Some("soulseek".into()),
+                external_provider: Some("outside".into()),
                 external_id: Some("4H0vAhIr2YJ67Riz3Uv6wG".into()),
                 title: "Digital Love".into(),
                 artist: "Daft Punk".into(),
@@ -445,7 +440,7 @@ async fn put_back_links_the_outside_song_to_the_file_again() {
     assert_eq!(state(&f.call("id=s1&action=remove").await), "applied");
     assert_eq!(
         library
-            .get_local_path_for_external_song("soulseek", "4H0vAhIr2YJ67Riz3Uv6wG")
+            .get_local_path_for_external_song("outside", "4H0vAhIr2YJ67Riz3Uv6wG")
             .await,
         None
     );
@@ -464,7 +459,7 @@ async fn put_back_links_the_outside_song_to_the_file_again() {
 
     assert_eq!(
         library
-            .get_local_path_for_external_song("soulseek", "4H0vAhIr2YJ67Riz3Uv6wG")
+            .get_local_path_for_external_song("outside", "4H0vAhIr2YJ67Riz3Uv6wG")
             .await
             .as_deref(),
         Some(path.to_string_lossy().as_ref())
@@ -810,7 +805,7 @@ async fn join_album_takes_away_a_peers_stray_album_id_release_date_and_version_w
         2020,
         None,
     );
-    // What a Soulseek peer's tagger left on one song, and its album-mates lack: Navidrome groups
+    // What a release's tagger left on one song, and its album-mates lack: Navidrome groups
     // albums by these, so this song shows as an album of its own.
     {
         let mut file = TagFile::open(&stray).expect("opens");

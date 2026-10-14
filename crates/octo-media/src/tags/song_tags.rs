@@ -49,7 +49,7 @@ pub enum GenreWrite {
 /// first with `release_fact_tags::tidy`.
 pub fn write_song(file: &mut TagFile, song: &Song, genres: &GenreWrite, filed_elsewhere: bool) {
     // Basic metadata. Title/artist we always have; only overwrite album + album-artist when we
-    // actually resolved them, so a well-tagged Soulseek FLAC keeps its own album if Deezer had
+    // actually resolved them, so a well-tagged FLAC keeps its own album if Deezer had
     // no match.
     if !song.title.is_empty() {
         file.set_title(Some(&song.title));

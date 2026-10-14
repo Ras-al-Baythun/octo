@@ -19,19 +19,11 @@ pub struct RestartTracker {
 impl RestartTracker {
     /// Keys whose consumers capture the value when they are constructed. Keep in step with the
     /// dashboard's data-restart markers, which name the same settings as "Section.Key".
-    pub const KEYS: [&'static str; 15] = [
+    pub const KEYS: [&'static str; 7] = [
         "Library:DownloadPath", // BaseDownloadService, LocalLibraryService, PlaylistSyncService
         "YouTube:ShimUrl",      // YouTubeResolver
         "Subsonic:Url",         // live in most places; a restart is still the safe advice
         "Subsonic:LibraryPath", //
-        "Subsonic:WaitForLosslessOnPlay", // SubsonicResponseBuilder, deliberately
-        "Soulseek:BaseUrl",     // SoulseekClient and SoulseekDownloadService read it at startup
-        "Soulseek:Username",
-        "Soulseek:Password",
-        "Soulseek:SearchWaitSeconds",
-        "Soulseek:DownloadTimeoutSeconds",
-        "Soulseek:MinFileSizeBytes",
-        "Soulseek:PreferredExtension",
         "LibraryActions:Enabled", // the playlist worker decides once, at start
         "LibraryActions:PlaylistsEnabled",
         "LibraryActions:PollIntervalSeconds",
@@ -102,7 +94,7 @@ mod tests {
     #[test]
     fn pending_is_empty_at_startup() {
         let config = config(&[
-            ("Soulseek:Password", "secret"),
+            ("YouTube:ShimUrl", "http://shim:1"),
             ("Library:DownloadPath", "/music"),
         ]);
         assert!(RestartTracker::new(&config).pending(&config).is_empty());
@@ -110,12 +102,12 @@ mod tests {
 
     #[test]
     fn pending_names_a_changed_key() {
-        let mut config = config(&[("Soulseek:Password", "secret")]);
+        let mut config = config(&[("YouTube:ShimUrl", "http://shim:1")]);
         let tracker = RestartTracker::new(&config);
 
-        config.set("Soulseek:Password", Some("changed".into()));
+        config.set("YouTube:ShimUrl", Some("http://shim:2".into()));
 
-        assert_eq!(tracker.pending(&config), ["Soulseek:Password"]);
+        assert_eq!(tracker.pending(&config), ["YouTube:ShimUrl"]);
     }
 
     /// A hot-reload setting is not a restart setting, however it changes.
@@ -143,12 +135,12 @@ mod tests {
     /// in case has changed, and still needs the restart.
     #[test]
     fn pending_names_a_case_only_change_to_a_string() {
-        let mut config = config(&[("Soulseek:Password", "secret")]);
+        let mut config = config(&[("YouTube:ShimUrl", "http://shim:1")]);
         let tracker = RestartTracker::new(&config);
 
-        config.set("Soulseek:Password", Some("Secret".into()));
+        config.set("YouTube:ShimUrl", Some("HTTP://shim:1".into()));
 
-        assert_eq!(tracker.pending(&config), ["Soulseek:Password"]);
+        assert_eq!(tracker.pending(&config), ["YouTube:ShimUrl"]);
     }
 
     #[test]

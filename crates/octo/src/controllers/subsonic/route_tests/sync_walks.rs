@@ -156,7 +156,7 @@ async fn fixture(library_size: usize) -> Fixture {
             album: String::new(),
             duration: Some(duration.unwrap_or(180)),
             is_local: false,
-            external_provider: Some("soulseek".into()),
+            external_provider: Some("outside".into()),
             ..Default::default()
         }]
     });

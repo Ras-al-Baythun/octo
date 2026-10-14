@@ -9,7 +9,6 @@ pub fn is_enabled(s: &NotificationSettings, r#type: NotificationEventType) -> bo
     match r#type {
         NotificationEventType::DownloadStarted => s.notify_download_started,
         NotificationEventType::DownloadCompleted => s.notify_download_completed,
-        NotificationEventType::LosslessFallback => s.notify_lossless_fallback,
         NotificationEventType::DownloadFailed => s.notify_download_failed,
         NotificationEventType::AlbumCompleted => s.notify_album_completed,
         // The test button bypasses toggles by design: it verifies transports.
@@ -201,18 +200,6 @@ pub fn render(evt: &NotificationEvent) -> NotificationMessage {
             fields: Some(track_fields(evt)),
         },
 
-        NotificationEventType::LosslessFallback => NotificationMessage {
-            r#type: evt.r#type,
-            title: format!("Lossless miss: {track}"),
-            body: format!(
-                "Soulseek failed ({}); settling for YouTube MP3.",
-                evt.detail.as_deref().unwrap_or("no usable result")
-            ),
-            image_url: evt.cover_art_url.clone(),
-            description: None,
-            fields: None,
-        },
-
         NotificationEventType::DownloadFailed => NotificationMessage {
             r#type: evt.r#type,
             title: format!("Download failed: {track}"),
@@ -377,29 +364,16 @@ mod tests {
             artist: Some("Randy Rogers Band".into()),
             title: Some("In My Arms Instead".into()),
             format: Some("FLAC".into()),
-            source: Some("Soulseek".into()),
+            source: Some("Lidarr".into()),
             size_bytes: Some(34_684_600),
             ..event(NotificationEventType::DownloadStarted)
         });
 
         // "Did it find lossless or is it settling?" is the event's entire reason
         // to exist, so the answer leads the body.
-        assert!(msg.body.contains("FLAC via Soulseek"), "{}", msg.body);
+        assert!(msg.body.contains("FLAC via Lidarr"), "{}", msg.body);
         assert!(msg.body.contains("33.1 MB"), "{}", msg.body);
         assert!(msg.title.starts_with("Downloading:"), "{}", msg.title);
-    }
-
-    #[test]
-    fn fallback_message_says_what_was_lost() {
-        let msg = render(&NotificationEvent {
-            artist: Some("A".into()),
-            title: Some("B".into()),
-            detail: Some("No Soulseek FLAC found".into()),
-            ..event(NotificationEventType::LosslessFallback)
-        });
-
-        assert!(msg.body.contains("MP3"));
-        assert!(msg.body.contains("No Soulseek FLAC found"));
     }
 
     #[test]
@@ -407,7 +381,6 @@ mod tests {
         let everything_off = NotificationSettings {
             notify_download_started: false,
             notify_download_completed: false,
-            notify_lossless_fallback: false,
             notify_download_failed: false,
             notify_album_completed: false,
             ..Default::default()
@@ -470,7 +443,7 @@ mod tests {
             title: Some("Hoppípolla".into()),
             album: Some("Takk...".into()),
             format: Some("FLAC".into()),
-            source: Some("Soulseek".into()),
+            source: Some("Lidarr".into()),
             size_bytes: Some(34_684_600),
             duration_seconds: Some(4 * 60 + 28),
             year: Some(2005),
@@ -478,13 +451,13 @@ mod tests {
             ..event(NotificationEventType::DownloadCompleted)
         });
         assert_eq!(completed.title, "Downloaded: Sigur Rós \u{2013} Hoppípolla");
-        assert_eq!(completed.body, "Takk...\nFLAC via Soulseek, 33.1 MB \u{b7} 4:28");
+        assert_eq!(completed.body, "Takk...\nFLAC via Lidarr, 33.1 MB \u{b7} 4:28");
         assert_eq!(completed.description.as_deref(), Some("Takk..."));
         assert_eq!(
             completed.fields.expect("a song card"),
             [
                 ("Format", "FLAC"),
-                ("Source", "Soulseek"),
+                ("Source", "Lidarr"),
                 ("Size", "33.1 MB"),
                 ("Length", "4:28"),
                 ("Bitrate", "\u{2248}1,035 kbps"),

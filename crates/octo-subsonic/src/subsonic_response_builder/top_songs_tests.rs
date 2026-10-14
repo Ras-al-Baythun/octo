@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use octo_core::models::domain::Song;
-use octo_core::settings::SubsonicSettings;
 use octo_core::soulseek::SoulseekRouting;
 use serde_json::{Value, json};
 
@@ -17,7 +16,7 @@ impl IdRegistry for TestIds {
 }
 
 fn builder() -> SubsonicResponseBuilder {
-    SubsonicResponseBuilder::new(Arc::new(TestIds), &SubsonicSettings::default())
+    SubsonicResponseBuilder::new(Arc::new(TestIds))
 }
 
 fn outside(title: &str) -> Song {
@@ -28,7 +27,7 @@ fn outside(title: &str) -> Song {
         album: "HABIBTI (FOMO)".into(),
         duration: Some(218),
         is_local: false,
-        external_provider: Some("soulseek".into()),
+        external_provider: Some("outside".into()),
         external_id: Some(format!("ext-{title}")),
         ..Default::default()
     }

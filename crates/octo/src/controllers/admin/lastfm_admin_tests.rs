@@ -112,7 +112,6 @@ impl ScrobbleAdminFactory {
         let env = [
             ("Subsonic__Url", "http://127.0.0.1:1"),
             ("Subsonic__AutoDetectDownloadPath", "false"),
-            ("Soulseek__BaseUrl", "http://127.0.0.1:1"),
             ("YouTube__ShimUrl", "http://127.0.0.1:1"),
             ("Library__DownloadPath", &directory.to_string_lossy()),
             ("LastFm__ApiKey", API_KEY),
@@ -402,43 +401,6 @@ async fn finish_when_the_settings_file_cannot_be_written_says_so() {
     assert!(!factory.saved().contains("sk-alice"));
 }
 
-/// The Soulseek page's Connection form sends the slskd sign-in back as it was shown. The
-/// placeholder keeps the stored password; with a new username it is refused, because the old
-/// password under a new name is a pairing nobody typed.
-#[tokio::test]
-async fn form_save_with_the_slskd_placeholder_keeps_the_stored_password() {
-    let stored = r#"{ "Soulseek": { "Username": "octo", "Password": "slskd-secret" } }"#;
-    let factory = ScrobbleAdminFactory::new(stored).await;
-    // The running settings come from the file; the watcher's reload is made explicit.
-    factory.store.reload_now().expect("the file reloads");
-    let password = |factory: &ScrobbleAdminFactory| {
-        Node::parse(&factory.saved())
-            .expect("the file parses")
-            .get("Soulseek")
-            .and_then(|s| s.get("Password"))
-            .and_then(Node::as_str)
-            .map(str::to_string)
-    };
-
-    let body =
-        serde_json::json!({ "Soulseek": { "Username": "octo", "Password": SECRET_PLACEHOLDER } }).to_string();
-    let save = admin_write(&factory.app, Method::POST, "/api/admin/settings", Some(&body)).await;
-    assert_eq!(save.status, StatusCode::OK, "{}", save.text());
-    assert!(!save.text().contains("slskd-secret"));
-    assert_eq!(password(&factory).as_deref(), Some("slskd-secret"));
-
-    let body = serde_json::json!({ "Soulseek": { "Username": "someone", "Password": SECRET_PLACEHOLDER } })
-        .to_string();
-    let renamed = admin_write(&factory.app, Method::POST, "/api/admin/settings", Some(&body)).await;
-    assert_eq!(renamed.status, StatusCode::BAD_REQUEST);
-
-    let body =
-        serde_json::json!({ "Soulseek": { "Password": format!("{SECRET_PLACEHOLDER}x") } }).to_string();
-    let appended = admin_write(&factory.app, Method::POST, "/api/admin/settings", Some(&body)).await;
-    assert_eq!(appended.status, StatusCode::BAD_REQUEST);
-    assert_eq!(password(&factory).as_deref(), Some("slskd-secret"));
-}
-
 /// Navidrome's address is saved without its trailing slash (and the spaces it was typed with), so
 /// the stream relay never asks for `//rest/stream`; the Raw config save the same.
 #[tokio::test]
@@ -469,54 +431,4 @@ async fn navidromes_address_is_saved_without_a_trailing_slash() {
     let saved = Node::parse(&factory.saved()).expect("the file parses");
     let sections: Vec<&String> = saved.as_object().expect("an object").keys().collect();
     assert_eq!(sections, ["Subsonic", "Lidarr"]);
-}
-
-// Open slskd puts the address in a link, so only a whole http or https address is kept; a blank
-// one clears it.
-#[tokio::test]
-async fn saving_a_web_url_keeps_only_web_addresses() {
-    let factory = ScrobbleAdminFactory::new("{}").await;
-    for (body, expected) in [
-        (
-            r#"{ "Soulseek": { "WebUrl": "javascript:alert(1)" } }"#,
-            StatusCode::BAD_REQUEST,
-        ),
-        (
-            r#"{ "Soulseek": { "WebUrl": "http://192.168.1.5:5030" } }"#,
-            StatusCode::OK,
-        ),
-        (r#"{ "Soulseek": { "WebUrl": "" } }"#, StatusCode::OK),
-    ] {
-        let save = admin_write(&factory.app, Method::POST, "/api/admin/settings", Some(body)).await;
-        assert_eq!(save.status, expected, "{body}: {}", save.text());
-    }
-}
-
-/// slskd's web address is saved without the spaces it was typed with (settings and Raw
-/// config), so GET settings never shows them.
-#[tokio::test]
-async fn slskds_web_address_is_saved_without_spaces() {
-    let factory = ScrobbleAdminFactory::new("{}").await;
-    let web_url = |factory: &ScrobbleAdminFactory| {
-        Node::parse(&factory.saved())
-            .expect("the file parses")
-            .get("Soulseek")
-            .and_then(|s| s.get("WebUrl"))
-            .and_then(Node::as_str)
-            .map(str::to_string)
-    };
-    let body = r#"{ "Soulseek": { "WebUrl": " http://slskd.lan:5030 " } }"#;
-    let save = admin_write(&factory.app, Method::POST, "/api/admin/settings", Some(body)).await;
-    assert_eq!(save.status, StatusCode::OK, "{}", save.text());
-    assert_eq!(web_url(&factory).as_deref(), Some("http://slskd.lan:5030"));
-    assert!(
-        save.text().contains(r#""WebUrl":"http://slskd.lan:5030""#),
-        "{}",
-        save.text()
-    );
-
-    let body = r#"{ "Soulseek": { "WebUrl": "\thttps://slskd.example/web/ " } }"#;
-    let put = admin_write(&factory.app, Method::PUT, "/api/admin/raw-config", Some(body)).await;
-    assert_eq!(put.status, StatusCode::OK, "{}", put.text());
-    assert_eq!(web_url(&factory).as_deref(), Some("https://slskd.example/web/"));
 }

@@ -210,7 +210,7 @@ impl ReleaseIdentifier {
         let started = Instant::now();
         let current = self.settings.current();
         let metadata = &current.metadata;
-        let settings = MatchingSettings::from_settings(metadata, &current.soulseek);
+        let settings = MatchingSettings::from_settings(metadata, &current.downloads);
         let mut notes: Vec<String> = Vec::new();
         let mut stages: IndexMap<&'static str, f64> = IndexMap::new();
 

@@ -73,7 +73,6 @@ pub fn tag_for(r#type: NotificationEventType) -> &'static str {
     match r#type {
         NotificationEventType::DownloadStarted => "arrow_down",
         NotificationEventType::DownloadCompleted => "white_check_mark",
-        NotificationEventType::LosslessFallback => "warning",
         NotificationEventType::DownloadFailed => "x",
         NotificationEventType::AlbumCompleted => "cd",
         NotificationEventType::Test => "bell",
@@ -119,7 +118,7 @@ mod tests {
             fields: Some(
                 [
                     ("Format", "FLAC"),
-                    ("Source", "Soulseek"),
+                    ("Source", "Lidarr"),
                     ("Size", "33.1 MB"),
                     ("Length", "3:43"),
                 ]
@@ -134,25 +133,19 @@ mod tests {
             )
         });
 
-        assert_eq!(
-            body,
-            "Some Album\nFLAC \u{b7} Soulseek \u{b7} 33.1 MB \u{b7} 3:43"
-        );
+        assert_eq!(body, "Some Album\nFLAC \u{b7} Lidarr \u{b7} 33.1 MB \u{b7} 3:43");
     }
 
     #[test]
     fn prose_events_keep_their_body_verbatim() {
         let body = build_body(&NotificationMessage::new(
-            NotificationEventType::LosslessFallback,
-            "Lossless miss: A \u{2013} B",
-            "Soulseek failed (nothing usable); settling for YouTube MP3.",
+            NotificationEventType::DownloadFailed,
+            "Download failed: A \u{2013} B",
+            "Every source failed (nothing usable).",
             None,
         ));
 
-        assert_eq!(
-            body,
-            "Soulseek failed (nothing usable); settling for YouTube MP3."
-        );
+        assert_eq!(body, "Every source failed (nothing usable).");
     }
 
     /// What the URL parser refuses, with the reference messages, and a query after the topic.

@@ -31,7 +31,6 @@
     {"name": "out-post-genre-backfill-undo", "method": "POST", "path": "/api/admin/genre/backfill/undo", "session": null, "headers": {"X-Octo-Admin": "1"}, "body": {"json": {}}},
     {"name": "out-put-raw-config", "method": "PUT", "path": "/api/admin/raw-config", "session": null, "headers": {"X-Octo-Admin": "1"}, "body": {"json": {}}},
     {"name": "out-post-lidarr-test", "method": "POST", "path": "/api/admin/lidarr/test", "session": null, "headers": {"X-Octo-Admin": "1"}, "body": {"json": {}}},
-    {"name": "out-post-soulseek-rejected-peers-clear", "method": "POST", "path": "/api/admin/soulseek/rejected-peers/clear", "session": null, "headers": {"X-Octo-Admin": "1"}, "body": {"json": {}}},
     {"name": "out-post-clear-metadata-cache", "method": "POST", "path": "/api/admin/clear-metadata-cache", "session": null, "headers": {"X-Octo-Admin": "1"}, "body": {"json": {}}},
     {"name": "out-post-find", "method": "POST", "path": "/api/admin/find", "session": null, "headers": {"X-Octo-Admin": "1"}, "body": {"json": {}}},
     {"name": "out-post-find-search-pick", "method": "POST", "path": "/api/admin/find/parity-no-such-search/pick", "session": null, "headers": {"X-Octo-Admin": "1"}, "body": {"json": {}}},
@@ -74,9 +73,6 @@
     {"name": "out-post-sonic-start", "method": "POST", "path": "/api/admin/sonic/start", "session": null, "headers": {"X-Octo-Admin": "1"}, "body": {"json": {}}},
     {"name": "out-post-sonic-pause", "method": "POST", "path": "/api/admin/sonic/pause", "session": null, "headers": {"X-Octo-Admin": "1"}, "body": {"json": {}}},
     {"name": "out-post-sonic-reset", "method": "POST", "path": "/api/admin/sonic/reset", "session": null, "headers": {"X-Octo-Admin": "1"}, "body": {"json": {}}},
-    {"name": "out-post-soulseek-sharing-test-port", "method": "POST", "path": "/api/admin/soulseek/sharing/test-port", "session": null, "headers": {"X-Octo-Admin": "1"}, "body": {"json": {}}},
-    {"name": "out-post-soulseek-sharing-rescan", "method": "POST", "path": "/api/admin/soulseek/sharing/rescan", "session": null, "headers": {"X-Octo-Admin": "1"}, "body": {"json": {}}},
-    {"name": "out-post-soulseek-sharing-share", "method": "POST", "path": "/api/admin/soulseek/sharing/share", "session": null, "headers": {"X-Octo-Admin": "1"}, "body": {"json": {}}},
     {"name": "out-post-update-check", "method": "POST", "path": "/api/admin/update/check", "session": null, "headers": {"X-Octo-Admin": "1"}, "body": {"json": {}}},
     {"name": "out-post-update", "method": "POST", "path": "/api/admin/update", "session": null, "headers": {"X-Octo-Admin": "1"}, "body": {"json": {}}},
     {"name": "out-post-restart", "method": "POST", "path": "/api/admin/restart", "session": null, "headers": {"X-Octo-Admin": "1"}, "body": {"json": {}}}

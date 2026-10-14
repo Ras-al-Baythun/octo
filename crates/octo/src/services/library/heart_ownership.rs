@@ -11,7 +11,7 @@ use crate::services::i_music_metadata_service::IMusicMetadataService;
 
 /// Whether a hearted outside song, or every song of a hearted outside album, is already in the
 /// library. Asked before a heart goes anywhere: a song you have is favorited, never downloaded
-/// again, and never waits behind other downloads, a Soulseek outage, or a whole Lidarr album.
+/// again, and never waits behind other downloads or a whole Lidarr album.
 pub struct HeartOwnership {
     ownership: Arc<LibraryOwnership>,
     metadata: Arc<dyn IMusicMetadataService>,

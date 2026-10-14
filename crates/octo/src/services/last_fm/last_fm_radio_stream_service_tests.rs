@@ -217,7 +217,7 @@ async fn fixture(loudness_target: i32) -> Fixture {
         metadata.hits.lock().insert(
             (format!("Artist {index}"), title.to_string()),
             Song {
-                id: format!("ext-soulseek-song-{title}"),
+                id: format!("ext-outside-song-{title}"),
                 artist: format!("Artist {index}"),
                 title: title.to_string(),
                 ..Default::default()
@@ -454,7 +454,7 @@ async fn the_ready_pool_rotates_from_the_tune_in_start_and_the_warm_uses_externa
     // The warm asked for the registered routes, never the listener's library.
     let asked = fixture.downloads.asked.lock().clone();
     assert_eq!(asked.len(), 3);
-    assert!(asked.iter().all(|(provider, _)| provider == "soulseek"));
+    assert!(asked.iter().all(|(provider, _)| provider == "outside"));
 
     let session = session(&fixture);
     let pool: Vec<String> = fixture

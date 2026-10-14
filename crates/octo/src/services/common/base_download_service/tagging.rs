@@ -176,7 +176,7 @@ impl BaseDownloadService {
     }
 
     /// Fills any missing metadata on `song` from the catalog's best hit. Existing values win (a
-    /// well-tagged Soulseek FLAC is enriched, not overwritten); the catalog fills the gaps and
+    /// well-tagged FLAC is enriched, not overwritten); the catalog fills the gaps and
     /// supplies the cover. The album's own facts (its cover, its compilation flag) are taken only
     /// when the hit is the album the song is filed under, since the chooser may have put the song
     /// on another release than the catalog's first hit.
@@ -546,7 +546,7 @@ impl BaseDownloadService {
         //
         // Before this, genre was written ONLY when the song's genre was non-empty, and was never
         // cleared. So when the catalog missed and the source had no genre, whatever multi-value
-        // frame the Soulseek peer's file or the yt-dlp output already carried survived untouched:
+        // frame the release's file or the yt-dlp output already carried survived untouched:
         // "People & Blogs" and seven-genres-at-once reached the library through the ABSENCE of a
         // write, not a bad one. The fix has to read the existing frame, normalize it, and write
         // the result back.

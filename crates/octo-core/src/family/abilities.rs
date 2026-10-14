@@ -57,34 +57,30 @@ pub enum AddToLibrary {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum RequestQuality {
     Best,
-    Flac,
     Mp3,
 }
 
 impl RequestQuality {
-    /// `Mp3 < Flac < Best`: a request above the member's maximum is refused.
+    /// `Mp3 < Best`: a request above the member's maximum is refused.
     pub fn rank(self) -> u8 {
         match self {
             RequestQuality::Mp3 => 0,
-            RequestQuality::Flac => 1,
-            RequestQuality::Best => 2,
+            RequestQuality::Best => 1,
         }
     }
 
-    /// The name as a member reads it ("best", "FLAC", "MP3").
+    /// The name as a member reads it ("best", "MP3").
     pub fn label(self) -> &'static str {
         match self {
             RequestQuality::Best => "best",
-            RequestQuality::Flac => "FLAC",
             RequestQuality::Mp3 => "MP3",
         }
     }
 
-    /// Parses `Best`, `Flac` or `Mp3` in any case.
+    /// Parses `Best` or `Mp3` in any case.
     pub fn parse(text: &str) -> Option<Self> {
         match text.trim().to_ascii_lowercase().as_str() {
             "best" => Some(RequestQuality::Best),
-            "flac" => Some(RequestQuality::Flac),
             "mp3" => Some(RequestQuality::Mp3),
             _ => None,
         }
@@ -331,7 +327,7 @@ impl Abilities {
                 self.request_quality = value
                     .as_str()
                     .and_then(RequestQuality::parse)
-                    .ok_or("expected Best, Flac or Mp3")?;
+                    .ok_or("expected Best or Mp3")?;
             }
             "autoapprove" => self.auto_approve = flag(value)?,
             "weeklyrequestlimit" => self.weekly_request_limit = count(value)?,
@@ -548,10 +544,10 @@ mod tests {
     }
 
     #[test]
-    fn quality_ranks_mp3_below_flac_below_best() {
-        assert!(RequestQuality::Mp3.rank() < RequestQuality::Flac.rank());
-        assert!(RequestQuality::Flac.rank() < RequestQuality::Best.rank());
-        assert_eq!(RequestQuality::parse(" FLAC "), Some(RequestQuality::Flac));
+    fn quality_ranks_mp3_below_best() {
+        assert!(RequestQuality::Mp3.rank() < RequestQuality::Best.rank());
+        assert_eq!(RequestQuality::parse(" MP3 "), Some(RequestQuality::Mp3));
+        assert_eq!(RequestQuality::parse("flac"), None);
         assert_eq!(RequestQuality::parse("ogg"), None);
     }
 }

@@ -62,7 +62,7 @@ pub const MANAGED_TEXT: &str = "Lidarr manages this file itself, so it was left 
 /// the album: it searches it, copies out the one song asked for, then deletes every file that
 /// search brought in and puts the album's monitoring back the way it was, so nothing else lands
 /// in the library and Lidarr does not fetch the album again. The copy then goes through the same
-/// checks and the same swap as a Soulseek download.
+/// checks and the same swap as a YouTube download.
 ///
 /// Two songs of one album share one search; the clean up waits for the last of them.
 #[derive(Clone)]

@@ -6,8 +6,7 @@
 use std::path::PathBuf;
 
 use octo_core::settings::{
-    AppSettings, LibraryActionDefinition, LibraryActionSettings, LidarrSettings, SoulseekSettings,
-    SubsonicSettings,
+    AppSettings, LibraryActionDefinition, LibraryActionSettings, LidarrSettings, SubsonicSettings,
 };
 use octo_media::tags::TagFile;
 use tokio_util::sync::CancellationToken;
@@ -15,13 +14,13 @@ use wiremock::matchers::{any, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use super::*;
-use crate::services::common::test_fakes::{OfflineLink, until};
+use crate::services::common::test_fakes::until;
 use crate::services::common::track_acquisition_queue::AcquisitionRequest;
 use crate::services::library::library_action_test_support::{Extras, RecordingLibrary, executor, store};
 use crate::services::library::replacement_handoff::ArrivedTags;
 
 const FILE_NAME: &str = "Massive Attack - Teardrop";
-/// The Soulseek download service's `INCOMING_FOLDER_NAME`.
+/// The download service's `INCOMING_FOLDER_NAME`.
 const INCOMING_FOLDER_NAME: &str = ".octo-incoming";
 
 /// An MP3 of twenty silent MPEG-1 Layer III frames, 128 kbps, 44.1 kHz.
@@ -119,7 +118,6 @@ impl Fixture {
     fn executor(
         &self,
         keep_originals: bool,
-        soulseek_link: Option<Arc<dyn ISoulseekLink>>,
         sources: Option<Arc<UpgradeSources>>,
     ) -> Arc<LibraryActionExecutor> {
         let settings = store(AppSettings {
@@ -159,7 +157,6 @@ impl Fixture {
                 library: Some(self.library.clone()),
                 queue: Some(self.queue.clone()),
                 ids: Some(self.ids.clone()),
-                soulseek_link,
                 sources,
                 ..Default::default()
             },
@@ -174,7 +171,7 @@ impl Fixture {
     }
 
     fn plain_executor(&self) -> Arc<LibraryActionExecutor> {
-        self.executor(false, None, None)
+        self.executor(false, None)
     }
 
     async fn next_download(&self) -> Arc<AcquisitionRequest> {
@@ -296,29 +293,6 @@ fn not_found(message: &str) -> anyhow::Error {
         std::io::ErrorKind::NotFound,
         message.to_string(),
     ))
-}
-
-#[tokio::test]
-async fn better_quality_during_a_soulseek_outage_touches_nothing_and_stays_asked() {
-    let f = Fixture::new().await;
-    let executor = f.executor(false, Some(Arc::new(OfflineLink)), None);
-
-    let outcome = executor.apply(better_quality()).await.expect("an outcome");
-
-    assert_eq!(outcome.state, LibraryActionState::Failed);
-    assert_eq!(
-        outcome.code.as_deref(),
-        Some(LibraryActionCodes::SOULSEEK_OFFLINE)
-    );
-    assert_eq!(outcome.detail.as_deref(), Some(OFFLINE_TEXT));
-    assert!(!outcome.consumed());
-    assert!(f.queue.is_idle());
-    assert!(Path::new(&f.original).exists());
-    assert_eq!(
-        std::fs::metadata(&f.original).expect("there").len() as i64,
-        f.original_size
-    );
-    assert!(f.journal.recent(10).is_empty());
 }
 
 #[tokio::test]
@@ -460,7 +434,7 @@ async fn a_refused_replacement_keeps_the_originals_mapping() {
 #[tokio::test]
 async fn a_failure_after_the_replacement_moved_in_does_not_undo_it() {
     let f = Fixture::new().await;
-    let action = spawn_apply(&f.executor(true, None, None), wrong_version());
+    let action = spawn_apply(&f.executor(true, None), wrong_version());
     let download = f.next_download().await;
 
     reveal(&download, &f.staged(&flac(), ".flac"))
@@ -480,15 +454,6 @@ async fn a_failure_after_the_replacement_moved_in_does_not_undo_it() {
     assert_eq!(f.quarantined().len(), 1);
 }
 
-fn slskd_set_up() -> SoulseekSettings {
-    SoulseekSettings {
-        base_url: Some("http://slskd:5030".into()),
-        username: Some("u".into()),
-        password: Some("p".into()),
-        ..Default::default()
-    }
-}
-
 fn lidarr_set_up() -> LidarrSettings {
     LidarrSettings {
         base_url: Some("http://lidarr:8686".into()),
@@ -500,26 +465,17 @@ fn lidarr_set_up() -> LidarrSettings {
     }
 }
 
-fn both_sources(link: Option<Arc<dyn ISoulseekLink>>) -> Option<Arc<UpgradeSources>> {
-    Some(Arc::new(UpgradeSources::new(
-        store(AppSettings {
-            soulseek: slskd_set_up(),
-            lidarr: lidarr_set_up(),
-            ..Default::default()
-        }),
-        link,
-    )))
+fn lidarr_source() -> Option<Arc<UpgradeSources>> {
+    Some(Arc::new(UpgradeSources::new(store(AppSettings {
+        lidarr: lidarr_set_up(),
+        ..Default::default()
+    }))))
 }
 
 #[tokio::test]
-async fn better_quality_asks_lidarr_when_soulseek_finds_nothing() {
+async fn better_quality_asks_lidarr_for_a_lossless_copy() {
     let f = Fixture::new().await;
-    let action = spawn_apply(&f.executor(false, None, both_sources(None)), better_quality());
-
-    let soulseek = f.next_download().await;
-    assert_eq!(soulseek.source_override, Some(DownloadSource::Soulseek));
-    assert!(soulseek.upgrade_search());
-    f.fail(&soulseek, not_found("no peer had it"));
+    let action = spawn_apply(&f.executor(false, lidarr_source()), better_quality());
 
     let lidarr = f.next_download().await;
     assert_eq!(lidarr.source_override, Some(DownloadSource::Lidarr));
@@ -534,52 +490,27 @@ async fn better_quality_asks_lidarr_when_soulseek_finds_nothing() {
 }
 
 #[tokio::test]
-async fn better_quality_asks_lidarr_when_soulseeks_copy_fails_the_checks() {
+async fn better_quality_fails_when_lidarrs_copy_fails_the_checks() {
     let f = Fixture::new().await;
-    let action = spawn_apply(&f.executor(false, None, both_sources(None)), better_quality());
-
-    let soulseek = f.next_download().await;
-    // An MP3 renamed: no larger than the original, so refused before it was ever placed.
-    let staged = f.staged(&[0u8; 10], ".flac");
-    let refused = reveal(&soulseek, &staged).await.expect_err("refused");
-    f.fail(&soulseek, anyhow::Error::new(refused));
+    let action = spawn_apply(&f.executor(false, lidarr_source()), better_quality());
 
     let lidarr = f.next_download().await;
     assert_eq!(lidarr.source_override, Some(DownloadSource::Lidarr));
-    let placed = reveal(&lidarr, &f.lossless_staged()).await.expect("admitted");
-    f.finish(&lidarr, &placed);
+    // An MP3 renamed: no larger than the original, so refused before it was ever placed.
+    let staged = f.staged(&[0u8; 10], ".flac");
+    let refused = reveal(&lidarr, &staged).await.expect_err("refused");
+    f.fail(&lidarr, anyhow::Error::new(refused));
 
-    assert_eq!(outcome_of(action).await.state, LibraryActionState::Applied);
-    assert!(!Path::new(&f.original).exists());
+    assert_eq!(outcome_of(action).await.state, LibraryActionState::Failed);
+    assert!(Path::new(&f.original).exists());
+    assert!(f.quarantined().is_empty());
 }
 
 #[tokio::test]
-async fn better_quality_during_a_soulseek_outage_goes_straight_to_lidarr() {
+async fn better_quality_when_the_source_misses_says_what_it_found() {
     let f = Fixture::new().await;
-    let action = spawn_apply(
-        &f.executor(
-            false,
-            Some(Arc::new(OfflineLink)),
-            both_sources(Some(Arc::new(OfflineLink))),
-        ),
-        better_quality(),
-    );
+    let action = spawn_apply(&f.executor(false, lidarr_source()), better_quality());
 
-    let download = f.next_download().await;
-    assert_eq!(download.source_override, Some(DownloadSource::Lidarr));
-    let placed = reveal(&download, &f.lossless_staged()).await.expect("admitted");
-    f.finish(&download, &placed);
-
-    assert_eq!(outcome_of(action).await.state, LibraryActionState::Applied);
-}
-
-#[tokio::test]
-async fn better_quality_when_every_source_misses_says_what_each_found() {
-    let f = Fixture::new().await;
-    let action = spawn_apply(&f.executor(false, None, both_sources(None)), better_quality());
-
-    let soulseek = f.next_download().await;
-    f.fail(&soulseek, not_found("no peer had it"));
     let lidarr = f.next_download().await;
     f.fail(
         &lidarr,
@@ -591,10 +522,6 @@ async fn better_quality_when_every_source_misses_says_what_each_found() {
     assert_eq!(outcome.code.as_deref(), Some(LibraryActionCodes::NO_REPLACEMENT));
     let detail = outcome.detail.unwrap_or_default();
     assert!(detail.contains("Lidarr found no lossless copy"), "{detail}");
-    assert!(
-        detail.contains("Before that, Soulseek: no peer had it"),
-        "{detail}"
-    );
     assert!(Path::new(&f.original).exists());
     assert!(f.quarantined().is_empty());
 }
@@ -602,10 +529,10 @@ async fn better_quality_when_every_source_misses_says_what_each_found() {
 #[tokio::test]
 async fn better_quality_with_no_source_set_up_fails_without_downloading() {
     let f = Fixture::new().await;
-    let none = Some(Arc::new(UpgradeSources::new(store(AppSettings::default()), None)));
+    let none = Some(Arc::new(UpgradeSources::new(store(AppSettings::default()))));
 
     let outcome = f
-        .executor(false, None, none)
+        .executor(false, none)
         .apply(better_quality())
         .await
         .expect("an outcome");
@@ -620,7 +547,7 @@ async fn better_quality_with_no_source_set_up_fails_without_downloading() {
 
 fn replaced_anyway(song: AnywaySong) -> LibraryActionRequest {
     LibraryActionRequest {
-        only_source: Some(DownloadSource::Soulseek),
+        only_source: Some(DownloadSource::Lidarr),
         anyway: Some(song),
         ..better_quality()
     }
@@ -639,7 +566,7 @@ fn plain_teardrop(length: i32) -> AnywaySong {
 async fn a_copy_replaced_anyway_goes_in_though_it_is_no_better_and_the_original_is_kept() {
     let f = Fixture::new().await;
     let action = spawn_apply(
-        &f.executor(true, None, None),
+        &f.executor(true, None),
         replaced_anyway(AnywaySong {
             title: "Teardrop".into(),
             album: Some("Mezzanine".into()),
@@ -649,7 +576,7 @@ async fn a_copy_replaced_anyway_goes_in_though_it_is_no_better_and_the_original_
     );
 
     let download = f.next_download().await;
-    assert_eq!(download.source_override, Some(DownloadSource::Soulseek));
+    assert_eq!(download.source_override, Some(DownloadSource::Lidarr));
     // The same MP3 as the original: refused by Better quality, taken when the person said so.
     let staged = f.staged(&mp3(), ".mp3");
     let placed = reveal(&download, &staged)
@@ -671,9 +598,9 @@ async fn a_copy_replaced_anyway_goes_in_though_it_is_no_better_and_the_original_
 async fn without_anyway_the_same_copy_is_refused_and_the_original_stays() {
     let f = Fixture::new().await;
     let action = spawn_apply(
-        &f.executor(true, None, None),
+        &f.executor(true, None),
         LibraryActionRequest {
-            only_source: Some(DownloadSource::Soulseek),
+            only_source: Some(DownloadSource::Lidarr),
             ..better_quality()
         },
     );
@@ -693,10 +620,7 @@ async fn without_anyway_the_same_copy_is_refused_and_the_original_stays() {
 async fn a_replacement_anyway_is_looked_for_and_checked_as_the_song_it_was_picked_as() {
     let f = Fixture::new().await;
     // The library's file is another take; the copy is held to the plain song's name and length.
-    let action = spawn_apply(
-        &f.executor(true, None, None),
-        replaced_anyway(plain_teardrop(270)),
-    );
+    let action = spawn_apply(&f.executor(true, None), replaced_anyway(plain_teardrop(270)));
 
     let download = f.next_download().await;
     let routing = f
@@ -722,7 +646,7 @@ fn recording_history(
     Arc<LibraryActionExecutor>,
     Arc<Mutex<Vec<(String, Option<String>)>>>,
 ) {
-    let executor = f.executor(true, None, None);
+    let executor = f.executor(true, None);
     let asked: Arc<Mutex<Vec<(String, Option<String>)>>> = Arc::default();
     let heard = asked.clone();
     executor.configure(move |seams| {
@@ -843,7 +767,7 @@ async fn a_same_quality_copy_replaced_anyway_keeps_the_old_names() {
 #[tokio::test]
 async fn a_delete_quarantines_the_file_and_is_never_done_twice() {
     let f = Fixture::new().await;
-    let executor = f.executor(false, None, None);
+    let executor = f.executor(false, None);
     let settings_with_delete = AppSettings {
         library_actions: LibraryActionSettings {
             enabled: true,

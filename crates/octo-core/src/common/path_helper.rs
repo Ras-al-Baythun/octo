@@ -58,7 +58,7 @@ impl PathHelper {
     /// Where a track goes for a given [`FolderStructure`].
     ///
     /// Every download path routes through here so one setting decides the layout for all
-    /// of them. It used to be decided by a separate switch per source - the Soulseek move,
+    /// of them. It used to be decided by a separate switch per source - the download's move,
     /// the YouTube download and the Lidarr import - and two of those carried a silent
     /// default branch, so adding a layout would have left them quietly filing into the old
     /// one while only the third obeyed the setting.

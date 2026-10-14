@@ -1,9 +1,8 @@
 name: CI
 
 # Every check a commit must pass: the Rust server (format, clippy, tests, cargo-deny), the shim,
-# octo-sonic, the update helper and the installer, and the C# app that stays in octo/ until it
-# is removed after the Rust release (the migration plan's cleanup). docker.yml calls this before
-# it publishes any image, with the C# job left out: no image holds the C# app.
+# octo-sonic, the update helper and the installer. docker.yml calls this before it publishes
+# any image.
 on:
   push:
     branches: [main]
@@ -11,11 +10,6 @@ on:
     types: [opened, synchronize, reopened]
     branches: [main]
   workflow_call:
-    inputs:
-      csharp:
-        description: Also build and test the C# app (octo/, octo.Tests/).
-        type: boolean
-        default: true
   workflow_dispatch:
 
 # Superseded PR pushes are pointless to finish, so cancel those. Never cancel on main: a run
@@ -24,9 +18,6 @@ on:
 concurrency:
   group: ${{ github.workflow }}-ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
-env:
-  DOTNET_VERSION: "9.0.x"
 
 jobs:
   # The Rust server: the workspace in Cargo.toml, crates/.
@@ -99,44 +90,6 @@ jobs:
           command: check ${{ matrix.checks }}
           # The action's container brings its own toolchain; match rust-toolchain.toml.
           rust-version: "1.99"
-
-  # The C# app (2026.10.05 and earlier) stays in the tree beside the Rust server until it is
-  # removed, so it keeps building and passing its tests until then. docker.yml leaves it out.
-  csharp:
-    if: ${{ inputs.csharp != false }}
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
-
-      # ffmpeg for the Radio transcoder; Noto CJK and Symbola, as in the
-      # image, so the cover tests can draw names in other scripts.
-      - name: Install Radio transcoder and cover fonts
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-noto-cjk fonts-symbola
-
-      - name: Restore dependencies
-        run: dotnet restore
-
-      - name: Build
-        run: dotnet build --configuration Release --no-restore
-
-      - name: Test
-        run: dotnet test --configuration Release --no-build --verbosity normal
-        env:
-          # The WebApplicationFactory tests boot the real Program, and on this
-          # runner that first host build has ranged from 1m32s to over 5m
-          # across runs of the same commit's code (2m08s on the PR run, timeout
-          # on the merge run, 1m32s on the release run). The resolver kills the
-          # build at 5m by default, which turned that variance into a flaky
-          # red on main. Locally the same build takes about a second, so this
-          # only widens the CI cliff; a genuine hang still fails the job.
-          DOTNET_HOST_FACTORY_RESOLVER_DEFAULT_TIMEOUT_IN_SECONDS: "600"
 
   # The shim is Python and its image is built only after a merge (docker.yml
   # publishes it) or on the deploy host, so before this job a syntax error in

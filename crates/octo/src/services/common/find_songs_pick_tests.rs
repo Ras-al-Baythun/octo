@@ -7,13 +7,12 @@ use std::time::Duration;
 use futures::FutureExt;
 use octo_core::models::download::AcquisitionCandidate;
 use octo_core::settings::{
-    AppSettings, LibraryAction, LibraryActionDefinition, LibraryActionSettings, SettingsStore,
-    SoulseekSettings,
+    AppSettings, LibraryAction, LibraryActionDefinition, LibraryActionSettings, LidarrSettings, SettingsStore,
 };
 use tokio_util::sync::CancellationToken;
 
 use super::download_log_tests::upgrade_worker;
-use super::download_picks::{AnywaySong, DownloadPicks, PickedCopy, SOULSEEK_SOURCE};
+use super::download_picks::{AnywaySong, DownloadPicks, LIDARR_SOURCE, PickedCopy};
 use super::song_finder::{
     FindSnapshot, FindTarget, FoundCopy, SearchAnswer, SongFinder, SongFinderServices, find_states,
     library_action_states,
@@ -39,27 +38,26 @@ struct Server {
     settings: Arc<SettingsStore>,
 }
 
-fn flac(peer: &str, rank: i32) -> FoundCopy {
-    let file = r"Music\Air\Moon Safari (1998)\02 - Sexy Boy.flac";
+/// A FLAC release of the album from indexer `indexer`, whose release id is the indexer's name.
+fn flac(indexer: &str, rank: i32) -> FoundCopy {
+    let release = format!("Air - Moon Safari (1998) [FLAC] ({indexer})");
     FoundCopy::new(
         AcquisitionCandidate {
-            source: SOULSEEK_SOURCE.into(),
-            peer: Some(peer.into()),
-            file: Some("02 - Sexy Boy.flac".into()),
-            folder: Some("Moon Safari (1998)".into()),
-            format: Some("flac".into()),
-            size: Some(30_000_000),
+            source: LIDARR_SOURCE.into(),
+            peer: Some(indexer.into()),
+            file: Some(release.clone()),
+            format: Some("FLAC".into()),
+            size: Some(300_000_000),
             length: Some(298),
             rank: Some(rank),
             ..Default::default()
         },
         PickedCopy {
-            source: SOULSEEK_SOURCE.into(),
-            peer: Some(peer.into()),
-            file: Some(file.into()),
-            size: 30_000_000,
-            format: Some("flac".into()),
-            length: Some(298),
+            source: LIDARR_SOURCE.into(),
+            release_guid: Some(indexer.into()),
+            indexer_id: Some(rank),
+            release_title: Some(release),
+            size: 300_000_000,
             ..Default::default()
         },
     )
@@ -68,8 +66,8 @@ fn flac(peer: &str, rank: i32) -> FoundCopy {
 fn three_flacs() -> anyhow::Result<SearchAnswer> {
     Ok((
         vec![flac("peer1", 1), flac("peer2", 2), flac("peer3", 3)],
-        vec!["Air Sexy Boy".to_string()],
-        Some("3 files from 3 peers; 3 fit the song".to_string()),
+        vec!["Air - Moon Safari (1998)".to_string()],
+        Some("3 releases of Moon Safari".to_string()),
     ))
 }
 
@@ -86,10 +84,12 @@ fn build(target: FindTarget, acquisitions: Option<Arc<TrackAcquisitionQueue>>) -
             }],
             ..Default::default()
         },
-        soulseek: SoulseekSettings {
-            base_url: Some("http://slskd.test".into()),
-            username: Some("u".into()),
-            password: Some("p".into()),
+        lidarr: LidarrSettings {
+            base_url: Some("http://lidarr.test".into()),
+            api_key: Some("k".into()),
+            root_folder_path: Some("/music".into()),
+            quality_profile_id: 1,
+            metadata_profile_id: 1,
             ..Default::default()
         },
         ..Default::default()
@@ -99,7 +99,7 @@ fn build(target: FindTarget, acquisitions: Option<Arc<TrackAcquisitionQueue>>) -
     let finder = Arc::new(SongFinder::new(SongFinderServices {
         settings: Some(settings.clone()),
         upgrade_queue: Some(queue.clone()),
-        upgrade_sources: Some(Arc::new(UpgradeSources::new(settings.clone(), None))),
+        upgrade_sources: Some(Arc::new(UpgradeSources::new(settings.clone()))),
         executor: true,
         acquisitions,
         picks: Some(picks.clone()),
@@ -110,8 +110,8 @@ fn build(target: FindTarget, acquisitions: Option<Arc<TrackAcquisitionQueue>>) -
             let target = target.clone();
             async move { Some(target) }.boxed()
         });
-        seams.sources_for = Arc::new(|_| vec![(SOULSEEK_SOURCE.to_string(), None)]);
-        seams.search_soulseek = Arc::new(|_, _| async { three_flacs() }.boxed());
+        seams.sources_for = Arc::new(|_| vec![(LIDARR_SOURCE.to_string(), None)]);
+        seams.search_lidarr = Arc::new(|_, _| async { three_flacs() }.boxed());
     });
     Server {
         finder,
@@ -133,7 +133,7 @@ async fn look(finder: &Arc<SongFinder>, user: &str) -> FindSnapshot {
 fn queued_peer(queue: &UpgradeQueue) -> Option<String> {
     let jobs = queue.snapshot();
     assert_eq!(jobs.len(), 1);
-    jobs[0].pick.as_ref().and_then(|p| p.peer.clone())
+    jobs[0].pick.as_ref().and_then(|p| p.release_guid.clone())
 }
 
 // ---- A second pick ----------------------------------------------------------------------
@@ -250,11 +250,11 @@ async fn a_pick_is_let_go_when_its_download_ends_without_using_it() {
 #[test]
 fn forgetting_a_pick_leaves_a_newer_one_for_the_same_song() {
     let picks = DownloadPicks::default();
-    let copy = |peer: &str| {
+    let copy = |release: &str| {
         Arc::new(PickedCopy {
-            source: SOULSEEK_SOURCE.into(),
-            peer: Some(peer.into()),
-            file: Some("a.flac".into()),
+            source: LIDARR_SOURCE.into(),
+            release_guid: Some(release.into()),
+            indexer_id: Some(1),
             ..Default::default()
         })
     };
@@ -265,8 +265,8 @@ fn forgetting_a_pick_leaves_a_newer_one_for_the_same_song() {
     assert!(!picks.forget("ext1", &first));
     assert_eq!(
         picks
-            .take("ext1", "Soulseek")
-            .and_then(|p| p.peer.clone())
+            .take("ext1", "Lidarr")
+            .and_then(|p| p.release_guid.clone())
             .as_deref(),
         Some("p2")
     );
@@ -289,7 +289,7 @@ async fn an_upgrade_lets_go_of_a_pick_it_never_used() {
         "find",
     );
     let worker = upgrade_worker(&queue, None, picks.clone(), |request| {
-        (request.on_replacement_queued.as_ref().expect("a follower"))("soulseek", "ext1");
+        (request.on_replacement_queued.as_ref().expect("a follower"))("outside", "ext1");
         // Joined a download already running, so this pick was never taken.
         LibraryActionOutcome::new(LibraryActionState::Failed, Some("joined".into()))
     });
@@ -357,7 +357,7 @@ async fn replace_anyway_queues_the_copy_held_to_the_library_song_with_no_quality
     let jobs = server.queue.snapshot();
     assert_eq!(jobs.len(), 1);
     let pick = jobs[0].pick.clone().expect("the pick");
-    assert_eq!(pick.peer.as_deref(), Some("peer2"));
+    assert_eq!(pick.release_guid.as_deref(), Some("peer2"));
     assert_eq!(
         pick.anyway,
         Some(AnywaySong {
@@ -439,37 +439,6 @@ async fn a_live_take_in_the_library_is_named_on_the_look_and_in_the_question() {
 }
 
 #[tokio::test]
-async fn the_wrong_song_is_refused_even_with_anyway() {
-    let server = build(owned_flac(), None);
-    server.finder.seams(|seams| {
-        seams.search_soulseek = Arc::new(|_, _| {
-            async {
-                let mut other = flac("peer1", 1);
-                let mut pick = (*other.pick).clone();
-                pick.file = Some(r"Music\Air\Moon Safari (1998)\04 - Kelly Watch the Stars.flac".into());
-                other.pick = Arc::new(pick);
-                Ok((vec![other], Vec::new(), None))
-            }
-            .boxed()
-        });
-    });
-    let look = look(&server.finder, "alice").await;
-
-    for anyway in [Some(false), Some(true)] {
-        let picked = server
-            .finder
-            .pick_copy(&look.id, &look.copies[0].id, "alice", anyway)
-            .await;
-        assert_eq!(picked.state, library_action_states::SKIPPED);
-        assert_eq!(
-            picked.detail,
-            "The file name does not match the title, so it cannot take the place of the one in your library."
-        );
-    }
-    assert!(server.queue.snapshot().is_empty());
-}
-
-#[tokio::test]
 async fn someone_who_may_no_longer_replace_songs_is_told_so_and_never_asked() {
     let server = build(owned_flac(), None);
     let look = look(&server.finder, "alice").await;
@@ -524,7 +493,7 @@ async fn the_upgrade_worker_hands_the_anyway_song_to_the_replacement() {
 
     assert_eq!(
         heard.lock().clone(),
-        Some((Some(song), Some(octo_core::settings::DownloadSource::Soulseek)))
+        Some((Some(song), Some(octo_core::settings::DownloadSource::Lidarr)))
     );
 }
 
@@ -576,7 +545,7 @@ async fn one_person_runs_two_looks_at_once_and_another_persons_look_is_never_dro
             };
             async move { Some(found) }.boxed()
         });
-        seams.search_soulseek = Arc::new(move |song, _| {
+        seams.search_lidarr = Arc::new(move |song, _| {
             let slow = song.title == slow_title;
             let mut released = released.clone();
             async move {

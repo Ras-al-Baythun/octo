@@ -28,7 +28,6 @@ use crate::services::library::duplicate_scan_worker::is_lossless_file;
 use crate::services::library::quality_upgrade_worker::{LibrarySongRow, QualityUpgradeWorker};
 use crate::services::library::upgrade_queue::{UpgradeAsk, UpgradeJob, UpgradeResult, UpgradeStates};
 use crate::services::library::upgrade_sources::UpgradeSources;
-use crate::services::soulseek::ISoulseekLink;
 
 pub fn routes() -> RouteSet {
     RouteSet::new()
@@ -157,7 +156,7 @@ fn ends_with_ignore_case(text: &str, suffix: &str) -> bool {
         )
 }
 
-/// `UpgradeSourcesNow?.Ready`, with the Soulseek check when no `UpgradeSources` is registered.
+/// `UpgradeSourcesNow?.Ready`.
 fn source_ready(sources: &UpgradeSources) -> bool {
     sources.ready()
 }
@@ -176,7 +175,7 @@ fn result_json(result: &UpgradeResult) -> Value {
     })
 }
 
-/// The upgrade queue, how many run at once and why, Soulseek's state, and the gate.
+/// The upgrade queue, how many run at once and why, and the gate.
 async fn get_upgrades(State(state): State<AppState>, request: Request) -> Response {
     let (parts, _) = request.into_parts();
     let browse = browse_user(&state, &parts);
@@ -189,12 +188,7 @@ async fn get_upgrades(State(state): State<AppState>, request: Request) -> Respon
         live.entry(format!("{}:{}", row.provider, row.external_id))
             .or_insert(row);
     }
-    let reading = state.soulseek_link.read(false).await;
     let settings = state.settings.current();
-    let (up, warning, detail) = octo_core::soulseek::soulseek_link::describe(
-        reading.as_ref(),
-        settings.soulseek.effective_outage_hold_hours(),
-    );
     let actions = settings.library_actions.clone();
     let jobs: Vec<Value> = state
         .upgrade_queue
@@ -239,7 +233,6 @@ async fn get_upgrades(State(state): State<AppState>, request: Request) -> Respon
         "sourceReady": source_ready(sources),
         "plan": plan,
         "why": state.download_concurrency.why(),
-        "soulseek": { "ok": up, "warning": warning, "detail": detail },
         "gate": {
             "user": user,
             "enabled": actions.enabled,

@@ -14,7 +14,7 @@ failures=0
 # docker only logs, and fails the pull of any service FAKE_NO_IMAGE names (no network to
 # ghcr.io). curl answers 200 to every status code probe and a Last.fm track to the key check,
 # so each question takes the default and Octo looks healthy straight away; with
-# FAKE_SLOW_SLSKD=N, Octo's status says slskd is not ok for its first N answers, and with
+# FAKE_SLOW_SHIM=N, Octo's status says the shim is not ok for its first N answers, and with
 # FAKE_SONIC_DOWN it says octo-sonic is not ok (an empty music folder) every time.
 cat > "$work/bin/docker" <<EOF
 #!/usr/bin/env bash
@@ -34,9 +34,9 @@ case "$*" in
   */api/admin/status*)
     calls="$(( $(cat "$FAKE_STATUS_CALLS" 2>/dev/null || echo 0) + 1 ))"
     echo "$calls" > "$FAKE_STATUS_CALLS"
-    if [ "$calls" -le "${FAKE_SLOW_SLSKD:-0}" ]; then ok=false; else ok=true; fi
+    if [ "$calls" -le "${FAKE_SLOW_SHIM:-0}" ]; then ok=false; else ok=true; fi
     sonic=true; [ -z "${FAKE_SONIC_DOWN:-}" ] || sonic=false
-    echo "{\"services\":{\"slskd\":{\"ok\":$ok,\"configured\":true},\"sonic\":{\"ok\":$sonic,\"configured\":true}}}" ;;
+    echo "{\"services\":{\"ytDlpShim\":{\"ok\":$ok,\"configured\":true},\"sonic\":{\"ok\":$sonic,\"configured\":true}}}" ;;
   *) echo '{}' ;;
 esac
 EOF
@@ -91,12 +91,10 @@ LASTFM_ENABLE_YOUR_MIX=false
 LASTFM_DISCOVERY_STATION_COUNT=4
 LASTFM_PERSONALIZED_STATION_COUNT=6
 LASTFM_RADIO_TRACK_COUNT=80
-SLSKD_USERNAME=octoadmin
-SLSKD_PASSWORD=webpass
-SLSKD_SEARCH_WAIT_SECONDS="12"
-SLSKD_SOULSEEK_USERNAME=someone
-SLSKD_SOULSEEK_PASSWORD="pass word"
-DOWNLOAD_SOURCE=Soulseek
+ACOUSTID_API_KEY=k3y
+PARALLEL_DOWNLOADS="2"
+NTFY_TOKEN="pass word"
+DOWNLOAD_SOURCE=Lidarr
 STORAGE_MODE=Permanent
 FOLDER_STRUCTURE=Organized
 EXPLICIT_FILTER=Clean
@@ -125,7 +123,7 @@ done
 
 grep -qx 'EXPLICIT_FILTER=Clean' "$work/octo/.env" && grep -qx 'LASTFM_RADIO_TRACK_COUNT=80' "$work/octo/.env" \
   && pass "a default changed by hand stays changed" || fail "a hand-changed default went back"
-grep -qx 'SLSKD_SEARCH_WAIT_SECONDS="12"' "$work/octo/.env" \
+grep -qx 'PARALLEL_DOWNLOADS="2"' "$work/octo/.env" \
   && pass "a kept line keeps its quotes" || fail "a kept line lost its quotes"
 grep -qx 'UPDATES_REPO=' "$work/octo/.env" \
   && pass "an empty value is kept" || fail "an empty value was dropped"
@@ -155,21 +153,19 @@ cmp -s "$work/first.env" "$work/octo/.env" \
 fresh
 run
 for want in SUBSONIC_URL=http://navidrome:4533 COMPOSE_PROFILES=navidrome SUBSONIC_ADMIN_USERNAME=admin "DOWNLOAD_PATH=$work/octo/downloads" \
-    DOWNLOAD_SOURCE=Soulseek STORAGE_MODE=Stream FOLDER_STRUCTURE=Flat SLSKD_USERNAME=admin \
+    DOWNLOAD_SOURCE=YouTube STORAGE_MODE=Stream FOLDER_STRUCTURE=Flat \
     LIDARR_QUALITY_PROFILE_ID=0 LIDARR_COMPLETION_MODE=Accepted EXPLICIT_FILTER=All; do
   grep -qx "$want" "$work/octo/.env" && pass "a first install writes $want" || fail "a first install did not write $want"
 done
-[ -n "$(value_of "$work/octo/.env" SLSKD_PASSWORD)" ] \
-  && pass "a first install makes an slskd password" || fail "no slskd password on a first install"
 grep -q 'Kept from your earlier' "$work/octo/.env" \
   && fail "a first install has a kept section" || pass "a first install has nothing to keep"
 
 # An older installer wrote some settings empty; a re-run fills them with their defaults.
 fresh
-printf 'SUBSONIC_URL=http://192.168.1.20:4533\nDOWNLOAD_PATH=%s\nLIDARR_COMPLETION_MODE=\nSLSKD_USERNAME=\n' \
+printf 'SUBSONIC_URL=http://192.168.1.20:4533\nDOWNLOAD_PATH=%s\nLIDARR_COMPLETION_MODE=\nDOWNLOAD_SOURCE=\n' \
   "$work/music" > "$work/octo/.env"
 run
-grep -qx 'LIDARR_COMPLETION_MODE=Accepted' "$work/octo/.env" && grep -qx 'SLSKD_USERNAME=admin' "$work/octo/.env" \
+grep -qx 'LIDARR_COMPLETION_MODE=Accepted' "$work/octo/.env" && grep -qx 'DOWNLOAD_SOURCE=YouTube' "$work/octo/.env" \
   && pass "settings an older installer left empty get their defaults" || fail "empty settings stayed empty"
 
 # Octo and the sidecars are pulled and nothing is built; one that will not pull is built instead.
@@ -187,9 +183,9 @@ expect_images "without ghcr.io everything is built" "octo yt-dlp-shim octo-sonic
 
 # In a git checkout, an image whose folder changed since the release the folder names is built,
 # because its published image is not what the folder holds: Octo's own code, its Dockerfile, the
-# dashboard it serves, or a sidecar. A change to the C# app alone is not in the image, so Octo is
-# still pulled. One the user pinned with OCTO_IMAGE_TAG is pulled anyway. The release is the
-# VERSION file's; the C# project's number is not read once there is one.
+# dashboard it serves, or a sidecar. A change to a file the image does not hold (the README) is
+# not in the image, so Octo is still pulled. One the user pinned with OCTO_IMAGE_TAG is pulled
+# anyway. The release is the VERSION file's; octo.csproj's number is not read once there is one.
 fresh
 (
   cd "$work/octo" || exit 1
@@ -197,7 +193,7 @@ fresh
   echo 2026.10.08 > VERSION
   printf '<InformationalVersion>2026.10.05</InformationalVersion>\n' > octo/octo.csproj
   echo one > crates/octo/src/main.rs && echo one > Dockerfile && echo one > octo/wwwroot/admin.js
-  echo one > octo/Program.cs
+  echo one > README.md
   echo one > yt-dlp-shim/app.py && echo one > sonic/main.rs
   git init -q . && git config core.autocrlf false && git add -A && git -c user.email=t@example.com -c user.name=t commit -qm release && git tag 2026.10.08
 ) || fail "could not make the test checkout"
@@ -217,10 +213,10 @@ echo two > "$work/octo/octo/wwwroot/admin.js"
 run
 expect_images "a changed dashboard builds Octo" "yt-dlp-shim octo-sonic | octo-source"
 git -C "$work/octo" checkout -q -- octo
-echo two > "$work/octo/octo/Program.cs"
+echo two > "$work/octo/README.md"
 run
-expect_images "a change to the C# app alone still pulls Octo" "octo yt-dlp-shim octo-sonic | "
-git -C "$work/octo" checkout -q -- octo
+expect_images "a change outside the image's files still pulls Octo" "octo yt-dlp-shim octo-sonic | "
+git -C "$work/octo" checkout -q -- README.md
 echo two > "$work/octo/Dockerfile"
 run
 expect_images "a changed Dockerfile builds Octo" "yt-dlp-shim octo-sonic | octo-source"
@@ -238,8 +234,8 @@ expect_images "a tag the user chose is pulled" "octo yt-dlp-shim octo-sonic | "
 
 # Octo answers within seconds now that it is pulled; a service still starting is waited for.
 fresh
-FAKE_SLOW_SLSKD=2 run
-grep -q 'waiting for the other services to start' "$work/out.log" && grep -Eq 'slskd +.*ok' "$work/out.log"   && pass "a service still starting is waited for, then shown ok" || { fail "slskd still starting:"; grep -E 'waiting|slskd  ' "$work/out.log"; }
+FAKE_SLOW_SHIM=2 run
+grep -q 'waiting for the other services to start' "$work/out.log" && grep -Eq 'yt-dlp shim +.*ok' "$work/out.log"   && pass "a service still starting is waited for, then shown ok" || { fail "the shim still starting:"; grep -E 'waiting|yt-dlp shim  ' "$work/out.log"; }
 fresh
 run
 grep -q 'waiting for the other services' "$work/out.log"   && fail "the installer waited with every service ok" || pass "with every service ok the installer does not wait"

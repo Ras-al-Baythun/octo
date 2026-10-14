@@ -6,7 +6,6 @@ use std::sync::Arc;
 use octo_core::models::domain::{Album, Artist, Song};
 use octo_core::models::search::SearchResult;
 use octo_core::models::subsonic::ExternalPlaylist;
-use octo_core::settings::SubsonicSettings;
 use octo_core::soulseek::SoulseekRouting;
 use serde_json::{Value, json};
 
@@ -22,10 +21,7 @@ impl IdRegistry for TestIds {
 }
 
 fn mapper() -> SubsonicModelMapper {
-    SubsonicModelMapper::new(SubsonicResponseBuilder::new(
-        Arc::new(TestIds),
-        &SubsonicSettings::default(),
-    ))
+    SubsonicModelMapper::new(SubsonicResponseBuilder::new(Arc::new(TestIds)))
 }
 
 fn json_rows(values: Vec<Value>) -> Vec<Row> {

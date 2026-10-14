@@ -21,11 +21,10 @@ use tracing::{debug, error, info, warn};
 
 use super::duplicate_scan_worker::is_lossless_file;
 use super::library_action_executor::{LibraryActionExecutor, LibraryActionRequest};
-use super::upgrade_queue::{ApplyFn, OfflineFn, apply_with, soulseek_offline_with};
+use super::upgrade_queue::{ApplyFn, apply_with};
 use super::{LibraryActionOutcome, LibraryActionState, NavidromePlaylistApi, UpgradeQueue, UpgradeSources};
 use crate::services::common::IAcquisitionActivity;
 use crate::services::framework::DotnetDictionary;
-use crate::services::soulseek::ISoulseekLink;
 use crate::services::state_file;
 use crate::services::subsonic::NavidromeIdentityService;
 
@@ -209,8 +208,7 @@ impl QualityUpgradeStore {
 /// One walk of the library: the songs, and whether the walk reached the end.
 pub type ListSongsFn = Arc<dyn Fn() -> BoxFuture<'static, (Vec<LibrarySongRow>, bool)> + Send + Sync>;
 
-/// The worker's seams, which tests replace, the same way `SoulseekClient` exposes its clock and
-/// poll interval.
+/// The worker's seams, which tests replace.
 #[derive(Clone)]
 pub struct QualityUpgradeSeams {
     pub clock: Clock,
@@ -218,13 +216,12 @@ pub struct QualityUpgradeSeams {
     pub has_admin_identity: Arc<dyn Fn() -> bool + Send + Sync>,
     pub apply: ApplyFn,
     pub list_songs: ListSongsFn,
-    pub soulseek_offline: OfflineFn,
     pub source_ready: Arc<dyn Fn() -> bool + Send + Sync>,
 }
 
 impl QualityUpgradeSeams {
-    /// Seams that do nothing: idle, an admin, no songs, Soulseek up, a source ready, and an
-    /// apply that fails. Tests set the ones they drive.
+    /// Seams that do nothing: idle, an admin, no songs, a source ready, and an apply that
+    /// fails. Tests set the ones they drive.
     pub fn idle() -> Self {
         QualityUpgradeSeams {
             clock: Clock::system(),
@@ -234,7 +231,6 @@ impl QualityUpgradeSeams {
                 async { Ok(LibraryActionOutcome::new(LibraryActionState::Failed, None)) }.boxed()
             }),
             list_songs: Arc::new(|| async { (Vec::new(), true) }.boxed()),
-            soulseek_offline: Arc::new(|| async { false }.boxed()),
             source_ready: Arc::new(|| true),
         }
     }
@@ -246,7 +242,6 @@ pub enum Tick {
     Off,
     NotDue,
     Busy,
-    Offline,
     Unreachable,
     NothingToDo,
     Ran,
@@ -282,7 +277,6 @@ impl QualityUpgradeWorker {
         navidrome: Arc<NavidromePlaylistApi>,
         identity: NavidromeIdentityService,
         settings: Arc<SettingsStore>,
-        soulseek: Option<Arc<dyn ISoulseekLink>>,
         upgrades: Option<Arc<UpgradeQueue>>,
         sources: Option<Arc<UpgradeSources>>,
     ) -> Self {
@@ -296,8 +290,6 @@ impl QualityUpgradeWorker {
                 let navidrome = navidrome.clone();
                 async move { Self::walk(&navidrome).await }.boxed()
             }),
-            // Out only when every source is: a Soulseek outage leaves Lidarr when it is set up.
-            soulseek_offline: soulseek_offline_with(sources, soulseek),
             source_ready: Arc::new(move || ready_sources.as_ref().is_none_or(|s| s.ready())),
         };
         Self::with_seams(store, settings, upgrades, seams)
@@ -395,7 +387,7 @@ impl QualityUpgradeWorker {
         }
         // Every try would fail and be stamped as tried for four weeks.
         else if !source_ready {
-            Some("Better quality has no source set up: it needs slskd or Lidarr.")
+            Some("Better quality has no source set up: it needs Lidarr.")
         } else if !settings.enabled {
             Some("Library actions are off.")
         } else if !settings
@@ -460,8 +452,7 @@ impl QualityUpgradeWorker {
         candidates.first().map(|(song, _, _)| *song)
     }
 
-    /// One minute's check: off, not due, busy, Soulseek out, Navidrome silent, nothing left, or
-    /// one song tried.
+    /// One minute's check: off, not due, busy, Navidrome silent, nothing left, or one song tried.
     pub async fn tick(&self) -> Tick {
         let settings = self.settings.current().library_actions.clone();
         let seams = self.seams();
@@ -485,12 +476,6 @@ impl QualityUpgradeWorker {
         if self.upgrades.as_ref().is_some_and(|u| u.open_count() > 0) {
             return Tick::Busy;
         }
-        // An upgrade during a Soulseek outage finds nothing and would not look at that song again
-        // for four weeks. Not stamped, so the run happens once slskd is back.
-        if (seams.soulseek_offline)().await {
-            return Tick::Offline;
-        }
-
         let (songs, complete) = (seams.list_songs)().await;
         if !complete && songs.is_empty() {
             // Navidrome did not answer. Stamping the run would spend the week's slot on a

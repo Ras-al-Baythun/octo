@@ -421,7 +421,7 @@ async fn a_native_song_detail_for_an_outside_song_is_answered_by_octo() {
         },
     );
     let (_server, state, app) = plain_fixture(metadata).await;
-    let reply = get(&app, "/api/song/ext-soulseek-song-ext-song-1").await;
+    let reply = get(&app, "/api/song/ext-outside-song-ext-song-1").await;
     assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(reply.header("content-type"), Some("application/json"));
     assert!(
@@ -452,7 +452,7 @@ async fn a_native_song_detail_for_an_outside_song_is_answered_by_octo() {
             ..Default::default()
         },
     );
-    let object = get(&app, &format!("/api/song/ext-soulseek-song-{known}"))
+    let object = get(&app, &format!("/api/song/ext-outside-song-{known}"))
         .await
         .json();
     assert_eq!(object["size"], 7_012_345);
@@ -495,7 +495,7 @@ async fn a_native_song_with_an_unknown_size_or_bit_rate_says_zero() {
         },
     );
 
-    let object = get(&app, &format!("/api/song/ext-soulseek-song-{id}"))
+    let object = get(&app, &format!("/api/song/ext-outside-song-{id}"))
         .await
         .json();
 

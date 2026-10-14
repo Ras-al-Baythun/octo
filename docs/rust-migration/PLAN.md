@@ -45,7 +45,7 @@ Phases are ordered by dependency. Each module task includes porting its xUnit te
 - [ ] Make a config inventory: every env var in `.env.example` (about 145) and every key in `settings.json` → its settings class and field, its default, and whether it hot-reloads. Check in as `docs/rust-migration/config.md`.
 - [ ] Make a state-file inventory: the 20 JSON files (`downloads-history.json`, `upgrades.json`, `lyrics-library.json` and the rest), each with its schema and writer, plus sample real-world files to use as fixtures.
 - [ ] Confirm BouncyCastle is unused and list any other packages that are referenced but dead.
-- [ ] Build the **parity harness**: a docker-compose profile with the C# image, the Rust image, a Navidrome holding a fixture library, and `wiremock` stubs for Last.fm, Deezer, iTunes, MusicBrainz, AcoustID, slskd, Lidarr, the lyrics sources and the yt-dlp shim. Add a request corpus (recorded plus hand-written) and a differ that normalizes volatile fields (timestamps, generated ids, ordering where it is unspecified).
+- [ ] Build the **parity harness**: a docker-compose profile with the C# image, the Rust image, a Navidrome holding a fixture library, and `wiremock` stubs for Last.fm, Deezer, iTunes, MusicBrainz, AcoustID, Lidarr, the lyrics sources and the yt-dlp shim. Add a request corpus (recorded plus hand-written) and a differ that normalizes volatile fields (timestamps, generated ids, ordering where it is unspecified).
 - [ ] Record the corpus by running the C# app with request/response capture against the fixtures.
 
 ### Phase 1: Skeleton
@@ -63,7 +63,7 @@ Phases are ordered by dependency. Each module task includes porting its xUnit te
 - [ ] `Services/Common` pure logic: `SongIdentity` (1.1k lines), `SingleFlight`, `PathHelper`, `PlaylistIdHelper`, `SongLength`, the live-version detection and the query-variant lookup. The Rust tests must read `docs/song-identity-cases.json`, the same file the Octo apps use.
 - [ ] `Services/Tagging`: `ReleaseChooser`, `ReleaseDistance`, `ReleaseIdentifier`, `TagPlan`, `TagEvidence`, `CandidateSources`.
 - [ ] `Services/Validation` and `Services/Metadata/GenreNormalizer`, `AcceptLanguageHeader`.
-- [ ] `Services/Fingerprint/TrackMatchComparer`, and the Soulseek candidate matching and deny list (`SoulseekCandidateMatchingTests`, `SoulseekDenyListTests`, `SoulseekSearchProfileTests`).
+- [ ] `Services/Fingerprint/TrackMatchComparer`, and the download candidate matching (removed).
 - [ ] `Services/Lyrics` pure parts: `LyricsText`, `LyricsIdentity`, `LyricsChoices`, LRC/word-timing parsing (`LyricsWordTimingTests`, `LyricsChoiceTests`).
 - [ ] `Services/Updates`: `ReleaseVersion`, `ReleaseCheck`.
 - [ ] Serializer symmetry: for every state file, read the fixture, write it back, and expect byte-for-byte equality (`SerializerSymmetryTests`).
@@ -90,7 +90,7 @@ Phases are ordered by dependency. Each module task includes porting its xUnit te
 
 ### Phase 5: Acquisition pipeline (highest risk)
 
-- [ ] Soulseek: the slskd client (JWT auth, the operation gate, 429 handling), the metadata service, the download service (1.8k lines), holds, rejected peers, browse sessions (`Soulseek*Tests`, `ParallelDownloadTests`, `ParallelLockSplitTests`).
+- [ ] The download client (removed).
 - [ ] `BaseDownloadService` (1.9k lines): placement, tagging and attribution (`DownloadPlacementTests`, `DownloadTaggingTests`, `DownloadAttributionTests`, `AlbumFolderTests`, `AlbumFillInTests`).
 - [ ] `AcquisitionTracker` and `HeartAcquisitionCoordinator` (`AcquisitionTrackerTests`, `HeartAcquisitionCoordinatorTests`, `HeartOwnershipTests`, `StarOnArrivalTests`, `AcquisitionEndpointTests`).
 - [ ] Audio tag writing with `lofty`. For FLAC, MP3 (ID3v2.3/2.4), M4A and Opus, every frame and atom TagLibSharp writes today must read back the same (`TagWriterExtrasTests`, `MergedFormatTests`). Diff tag dumps from both implementations on the fixture files.
@@ -122,7 +122,7 @@ Phases are ordered by dependency. Each module task includes porting its xUnit te
 ### Phase 9: Parity, hardening and cutover
 
 - [x] Run the full parity corpus and fix every diff, or record it in `docs/rust-migration/known-diffs.md` with a reason.
-- [ ] Soak test: run the Rust image against a real Navidrome and slskd library for at least 7 days, with a daily state-file and tag audit.
+- [ ] Soak test: run the Rust image against a real Navidrome library for at least 7 days, with a daily state-file and tag audit.
 - [x] Upgrade test: start the Rust image on a `/app/config` and `/music` written by C# `2026.10.03.2`. No migration step may be needed, and every queue and journal must resume.
 - [x] Downgrade test: the C# image can still read state written by Rust, or the unsupported files are documented.
 - [x] Load test against the Phase 0 baseline. Results for these four: [`cutover-report.md`](cutover-report.md).

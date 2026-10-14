@@ -64,7 +64,6 @@ pub fn color_for(r#type: NotificationEventType) -> i32 {
     match r#type {
         NotificationEventType::DownloadStarted => 0x3B82F6,
         NotificationEventType::DownloadCompleted => 0x22C55E,
-        NotificationEventType::LosslessFallback => 0xF59E0B,
         NotificationEventType::DownloadFailed => 0xEF4444,
         NotificationEventType::AlbumCompleted => 0x8B5CF6,
         NotificationEventType::Test => 0x64748B,
@@ -117,7 +116,7 @@ mod tests {
     fn default_message() -> NotificationMessage {
         message(
             "Downloaded: A \u{2013} B",
-            "FLAC via Soulseek, 33.1 MB",
+            "FLAC via Lidarr, 33.1 MB",
             Some("https://cdn.example/cover.jpg"),
         )
     }
@@ -132,7 +131,7 @@ mod tests {
         let embed = embed(&payload);
 
         assert_eq!(embed["title"], "Downloaded: A \u{2013} B");
-        assert_eq!(embed["description"], "FLAC via Soulseek, 33.1 MB");
+        assert_eq!(embed["description"], "FLAC via Lidarr, 33.1 MB");
         assert_eq!(embed["color"], 0x22C55E);
         assert_eq!(embed["thumbnail"]["url"], "https://cdn.example/cover.jpg");
         assert_eq!(embed["footer"]["text"], "Octo");
@@ -162,7 +161,7 @@ mod tests {
             title: Some("In My Arms Instead".into()),
             album: Some("Randy Rogers Band".into()),
             format: Some("FLAC".into()),
-            source: Some("Soulseek".into()),
+            source: Some("Lidarr".into()),
             size_bytes: Some(34_684_600),
             duration_seconds: Some(223),
             year: Some(2008),
@@ -184,7 +183,7 @@ mod tests {
                 .to_string()
         };
         assert_eq!(field("Format"), "FLAC");
-        assert_eq!(field("Source"), "Soulseek");
+        assert_eq!(field("Source"), "Lidarr");
         assert_eq!(field("Size"), "33.1 MB");
         assert_eq!(field("Length"), "3:43");
         assert_eq!(field("Bitrate"), "\u{2248}1,244 kbps");
@@ -198,7 +197,7 @@ mod tests {
             !embed["description"]
                 .as_str()
                 .unwrap_or("")
-                .contains("FLAC via Soulseek")
+                .contains("FLAC via Lidarr")
         );
     }
 
@@ -250,7 +249,7 @@ mod tests {
     #[test]
     fn no_thumbnail_key_without_cover_art() {
         let payload = build_payload(
-            &message("Downloaded: A \u{2013} B", "FLAC via Soulseek, 33.1 MB", None),
+            &message("Downloaded: A \u{2013} B", "FLAC via Lidarr, 33.1 MB", None),
             Utc::now(),
         );
 

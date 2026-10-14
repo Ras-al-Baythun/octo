@@ -227,17 +227,6 @@ impl RequestService for FakeRequests {
             })
             .ok_or_else(|| FamilyError::NotFound("There is no such request.".into()))
     }
-
-    async fn retry_as_mp3(&self, id: &str, by: &str) -> Result<FamilyRequest, FamilyError> {
-        let failed = self
-            .store
-            .get(id)
-            .filter(|r| r.username.eq_ignore_ascii_case(by))
-            .ok_or_else(|| FamilyError::NotFound("There is no such request.".into()))?;
-        Ok(self
-            .store
-            .create(request(by, &failed.target, RequestQuality::Mp3), Utc::now()))
-    }
 }
 
 fn request(user: &str, target: &str, quality: RequestQuality) -> FamilyRequest {
@@ -492,10 +481,6 @@ async fn fam_on(change: impl FnOnce(&mut AppSettings), sign_in: Option<&str>, sh
     // The status probes find nothing listening at once, rather than waiting on a name.
     let closed = format!("http://{}", crate::services::test_support::refused_address());
     let mut settings = AppSettings {
-        soulseek: octo_core::settings::SoulseekSettings {
-            base_url: Some(closed.clone()),
-            ..Default::default()
-        },
         radio_sources: octo_core::settings::RadioSourceSettings {
             sonic_url: format!("{closed}/sonic"),
             ..Default::default()
@@ -520,13 +505,10 @@ async fn fam_on(change: impl FnOnce(&mut AppSettings), sign_in: Option<&str>, sh
         TestServices {
             config_dir: Some(dir.path().to_path_buf()),
             sign_in: sign_in.map(str::to_string),
-            raw_settings: vec![
-                (
-                    "YouTube:ShimUrl".into(),
-                    shim.map_or_else(|| closed.clone(), str::to_string),
-                ),
-                ("Soulseek:BaseUrl".into(), closed),
-            ],
+            raw_settings: vec![(
+                "YouTube:ShimUrl".into(),
+                shim.map_or_else(|| closed.clone(), str::to_string),
+            )],
             ..Default::default()
         },
     );
@@ -562,7 +544,7 @@ async fn fam_on(change: impl FnOnce(&mut AppSettings), sign_in: Option<&str>, sh
     let pending = state
         .family_requests
         .create(
-            request("alex", "ext-deezer-song-1", RequestQuality::Flac),
+            request("alex", "ext-deezer-song-1", RequestQuality::Best),
             Utc::now(),
         )
         .id;
@@ -1082,7 +1064,7 @@ async fn my_requests_lists_asks_and_cancels() {
     let mine = f.get("/api/family/me/requests", Some(&f.alex())).await.json();
     assert_eq!(mine.as_array().expect("a list").len(), 1);
     assert_eq!(mine[0]["displayName"], "Alex");
-    assert_eq!(mine[0]["quality"], "Flac");
+    assert_eq!(mine[0]["quality"], "Best");
 
     let asked = f
         .post(
@@ -2338,11 +2320,11 @@ async fn get_family_requests_mine_or_all_for_approvers() {
 async fn request_copy_makes_a_request_for_members_only() {
     let f = fam().await;
     let r = f
-        .rest_as_alex("requestCopy", "id=ext-deezer-song-7&quality=Flac")
+        .rest_as_alex("requestCopy", "id=ext-deezer-song-7&quality=Best")
         .await
         .subsonic();
     assert_eq!(r["familyRequest"]["state"], "Pending", "{r}");
-    assert_eq!(r["familyRequest"]["quality"], "Flac");
+    assert_eq!(r["familyRequest"]["quality"], "Best");
     let missing = f.rest_as_alex("requestCopy", "").await.subsonic();
     assert_eq!(missing["error"]["code"], 10);
     let owner = f

@@ -1,55 +1,37 @@
 //! How many downloads may transfer at once: `DownloadConcurrency` and `TransferLimiter`.
 
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use octo_core::settings::SettingsStore;
 use parking_lot::Mutex;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
-use tracing::{info, warn};
 
 /// How many downloads may transfer at once, and the gate that holds them to it.
 ///
-/// One at a time used to be the only safe number: a finished Soulseek file was found by its
-/// leaf name anywhere under the music folder, so two transfers in flight could claim each
-/// other's file. Each Soulseek download now lands in a folder of its own. Parallel is earned,
-/// not assumed: until slskd has put a download in its folder (Prove), Current is 1, and if
-/// slskd ever puts one elsewhere (Refuse), Current is 1 for the rest of the process.
+/// Every download lands in a folder of its own (the YouTube staging folder, a Lidarr job
+/// folder), so two transfers in flight can never claim each other's file and the setting is
+/// safe to follow as it is. Placing files into the library stays one at a time either way.
 pub struct DownloadConcurrency {
     state: Arc<ConcurrencyState>,
     transfers: TransferLimiter,
 }
 
 struct ConcurrencyState {
-    /// The Soulseek settings, read at every use.
+    /// The download settings, read at every use.
     settings: Arc<SettingsStore>,
-    proven: AtomicBool,
-    refused: OnceLock<String>,
 }
 
 impl ConcurrencyState {
-    fn destinations_proven(&self) -> bool {
-        self.proven.load(Ordering::SeqCst) && self.refused.get().is_none()
-    }
-
     fn current(&self) -> i32 {
-        if self.destinations_proven() {
-            self.settings.current().soulseek.effective_parallel_downloads()
-        } else {
-            1
-        }
+        self.settings.current().downloads.effective_parallel_downloads()
     }
 }
 
 impl DownloadConcurrency {
     pub fn new(settings: Arc<SettingsStore>) -> Self {
-        let state = Arc::new(ConcurrencyState {
-            settings,
-            proven: AtomicBool::new(false),
-            refused: OnceLock::new(),
-        });
+        let state = Arc::new(ConcurrencyState { settings });
         let width = state.clone();
         DownloadConcurrency {
             transfers: TransferLimiter::new(move || width.current()),
@@ -62,45 +44,15 @@ impl DownloadConcurrency {
         &self.transfers
     }
 
-    pub fn destinations_proven(&self) -> bool {
-        self.state.destinations_proven()
-    }
-
     pub fn current(&self) -> i32 {
         self.state.current()
     }
 
     /// Why Current is what it is, in words for the dashboard.
     pub fn why(&self) -> String {
-        if let Some(refused) = self.state.refused.get() {
-            format!("One at a time: {refused}.")
-        } else if !self.destinations_proven() {
-            "One at a time until slskd has put a download in its own folder.".to_string()
-        } else {
-            match self.current() {
-                1 => "One at a time, as set.".to_string(),
-                n => format!("Up to {n} at once."),
-            }
-        }
-    }
-
-    /// A file was found in the folder Octo asked slskd to put it in.
-    pub fn prove(&self) {
-        if !self.state.proven.swap(true, Ordering::SeqCst) && self.state.refused.get().is_none() {
-            let n = self
-                .state
-                .settings
-                .current()
-                .soulseek
-                .effective_parallel_downloads();
-            info!("slskd puts each download in its own folder, so up to {n} run at once");
-        }
-    }
-
-    /// slskd put a download somewhere else. Back to one at a time until Octo restarts.
-    pub fn refuse(&self, reason: &str) {
-        if self.state.refused.set(reason.to_string()).is_ok() {
-            warn!("Downloads go one at a time again: {reason}");
+        match self.current() {
+            1 => "One at a time, as set.".to_string(),
+            n => format!("Up to {n} at once."),
         }
     }
 }
@@ -255,13 +207,13 @@ impl Drop for TransferSlot {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use octo_core::settings::{AppSettings, SoulseekSettings};
-    use std::sync::atomic::AtomicI32;
+    use octo_core::settings::{AppSettings, DownloadSettings};
+    use std::sync::atomic::{AtomicI32, Ordering};
     use std::time::Duration;
 
     fn concurrency(width: i32) -> DownloadConcurrency {
         DownloadConcurrency::new(Arc::new(SettingsStore::for_tests(AppSettings {
-            soulseek: SoulseekSettings {
+            downloads: DownloadSettings {
                 parallel_downloads: width,
                 ..Default::default()
             },
@@ -373,18 +325,10 @@ mod tests {
     }
 
     #[test]
-    fn concurrency_is_one_until_proven_and_one_again_once_refused() {
+    fn concurrency_is_the_setting_and_says_so() {
         let concurrency = concurrency(4);
-        assert_eq!(concurrency.current(), 1);
-        assert!(concurrency.why().contains("until slskd"));
-        concurrency.prove();
         assert_eq!(concurrency.current(), 4);
         assert_eq!(concurrency.why(), "Up to 4 at once.");
-        concurrency.refuse("slskd put a download outside the folder Octo asked for");
-        assert_eq!(concurrency.current(), 1);
-        concurrency.prove();
-        assert_eq!(concurrency.current(), 1);
-        assert!(concurrency.why().starts_with("One at a time: slskd put"));
     }
 
     // ---- dropped waiters and the live setting ----------------------------------------------
@@ -408,12 +352,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_gate_follows_the_live_setting_once_proven() {
+    async fn the_gate_follows_the_live_setting() {
         let concurrency = concurrency(1);
-        concurrency.prove();
         assert_eq!(concurrency.why(), "One at a time, as set.");
         concurrency.state.settings.set(AppSettings {
-            soulseek: SoulseekSettings {
+            downloads: DownloadSettings {
                 parallel_downloads: 2,
                 ..Default::default()
             },

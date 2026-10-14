@@ -81,7 +81,7 @@ impl Fixture {
                 ..Default::default()
             });
             metadata.songs.lock().insert(
-                ("soulseek".into(), id.clone()),
+                ("outside".into(), id.clone()),
                 Song {
                     title: title.into(),
                     artist: "Massive Attack".into(),
@@ -164,17 +164,6 @@ async fn adding_to_request_playlist_creates_requests() {
         fixture.updates().await.is_empty(),
         "nothing was added, so nothing to empty"
     );
-}
-
-#[tokio::test]
-async fn flac_playlist_requests_flac() {
-    let fixture = Fixture::new().await;
-    fixture
-        .update(&format!("playlistId=pl-flac&songIdToAdd={}", fixture.songs[0]))
-        .await;
-    let requests = fixture.state.family_request_service.requests_of("sam");
-    assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0].quality, RequestQuality::Flac);
 }
 
 #[tokio::test]
@@ -277,21 +266,22 @@ async fn a_look_at_a_shared_flac(state: &AppState, user: &str) -> (String, Strin
             }
             .boxed()
         });
-        seams.sources_for = Arc::new(|_| vec![("Soulseek".to_string(), None)]);
-        seams.search_soulseek = Arc::new(|_, _| {
+        seams.sources_for = Arc::new(|_| vec![("Lidarr".to_string(), None)]);
+        seams.search_lidarr = Arc::new(|_, _| {
             async {
                 Ok((
                     vec![FoundCopy::new(
                         octo_core::models::download::AcquisitionCandidate {
-                            source: "Soulseek".into(),
-                            format: Some("flac".into()),
+                            source: "Lidarr".into(),
+                            format: Some("FLAC".into()),
+                            length: Some(331),
                             ..Default::default()
                         },
                         PickedCopy {
-                            peer: Some("peer1".into()),
-                            file: Some(r"Music\Mezzanine\03 Teardrop.flac".into()),
-                            format: Some("flac".into()),
-                            length: Some(331),
+                            source: "Lidarr".into(),
+                            release_guid: Some("peer1".into()),
+                            indexer_id: Some(1),
+                            release_title: Some("Massive Attack - Mezzanine [FLAC]".into()),
                             ..Default::default()
                         },
                     )],

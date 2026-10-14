@@ -206,9 +206,9 @@
    ],
    "body": {
     "kind": "json",
-    "size": 222,
-    "sha256": "b1d28540df1096bddb1b3a8a8a79ec335f61e640d61e9fe5ddffe79f3f37fdf6",
-    "text": "{\"subsonic-response\":{\"status\":\"ok\",\"version\":\"1.16.1\",\"type\":\"octo\",\"openSubsonic\":true,\"libraryActions\":{\"enabled\":false,\"allowed\":false,\"dryRun\":true,\"actions\":[],\"keepDays\":30,\"parallel\":1,\"upgradeSource\":\"Soulseek\"}}}"
+    "size": 220,
+    "sha256": "9475e85fa95521b5f8bad95f786f3d18ffb81e4eac32984be7c31bb72e1045e1",
+    "text": "{\"subsonic-response\":{\"status\":\"ok\",\"version\":\"1.16.1\",\"type\":\"octo\",\"openSubsonic\":true,\"libraryActions\":{\"enabled\":false,\"allowed\":false,\"dryRun\":true,\"actions\":[],\"keepDays\":30,\"parallel\":1,\"upgradeSource\":\"Lidarr\"}}}"
    }
   },
   {

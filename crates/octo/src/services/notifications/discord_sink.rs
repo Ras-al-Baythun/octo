@@ -83,7 +83,7 @@ mod tests {
         sink.send(&NotificationMessage::new(
             NotificationEventType::DownloadCompleted,
             "Downloaded: A \u{2013} B",
-            "FLAC via Soulseek, 33.1 MB",
+            "FLAC via Lidarr, 33.1 MB",
             Some("https://cdn.example/cover.jpg"),
         ))
         .await

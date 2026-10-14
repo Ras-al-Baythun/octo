@@ -12,8 +12,7 @@ use octo_core::common::Clock;
 use octo_core::common::acquisition_tracker::user_safe;
 use octo_core::common::dotnet;
 use octo_core::json::datetime;
-use octo_core::settings::{DownloadSource, LibraryAction, SettingsStore, SoulseekSettings};
-use octo_core::soulseek::soulseek_link::SoulseekLinkState;
+use octo_core::settings::{DownloadSettings, DownloadSource, LibraryAction, SettingsStore};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use tokio::task::JoinHandle;
@@ -29,7 +28,7 @@ use crate::services::common::acquisition_tracker::{acquisition_event_kinds, acqu
 use crate::services::common::download_picks::{DownloadPicks, PickedCopy};
 use crate::services::common::{AcquisitionTracker, DownloadConcurrency};
 use crate::services::framework::DotnetDictionary;
-use crate::services::soulseek::{ISoulseekLink, SoulseekMetadataService};
+use crate::services::soulseek::SoulseekMetadataService;
 use crate::services::state_file;
 
 /// The words a job's state goes by on the wire. A contract with the Octo apps.
@@ -417,7 +416,7 @@ impl UpgradeQueue {
         Some(copy)
     }
 
-    /// Waiting jobs back in the queue, once Soulseek is back.
+    /// Jobs an earlier version left waiting for a source, back in the queue.
     pub fn requeue(&self) -> usize {
         let mut jobs = self.jobs.lock();
         let mut count = 0;
@@ -484,39 +483,11 @@ pub type ApplyFn = Arc<
 /// Describes a song from Navidrome (`NavidromeSongPathResolver::resolve`).
 pub type DescribeFn = Arc<dyn Fn(String) -> BoxFuture<'static, Option<ResolvedSongFile>> + Send + Sync>;
 
-/// Whether every source is out because Soulseek is.
-pub type OfflineFn = Arc<dyn Fn() -> BoxFuture<'static, bool> + Send + Sync>;
-
 /// `LibraryActionExecutor::apply` as a seam.
 pub(crate) fn apply_with(executor: Arc<LibraryActionExecutor>) -> ApplyFn {
     Arc::new(move |request| {
         let executor = executor.clone();
         async move { executor.apply(request).await }.boxed()
-    })
-}
-
-/// The default `soulseek_offline` seam: waiting only when every source is out. With Lidarr set
-/// up, a Soulseek outage leaves Lidarr.
-pub(crate) fn soulseek_offline_with(
-    sources: Option<Arc<UpgradeSources>>,
-    soulseek: Option<Arc<dyn ISoulseekLink>>,
-) -> OfflineFn {
-    Arc::new(move || {
-        let sources = sources.clone();
-        let soulseek = soulseek.clone();
-        async move {
-            if let Some(sources) = sources {
-                return sources.waiting_for_soulseek().await;
-            }
-            match soulseek {
-                Some(link) => link
-                    .read(false)
-                    .await
-                    .is_some_and(|reading| reading.link == SoulseekLinkState::NotLoggedIn),
-                None => false,
-            }
-        }
-        .boxed()
     })
 }
 
@@ -526,7 +497,6 @@ pub struct UpgradeWorkerSeams {
     pub apply: ApplyFn,
     pub describe: DescribeFn,
     pub width: Arc<dyn Fn() -> i32 + Send + Sync>,
-    pub soulseek_offline: OfflineFn,
     pub source_name: Arc<dyn Fn() -> String + Send + Sync>,
 }
 
@@ -535,7 +505,6 @@ pub struct UpgradeWorkerParts {
     pub executor: Arc<LibraryActionExecutor>,
     pub resolver: Arc<NavidromeSongPathResolver>,
     pub concurrency: Option<Arc<DownloadConcurrency>>,
-    pub soulseek: Option<Arc<dyn ISoulseekLink>>,
     pub tracker: Option<Arc<AcquisitionTracker>>,
     pub attempts: Option<Arc<QualityUpgradeStore>>,
     pub settings: Option<Arc<SettingsStore>>,
@@ -545,13 +514,12 @@ pub struct UpgradeWorkerParts {
 
 /// Runs the upgrade queue: Better quality on each song, up to as many at once as downloads may
 /// run, with every safety the action has (the allowlist, dry run, the quarantine, the original
-/// back when the new file is not really lossless, and the same Navidrome id after). While
-/// Soulseek is out a job waits rather than failing, and goes again once slskd is logged in.
+/// back when the new file is not really lossless, and the same Navidrome id after).
 pub struct UpgradeWorker {
     queue: Arc<UpgradeQueue>,
     tracker: Option<Arc<AcquisitionTracker>>,
     attempts: Option<Arc<QualityUpgradeStore>>,
-    /// The Soulseek settings, read at each report.
+    /// The download settings, read at each report.
     settings: Option<Arc<SettingsStore>>,
     seams: UpgradeWorkerSeams,
     running: Mutex<Vec<JoinHandle<()>>>,
@@ -573,11 +541,10 @@ impl UpgradeWorker {
                 async move { resolver.resolve(&id).await }.boxed()
             }),
             width: Arc::new(move || concurrency.as_ref().map_or(1, |c| c.current()).max(1)),
-            soulseek_offline: soulseek_offline_with(parts.sources, parts.soulseek),
             source_name: Arc::new(move || {
                 name_sources
                     .as_ref()
-                    .map_or_else(|| "Soulseek".to_string(), |s| s.name())
+                    .map_or_else(|| "Lidarr".to_string(), |s| s.name())
             }),
         };
         Self::with_seams(queue, seams, parts.tracker, parts.attempts, parts.settings).with_picks(parts.picks)
@@ -617,10 +584,10 @@ impl UpgradeWorker {
             .count()
     }
 
-    /// One pass: waiting jobs back in the queue when Soulseek is back, then queued jobs started
-    /// while there is room. Answers how many it started.
+    /// One pass: jobs left waiting back in the queue, then queued jobs started while there is
+    /// room. Answers how many it started.
     pub async fn tick(self: &Arc<Self>, ct: &CancellationToken) -> usize {
-        if self.queue.any_waiting() && !(self.seams.soulseek_offline)().await {
+        if self.queue.any_waiting() {
             self.queue.requeue();
         }
         let mut started = 0;
@@ -728,13 +695,7 @@ impl UpgradeWorker {
                 );
             }
         }));
-        request.only_source = pick.as_ref().map(|only| {
-            if only.is_soulseek() {
-                DownloadSource::Soulseek
-            } else {
-                DownloadSource::Lidarr
-            }
-        });
+        request.only_source = pick.as_ref().map(|_| DownloadSource::Lidarr);
         request.anyway = pick.as_ref().and_then(|only| only.anyway.clone());
         let outcome = (self.seams.apply)(request).await;
         // A pick the replacement never used (it joined another download, or found the song
@@ -748,7 +709,7 @@ impl UpgradeWorker {
         let state = Self::state_for(&outcome);
         let result = (state == UpgradeStates::UPGRADED).then(|| self.report(&outcome, job));
         let detail = match state {
-            UpgradeStates::WAITING => Some("Waiting for Soulseek".to_string()),
+            UpgradeStates::WAITING => Some("Waiting for a source".to_string()),
             UpgradeStates::UPGRADED if result.as_ref().is_some_and(|r| r.after.is_some()) => {
                 let result = result.as_ref().expect("checked above");
                 Some(format!(
@@ -786,7 +747,7 @@ impl UpgradeWorker {
                     "The copy you picked did not go in; your copy was kept"
                 }
                 UpgradeStates::NOT_FOUND => "No lossless copy found; your copy is unchanged",
-                UpgradeStates::WAITING => "Waiting for Soulseek",
+                UpgradeStates::WAITING => "Waiting for a source",
                 UpgradeStates::REHEARSED => "Only rehearsed; nothing changed",
                 _ => "Your copy is unchanged",
             };
@@ -851,7 +812,7 @@ impl UpgradeWorker {
         let settings = self
             .settings
             .as_ref()
-            .map_or_else(SoulseekSettings::default, |s| s.current().soulseek.clone());
+            .map_or_else(DownloadSettings::default, |s| s.current().downloads.clone());
         let mut result = UpgradeResult {
             new_file: outcome.new_path.as_deref().map(file_name),
             kept_at: outcome.quarantine_path.as_deref().map(kept_folder),
@@ -907,7 +868,7 @@ impl UpgradeWorker {
                 .next()
                 .map(|c| c.to_lowercase().collect::<String>())
                 .unwrap_or_default();
-            let why = if why.starts_with("Octo") || why.starts_with("Soulseek") || why.starts_with("Lidarr") {
+            let why = if why.starts_with("Octo") || why.starts_with("Lidarr") {
                 why.clone()
             } else {
                 format!("{first}{}", chars.as_str())
@@ -921,7 +882,6 @@ impl UpgradeWorker {
         match (outcome.state, outcome.code.as_deref()) {
             (LibraryActionState::Applied, _) => UpgradeStates::UPGRADED,
             (LibraryActionState::Rehearsed, _) => UpgradeStates::REHEARSED,
-            (_, Some(LibraryActionCodes::SOULSEEK_OFFLINE)) => UpgradeStates::WAITING,
             (_, Some(LibraryActionCodes::NO_REPLACEMENT)) => UpgradeStates::NOT_FOUND,
             (LibraryActionState::Skipped, _) => UpgradeStates::SKIPPED,
             _ => UpgradeStates::FAILED,

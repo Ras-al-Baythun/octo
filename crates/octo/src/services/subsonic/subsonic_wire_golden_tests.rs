@@ -19,7 +19,7 @@ use octo_core::lyrics::lyrics_choices::LyricsChoiceCandidate;
 use octo_core::lyrics::lyrics_models::LyricsResult;
 use octo_core::models::domain::{Album, Artist, Song};
 use octo_core::models::search::SearchResult;
-use octo_core::settings::{LibraryActionSettings, SubsonicSettings};
+use octo_core::settings::LibraryActionSettings;
 use octo_subsonic::subsonic_model_mapper::Row;
 use octo_subsonic::subsonic_response_builder::{SUBSONIC_NAMESPACE, SubsonicReply, SubsonicResponseBuilder};
 use octo_subsonic::xml::XElement;
@@ -186,10 +186,7 @@ fn assert_recorded(reply: SubsonicReply, want: Recorded, file: &str, name: &str)
 }
 
 fn builder() -> SubsonicResponseBuilder {
-    new_subsonic_response_builder(
-        Arc::new(ExternalIdRegistry::in_memory()),
-        &SubsonicSettings::default(),
-    )
+    new_subsonic_response_builder(Arc::new(ExternalIdRegistry::in_memory()))
 }
 
 /// A builder whose "now" is the instant the recording wrote as `created`.
@@ -1144,7 +1141,7 @@ fn octo_extensions_match_the_recordings() {
             Some("admin"),
             1,
             true,
-            "Soulseek",
+            "Lidarr",
             true,
             true,
             true,

@@ -293,7 +293,7 @@ mod tests {
             artist: Some("Randy Rogers Band".into()),
             title: Some("In My Arms Instead".into()),
             format: Some("FLAC".into()),
-            source: Some("Soulseek".into()),
+            source: Some("Lidarr".into()),
             size_bytes: Some(34_684_600),
             ..NotificationEvent::new(NotificationEventType::DownloadCompleted)
         }

@@ -48,7 +48,6 @@ use super::personal_library::PersonalLibrary;
 use super::pool::{FamilyPool, LinkMode, MemberStars, ScanCheck, sees_shared_library};
 use super::request_store::RequestStore;
 use crate::services::common::acquisition_tracker::key_of;
-use crate::services::common::base_download_service::NO_REAL_FLAC;
 use crate::services::common::heart_acquisition_coordinator::TrackOutcome;
 use crate::services::common::{
     AcquisitionTarget, AcquisitionTracker, HeartAcquisitionCoordinator, TrackAcquisitionQueue,
@@ -633,29 +632,23 @@ impl RequestService {
             && let Some(copy) = self.catalog.shared_copy(song).await
             && self.sees_copy(member, copy.navidrome_id.as_deref())
         {
-            if quality != RequestQuality::Flac || copy.lossless {
-                request.state = RequestState::Done;
-                request.outcome = Some(RequestOutcome::AlreadyShared);
-                request.library_song_id = copy.navidrome_id.clone();
-                let made = self.requests.create(request, Utc::now());
-                if let Some(id) = &copy.navidrome_id {
-                    self.stars.star(&member.username, id).await;
-                }
-                info!(
-                    "FAMILY request {} {} {}: already shared",
-                    made.id, made.username, made.title
-                );
-                self.events.send(FamilyEvent::RequestDone(made.clone()));
-                return Ok(made);
-            }
-            // A FLAC asked for a song the shared library has only lossy: a better copy of it.
+            request.state = RequestState::Done;
+            request.outcome = Some(RequestOutcome::AlreadyShared);
+            request.library_song_id = copy.navidrome_id.clone();
+            let made = self.requests.create(request, Utc::now());
             if let Some(id) = &copy.navidrome_id {
-                return self.create_upgrade(member, id, quality, Some(facts), reuse_slot);
+                self.stars.star(&member.username, id).await;
             }
+            info!(
+                "FAMILY request {} {} {}: already shared",
+                made.id, made.username, made.title
+            );
+            self.events.send(FamilyEvent::RequestDone(made.clone()));
+            return Ok(made);
         }
 
         // 2. Another member has it.
-        if let Some(file) = self.pooled(outside, song.as_ref(), quality).await
+        if let Some(file) = self.pooled(outside, song.as_ref()).await
             && (file.refs.iter().any(|r| eq_ignore_case(r, &member.username)) || self.instant_allowed(member))
         {
             return match self.pool().link(&file.path, &member.username).await {
@@ -678,10 +671,7 @@ impl RequestService {
         }
 
         // 3. Downloading for someone now.
-        if quality != RequestQuality::Flac
-            && self.fetcher.in_flight(&outside.provider, &outside.external_id)
-            && self.instant_allowed(member)
-        {
+        if self.fetcher.in_flight(&outside.provider, &outside.external_id) && self.instant_allowed(member) {
             request.state = RequestState::Approved;
             let (made, new) = self.keep_live(request);
             if new {
@@ -704,22 +694,17 @@ impl RequestService {
         sees_shared_library(member, library)
     }
 
-    /// A pool file holding the song at a quality that will do: for a FLAC request, only a real
-    /// FLAC (never one made from lossy audio).
+    /// A pool file holding the song.
     async fn pooled(
         &self,
         outside: &OutsideTarget,
         song: Option<&Song>,
-        quality: RequestQuality,
     ) -> Option<super::family_pool_store::PoolFile> {
         let key = key_of(&outside.provider, &outside.external_id);
         let (isrc, artist, title) = song
             .map(|s| (s.isrc.as_deref(), s.artist.as_str(), s.title.as_str()))
             .unwrap_or((None, "", ""));
-        self.pool()
-            .find(Some(&key), isrc, artist, title)
-            .await
-            .filter(|file| quality != RequestQuality::Flac || file.is_real_flac())
+        self.pool().find(Some(&key), isrc, artist, title).await
     }
 
     async fn create_album(
@@ -978,37 +963,6 @@ impl RequestService {
             .is_some_and(|r| r.state == RequestState::Approved)
     }
 
-    /// Asks again for an MP3 of a song whose FLAC request failed. The new request takes the
-    /// failed one's weekly slot and approval while that slot is still free.
-    pub async fn retry_as_mp3(&self, id: &str, by_member: &str) -> Result<FamilyRequest, RequestError> {
-        let request = self
-            .requests
-            .get(id)
-            .filter(|r| eq_ignore_case(&r.username, by_member))
-            .ok_or_else(|| RequestError::new(70, "There is no such request."))?;
-        if request.state != RequestState::Failed || request.quality != RequestQuality::Flac {
-            return Err(RequestError::new(
-                50,
-                "Only a FLAC request that failed can be tried as MP3.",
-            ));
-        }
-        let facts = RequestFacts {
-            title: request.title.clone(),
-            artist: request.artist.clone(),
-            album: request.album.clone(),
-            cover_art: request.cover_art.clone(),
-        };
-        self.create_inner(
-            by_member,
-            Some(request.kind),
-            &request.target,
-            RequestQuality::Mp3,
-            Some(facts),
-            true,
-        )
-        .await
-    }
-
     /// Starts again every approved request a restart left unfinished: Octo keeps no running
     /// work across a restart, and an approved request would otherwise stay approved for good
     /// and stand in the way of asking again. Runs once per start of Octo. Answers how many.
@@ -1069,7 +1023,7 @@ impl RequestService {
         let user = request.username.clone();
         let song = self.catalog.song(&outside.provider, &outside.external_id).await;
         // Someone may have got it since it was asked for.
-        if let Some(file) = self.pooled(&outside, song.as_ref(), request.quality).await
+        if let Some(file) = self.pooled(&outside, song.as_ref()).await
             && self.still_approved(request)
         {
             match self.pool().link(&file.path, &user).await {
@@ -1137,14 +1091,7 @@ impl RequestService {
                 }
             },
             Fetched::AlreadyThere => self.done(request, Some(RequestOutcome::AlreadyShared), None),
-            Fetched::Failed(reason) => {
-                let reason = if request.quality == RequestQuality::Flac {
-                    NO_REAL_FLAC.to_string()
-                } else {
-                    reason
-                };
-                self.failed(request, &reason);
-            }
+            Fetched::Failed(reason) => self.failed(request, &reason),
         }
     }
 
@@ -1484,7 +1431,7 @@ impl RequestFetcher for LiveRequestFetcher {
             RequestQuality::Best => {
                 return match self
                     .coordinator
-                    .acquire_track_outcome(provider, external_id, Some(user), None, &target)
+                    .acquire_track_outcome(provider, external_id, Some(user), &target)
                     .await
                 {
                     Ok(TrackOutcome::Landed(path)) => Fetched::Landed(path),
@@ -1496,12 +1443,11 @@ impl RequestFetcher for LiveRequestFetcher {
                     Err(e) => Fetched::Failed(e.to_string()),
                 };
             }
-            RequestQuality::Flac => DownloadSource::Soulseek,
             RequestQuality::Mp3 => DownloadSource::YouTube,
         };
         let completion = self.queue.enqueue_for(
             &target,
-            quality == RequestQuality::Flac,
+            false,
             provider,
             external_id,
             true,

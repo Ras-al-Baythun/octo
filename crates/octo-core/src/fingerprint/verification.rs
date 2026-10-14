@@ -19,7 +19,7 @@ pub enum VerificationVerdict {
     /// file is kept and nothing is remembered.
     ///
     /// The last of those is the one that matters. A legitimately obscure track, which is the
-    /// music Soulseek is best at and the reason Octo uses it, has no AcoustID entry. Treating
+    /// music Octo exists to find, has no AcoustID entry. Treating
     /// absence as evidence would make this feature worst exactly where the library is rarest.
     #[default]
     Inconclusive,

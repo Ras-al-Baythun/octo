@@ -3,24 +3,19 @@
 use std::collections::HashSet;
 use std::sync::{Arc, OnceLock};
 
-use chrono::{DateTime, TimeDelta, Utc};
 use octo_core::settings::{DownloadSource, HeartDownloadSource, SettingsStore};
 use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use super::TrackAcquisitionQueue;
-use super::{
-    AcquisitionState, AcquisitionTarget, AcquisitionTracker, HeldAcquisition, HeldKind, SoulseekHoldStore,
-    StarOnArrival,
-};
+use super::{AcquisitionState, AcquisitionTarget, AcquisitionTracker, StarOnArrival};
 use crate::services::family::{FamilyPool, LibraryScope, LibraryWriteGate, WriteDecision};
 use crate::services::i_download_service::IDownloadService;
 use crate::services::i_music_metadata_service::IMusicMetadataService;
-use crate::services::library::{HeartOwnership, OwnedCopy};
+use crate::services::library::{HeartOwnership, OwnedCopy, UpgradeSources};
 use crate::services::lidarr::ILidarrHeartAcquisitionService;
-use crate::services::soulseek::soulseek_link::SoulseekLinkState;
-use crate::services::soulseek::{ExternalIdRegistry, ISoulseekLink};
+use crate::services::soulseek::ExternalIdRegistry;
 
 /// The coordinator's optional collaborators, each `None` by default.
 #[derive(Default, Clone)]
@@ -29,9 +24,6 @@ pub struct HeartCoordinatorExtras {
     /// reports it. Without one, nothing is reported.
     pub tracker: Option<Arc<AcquisitionTracker>>,
     pub id_registry: Option<Arc<ExternalIdRegistry>>,
-    /// Without one nothing waits for Soulseek, which is how it always was.
-    pub soulseek: Option<Arc<dyn ISoulseekLink>>,
-    pub holds: Option<Arc<SoulseekHoldStore>>,
     /// Without it every heart goes down the chain, and the download itself notices a song that
     /// is already there, as before.
     pub owned: Option<Arc<HeartOwnership>>,
@@ -71,9 +63,6 @@ pub struct HeartAcquisitionCoordinator {
     lidarr: Arc<dyn ILidarrHeartAcquisitionService>,
     extras: HeartCoordinatorExtras,
 
-    // Plays waiting for Soulseek, one per song however often it is played meanwhile.
-    held_plays: Mutex<HashSet<String>>,
-
     // Track ids handed to Lidarr on play, so a replay does not search every indexer again.
     // Cleared when full rather than aged: forgetting costs at most one more search.
     lidarr_plays: Mutex<HashSet<String>>,
@@ -99,7 +88,6 @@ impl HeartAcquisitionCoordinator {
             direct_downloads,
             lidarr,
             extras,
-            held_plays: Mutex::new(HashSet::new()),
             lidarr_plays: Mutex::new(HashSet::new()),
             family: OnceLock::new(),
         })
@@ -147,7 +135,7 @@ impl HeartAcquisitionCoordinator {
         // Fire and forget: a chain that stops on an error is left as it stands.
         tokio::spawn(async move {
             let _ = coordinator
-                .acquire_track_for(&provider, &external_id, requested_by.as_deref(), None, &target)
+                .acquire_track_for(&provider, &external_id, requested_by.as_deref(), &target)
                 .await;
         });
     }
@@ -171,45 +159,18 @@ impl HeartAcquisitionCoordinator {
             },
             None => AcquisitionTarget::Shared,
         };
-        // WaitForLosslessOnPlay acquires the track itself, from its own source.
         if settings.download_on_play
-            && !settings.wait_for_lossless_on_play
             && let Some(source) = self.play_source()
         {
-            let holds = self
-                .extras
-                .soulseek
-                .as_ref()
-                .is_some_and(|link| link.hold_limit() > TimeDelta::zero());
-            if source == DownloadSource::YouTube || !holds {
-                self.queue_play_download(
-                    provider,
-                    external_id,
-                    source,
-                    requested_by,
-                    client_id,
-                    owner,
-                    &target,
-                );
-            } else {
-                let coordinator = Arc::clone(self);
-                let (provider, external_id, requested_by) = owned3(provider, external_id, requested_by);
-                let (client_id, owner) = (client_id.map(str::to_string), owner.map(str::to_string));
-                let target = target.clone();
-                tokio::spawn(async move {
-                    coordinator
-                        .hold_then_queue_play(
-                            &provider,
-                            &external_id,
-                            source,
-                            requested_by.as_deref(),
-                            client_id.as_deref(),
-                            owner.as_deref(),
-                            &target,
-                        )
-                        .await
-                });
-            }
+            self.queue_play_download(
+                provider,
+                external_id,
+                source,
+                requested_by,
+                client_id,
+                owner,
+                &target,
+            );
         }
         // Lidarr adds whole albums to the shared library, never to a member's own.
         if !settings.lidarr_album_on_play || target != AcquisitionTarget::Shared {
@@ -267,11 +228,7 @@ impl HeartAcquisitionCoordinator {
                     provider,
                     external_id,
                     AcquisitionState::Queued,
-                    Some(if source == DownloadSource::YouTube {
-                        "YouTube"
-                    } else {
-                        "Soulseek"
-                    }),
+                    Some(UpgradeSources::word(source)),
                     None,
                 );
             }
@@ -301,41 +258,6 @@ impl HeartAcquisitionCoordinator {
                 tracker.fail(&provider, &external_id, Some(&reason.to_string()));
             }
         });
-    }
-
-    /// A play during a Soulseek outage waits for it like a heart, but only in memory: a play is a
-    /// hint, and one lost to a restart costs a replay.
-    #[allow(clippy::too_many_arguments)] // the play's facts and whose library it is for
-    async fn hold_then_queue_play(
-        &self,
-        provider: &str,
-        external_id: &str,
-        source: DownloadSource,
-        requested_by: Option<&str>,
-        client_id: Option<&str>,
-        owner: Option<&str>,
-        target: &AcquisitionTarget,
-    ) {
-        let key = format!("{provider}:{external_id}");
-        let Some(link) = self.extras.soulseek.clone() else {
-            return;
-        };
-        if link.read(false).await.map(|r| r.link) == Some(SoulseekLinkState::NotLoggedIn) {
-            if !self.held_plays.lock().insert(key.clone()) {
-                return;
-            }
-            link.wait_for_login(link.utc_now() + link.hold_limit()).await;
-            self.held_plays.lock().remove(&key);
-        }
-        self.queue_play_download(
-            provider,
-            external_id,
-            source,
-            requested_by,
-            client_id,
-            owner,
-            target,
-        );
     }
 
     async fn hand_play_to_lidarr(
@@ -368,7 +290,7 @@ impl HeartAcquisitionCoordinator {
         let (provider, album_id, requested_by) = owned3(provider, album_external_id, requested_by);
         tokio::spawn(async move {
             let _ = coordinator
-                .acquire_album(&provider, &album_id, requested_by.as_deref(), None)
+                .acquire_album(&provider, &album_id, requested_by.as_deref())
                 .await;
         });
     }
@@ -449,7 +371,7 @@ impl HeartAcquisitionCoordinator {
             let track_provider = song.external_provider.as_deref().unwrap_or(provider);
             let track_id = song.external_id.as_deref().unwrap_or_default();
             match self
-                .acquire_track_outcome(track_provider, track_id, requested_by, None, &target)
+                .acquire_track_outcome(track_provider, track_id, requested_by, &target)
                 .await
             {
                 Ok(TrackOutcome::Landed(path)) => {
@@ -466,64 +388,16 @@ impl HeartAcquisitionCoordinator {
         landed
     }
 
-    /// A heart that was waiting for Soulseek when Octo restarted. Its saved start time
-    /// keeps the original deadline; the entry goes once the chain has finished either way.
-    pub(crate) fn resume_track(self: &Arc<Self>, held: HeldAcquisition) {
-        let coordinator = Arc::clone(self);
-        tokio::spawn(async move {
-            let chain = coordinator
-                .acquire_track(
-                    &held.provider,
-                    &held.external_id,
-                    held.requested_by.as_deref(),
-                    Some(held.held_since_utc),
-                )
-                .await;
-            coordinator.resumed(&held, chain);
-        });
-    }
-
-    pub(crate) fn resume_album(self: &Arc<Self>, held: HeldAcquisition) {
-        let coordinator = Arc::clone(self);
-        tokio::spawn(async move {
-            let chain = coordinator
-                .acquire_album(
-                    &held.provider,
-                    &held.external_id,
-                    held.requested_by.as_deref(),
-                    Some(held.held_since_utc),
-                )
-                .await;
-            coordinator.resumed(&held, chain);
-        });
-    }
-
-    /// The end of a resumed chain: a chain that failed is logged, and the entry goes either way.
-    fn resumed(&self, held: &HeldAcquisition, chain: anyhow::Result<()>) {
-        if let Err(e) = chain {
-            warn!("Resumed {} failed: {e}", held.key());
-        }
-        if let Some(holds) = &self.extras.holds {
-            holds.release(&held.key());
-        }
-    }
-
     /// The song chain. `Err` for a Lidarr step that failed.
+    #[cfg(test)]
     pub(crate) async fn acquire_track(
         &self,
         provider: &str,
         external_id: &str,
         requested_by: Option<&str>,
-        held_since_utc: Option<DateTime<Utc>>,
     ) -> anyhow::Result<()> {
-        self.acquire_track_for(
-            provider,
-            external_id,
-            requested_by,
-            held_since_utc,
-            &AcquisitionTarget::Shared,
-        )
-        .await
+        self.acquire_track_for(provider, external_id, requested_by, &AcquisitionTarget::Shared)
+            .await
     }
 
     /// [`Self::acquire_track`] into one library.
@@ -532,10 +406,9 @@ impl HeartAcquisitionCoordinator {
         provider: &str,
         external_id: &str,
         requested_by: Option<&str>,
-        held_since_utc: Option<DateTime<Utc>>,
         target: &AcquisitionTarget,
     ) -> anyhow::Result<()> {
-        self.acquire_track_outcome(provider, external_id, requested_by, held_since_utc, target)
+        self.acquire_track_outcome(provider, external_id, requested_by, target)
             .await
             .map(|_| ())
     }
@@ -547,7 +420,6 @@ impl HeartAcquisitionCoordinator {
         provider: &str,
         external_id: &str,
         requested_by: Option<&str>,
-        held_since_utc: Option<DateTime<Utc>>,
         target: &AcquisitionTarget,
     ) -> anyhow::Result<TrackOutcome> {
         let scope = match target {
@@ -601,40 +473,25 @@ impl HeartAcquisitionCoordinator {
                 continue;
             }
 
-            // Soulseek waits out an outage, before the step and again when slskd lost its login
-            // partway through it. Every other source, and Soulseek once the wait is over, goes on
-            // exactly as before.
-            let wait_until = self.soulseek_deadline(&steps, index, held_since_utc);
-            let failure = loop {
-                self.hold_for_soulseek(HeldKind::Track, provider, external_id, requested_by, wait_until)
-                    .await;
-                let completion = self.direct_queue.enqueue_for(
-                    target,
-                    false,
-                    provider,
-                    external_id,
-                    true,
-                    false,
-                    true,
-                    Some(to_direct_source(step)),
-                    is_last,
-                    // Passed on every step, not only the first. A track that fails its way
-                    // down the source chain is still the same person's star.
-                    requested_by,
-                    false,
-                    None,
-                );
-                match completion.wait().await {
-                    Ok(path) => return Ok(TrackOutcome::Landed(path)),
-                    Err(failure) => {
-                        if !self.soulseek_dropped(wait_until).await {
-                            break failure;
-                        }
-                        info!(
-                            "Soulseek lost its connection while getting {provider}:{external_id}; waiting for it rather than moving on"
-                        );
-                    }
-                }
+            let completion = self.direct_queue.enqueue_for(
+                target,
+                false,
+                provider,
+                external_id,
+                true,
+                false,
+                true,
+                Some(to_direct_source(step)),
+                is_last,
+                // Passed on every step, not only the first. A track that fails its way
+                // down the source chain is still the same person's star.
+                requested_by,
+                false,
+                None,
+            );
+            let failure = match completion.wait().await {
+                Ok(path) => return Ok(TrackOutcome::Landed(path)),
+                Err(failure) => failure,
             };
 
             // A muted mid-chain failure must still leave a trace, or a track that
@@ -666,7 +523,6 @@ impl HeartAcquisitionCoordinator {
         provider: &str,
         album_external_id: &str,
         requested_by: Option<&str>,
-        held_since_utc: Option<DateTime<Utc>>,
     ) -> anyhow::Result<()> {
         if self
             .album_already_yours(provider, album_external_id, requested_by)
@@ -688,41 +544,21 @@ impl HeartAcquisitionCoordinator {
                 continue;
             }
 
-            let wait_until = self.soulseek_deadline(&steps, index, held_since_utc);
-            let failure = loop {
-                self.hold_for_soulseek(
-                    HeldKind::Album,
+            let failure = match self
+                .direct_downloads
+                .download_album_with_source(
                     provider,
                     album_external_id,
-                    requested_by,
-                    wait_until,
+                    to_direct_source(step),
+                    !is_last,
+                    &CancellationToken::new(),
+                    requested_by.map(|r| vec![r.to_string()]),
                 )
-                .await;
-                let mut failure = None;
-                match self
-                    .direct_downloads
-                    .download_album_with_source(
-                        provider,
-                        album_external_id,
-                        to_direct_source(step),
-                        !is_last,
-                        &CancellationToken::new(),
-                        requested_by.map(|r| vec![r.to_string()]),
-                    )
-                    .await
-                {
-                    Ok(true) => return Ok(()),
-                    Ok(false) => {}
-                    Err(e) => failure = Some(e),
-                }
-                // A walk that came up short because slskd dropped partway: the tracks it got stay,
-                // and the next walk skips them.
-                if !self.soulseek_dropped(wait_until).await {
-                    break failure;
-                }
-                info!(
-                    "Soulseek lost its connection during album {provider}:{album_external_id}; waiting for it rather than moving on"
-                );
+                .await
+            {
+                Ok(true) => return Ok(()),
+                Ok(false) => None,
+                Err(e) => Some(e),
             };
 
             if let Some(failure) = failure {
@@ -752,7 +588,6 @@ impl HeartAcquisitionCoordinator {
     }
 
     fn enabled_steps(&self, album_heart: bool) -> Vec<HeartDownloadSource> {
-        let soulseek_off = self.extras.soulseek.as_ref().is_some_and(|link| link.is_off());
         self.settings
             .current()
             .subsonic
@@ -765,30 +600,21 @@ impl HeartAcquisitionCoordinator {
                     step.song_enabled == Some(true)
                 }
             })
-            .filter(|step| !(soulseek_off && step.source == HeartDownloadSource::Soulseek))
             .map(|step| step.source)
             .collect()
     }
 
+    /// The source a play's copy comes from: the first direct source with song hearts enabled,
+    /// which is YouTube; None when no direct source is.
     fn play_source(&self) -> Option<DownloadSource> {
-        let sources: Vec<HeartDownloadSource> = self
-            .enabled_steps(false)
+        self.enabled_steps(false)
             .into_iter()
-            .filter(|s| *s != HeartDownloadSource::Lidarr)
-            .collect();
-        let first = *sources.first()?;
-        Some(if first == HeartDownloadSource::YouTube {
-            DownloadSource::YouTube
-        } else if sources.contains(&HeartDownloadSource::YouTube) {
-            DownloadSource::SoulseekThenYouTube
-        } else {
-            DownloadSource::Soulseek
-        })
+            .find(|s| *s != HeartDownloadSource::Lidarr)
+            .map(to_direct_source)
     }
 
     /// A heart on a song already in the library is a favorite, not a download. Asked first, so
-    /// it never waits behind other downloads or a Soulseek outage, and never sends Lidarr for a
-    /// whole album. The row closes on the library's own song, which favorites it for whoever
+    /// it never waits behind other downloads, and never sends Lidarr for a whole album. The row closes on the library's own song, which favorites it for whoever
     /// hearted it (StarOnArrival); an owned lossy copy is also queued for Better quality.
     ///
     /// `scope` is whose library counts: the shared one for the owner, and the shared one plus
@@ -905,112 +731,6 @@ impl HeartAcquisitionCoordinator {
             None => tracker.imported(provider, external_id, None, None, Some(&copy.absolute_path)),
         }
     }
-
-    /// When a Soulseek step stops waiting for slskd, or `None` when it never waits: another
-    /// source, no link, the wait switched off, or Lidarr later in the chain. The wait exists so
-    /// an outage does not turn a lossless heart into a YouTube MP3; Lidarr can bring a lossless
-    /// copy now.
-    fn soulseek_deadline(
-        &self,
-        steps: &[HeartDownloadSource],
-        index: usize,
-        held_since_utc: Option<DateTime<Utc>>,
-    ) -> Option<DateTime<Utc>> {
-        let link = self.extras.soulseek.as_ref()?;
-        (steps[index] == HeartDownloadSource::Soulseek
-            && link.hold_limit() > TimeDelta::zero()
-            && !steps[index + 1..].contains(&HeartDownloadSource::Lidarr))
-        .then(|| held_since_utc.unwrap_or_else(|| link.utc_now()) + link.hold_limit())
-    }
-
-    /// Waits while slskd says it is not logged in, up to `wait_until`. On disk for the length
-    /// of the wait, so a restart picks the heart up again.
-    async fn hold_for_soulseek(
-        &self,
-        kind: HeldKind,
-        provider: &str,
-        id: &str,
-        requested_by: Option<&str>,
-        wait_until: Option<DateTime<Utc>>,
-    ) {
-        let (Some(deadline), Some(link)) = (wait_until, self.extras.soulseek.as_ref()) else {
-            return;
-        };
-        let Some(reading) = link
-            .read(false)
-            .await
-            .filter(|r| r.link == SoulseekLinkState::NotLoggedIn)
-        else {
-            return;
-        };
-
-        let held = self.extras.holds.as_ref().map(|holds| {
-            holds.hold(HeldAcquisition {
-                kind,
-                provider: provider.to_string(),
-                external_id: id.to_string(),
-                requested_by: requested_by.map(str::to_string),
-                held_since_utc: deadline - link.hold_limit(),
-            })
-        });
-        if kind == HeldKind::Track
-            && let Some(tracker) = self.tracker()
-        {
-            tracker.stage(
-                provider,
-                id,
-                AcquisitionState::Queued,
-                Some("Soulseek"),
-                Some(&format!(
-                    "Waiting for Soulseek to come back, until {} UTC",
-                    deadline.format("%H:%M")
-                )),
-            );
-        }
-        info!(
-            "Soulseek is not connected (slskd says {}); holding {} {provider}:{id} until {} UTC",
-            reading.state.as_deref().unwrap_or("not logged in"),
-            kind.name(),
-            deadline.format("%H:%M")
-        );
-        let back = link.wait_for_login(deadline).await;
-        if back {
-            info!("Soulseek is back; going on with {} {provider}:{id}", kind.name());
-        } else {
-            warn!(
-                "Soulseek still not connected after the wait; {} {provider}:{id} goes on to the next source",
-                kind.name()
-            );
-        }
-        if kind == HeldKind::Track
-            && let Some(tracker) = self.tracker()
-        {
-            tracker.stage(
-                provider,
-                id,
-                AcquisitionState::Queued,
-                Some("Soulseek"),
-                Some(if back {
-                    "Soulseek is back"
-                } else {
-                    "Soulseek did not come back in time"
-                }),
-            );
-        }
-        if let (Some(held), Some(holds)) = (held, &self.extras.holds) {
-            holds.release(&held.key());
-        }
-    }
-
-    /// True when the step just failed because slskd lost its login and there is still time
-    /// to wait. A fresh read: the cached one may be from before the drop.
-    async fn soulseek_dropped(&self, wait_until: Option<DateTime<Utc>>) -> bool {
-        let (Some(deadline), Some(link)) = (wait_until, self.extras.soulseek.as_ref()) else {
-            return false;
-        };
-        link.utc_now() < deadline
-            && link.read(true).await.map(|r| r.link) == Some(SoulseekLinkState::NotLoggedIn)
-    }
 }
 
 fn owned3(a: &str, b: &str, c: Option<&str>) -> (String, String, Option<String>) {
@@ -1021,7 +741,6 @@ fn source_name(source: HeartDownloadSource) -> &'static str {
     match source {
         HeartDownloadSource::Lidarr => "Lidarr",
         HeartDownloadSource::YouTube => "YouTube",
-        _ => "Soulseek",
     }
 }
 
@@ -1033,7 +752,7 @@ fn source_enum_name(source: HeartDownloadSource) -> &'static str {
 fn to_direct_source(source: HeartDownloadSource) -> DownloadSource {
     match source {
         HeartDownloadSource::YouTube => DownloadSource::YouTube,
-        _ => DownloadSource::Soulseek,
+        HeartDownloadSource::Lidarr => DownloadSource::Lidarr,
     }
 }
 

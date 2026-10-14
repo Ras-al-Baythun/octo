@@ -38,7 +38,6 @@
     {"name": "settings-after-patch", "path": "/api/admin/settings", "auth": "none", "delayBeforeMs": 1500},
     {"name": "raw-config-after-patch", "path": "/api/admin/raw-config", "auth": "none"},
     {"name": "clear-metadata-cache", "method": "POST", "path": "/api/admin/clear-metadata-cache", "auth": "none", "headers": {"X-Octo-Admin": "1"}},
-    {"name": "clear-rejected-peers", "method": "POST", "path": "/api/admin/soulseek/rejected-peers/clear", "auth": "none", "headers": {"X-Octo-Admin": "1"}},
     {"name": "test-notification-no-sinks", "method": "POST", "path": "/api/admin/test-notification", "auth": "none", "headers": {"X-Octo-Admin": "1"}},
     {"name": "update-check", "method": "POST", "path": "/api/admin/update/check", "auth": "none", "headers": {"X-Octo-Admin": "1"}},
     {"name": "lastfm-scrobble-cancel", "method": "POST", "path": "/api/admin/lastfm/scrobble/cancel", "auth": "none", "headers": {"X-Octo-Admin": "1"}, "body": {"json": {"user": "admin"}}},

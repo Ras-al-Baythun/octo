@@ -73,7 +73,7 @@ fn env_names_map_double_underscores_to_sections_ignoring_case() {
     let store = SettingsStore::from_env(
         env(&[
             ("SUBSONIC__URL", "http://nd:4533"),
-            ("soulseek__searchwaitseconds", "45"),
+            ("downloads__fingerprintseconds", "45"),
             ("Genre__Blocklist__1", "b"),
             ("Genre__Blocklist__0", "a"),
             ("LISTENBRAINZ__USERTOKENS__alice", "tok"),
@@ -84,7 +84,7 @@ fn env_names_map_double_underscores_to_sections_ignoring_case() {
     );
     let s = store.current();
     assert_eq!(s.subsonic.url.as_deref(), Some("http://nd:4533"));
-    assert_eq!(s.soulseek.search_wait_seconds, 45);
+    assert_eq!(s.downloads.fingerprint_seconds, 45);
     assert_eq!(s.genre.blocklist, ["a", "b"]);
     assert_eq!(s.listen_brainz.token_for("ALICE").as_deref(), Some("tok"));
     assert_eq!(
@@ -111,20 +111,20 @@ fn raw_keys_read_through_every_layer() {
 #[test]
 fn null_in_settings_json_falls_back_for_typed_settings_and_shadows_strings() {
     let file = settings_file(Some(
-        r#"{"Soulseek": {"SearchWaitSeconds": null, "PreferredExtension": null, "VerifyDownloads": null}}"#,
+        r#"{"Downloads": {"FingerprintSeconds": null, "AcoustIdApiKey": null, "VerifyDownloads": null}}"#,
     ));
     let store = SettingsStore::from_env(
         env(&[
-            ("Soulseek__SearchWaitSeconds", "45"),
-            ("Soulseek__PreferredExtension", "mp3"),
+            ("Downloads__FingerprintSeconds", "45"),
+            ("Downloads__AcoustIdApiKey", "key"),
         ]),
         Some(file.path.clone()),
     );
     let s = store.current();
-    assert_eq!(s.soulseek.search_wait_seconds, 45);
-    assert!(!s.soulseek.verify_downloads);
-    assert_eq!(s.soulseek.preferred_extension, "");
-    assert_eq!(store.raw("Soulseek:SearchWaitSeconds").as_deref(), Some(""));
+    assert_eq!(s.downloads.fingerprint_seconds, 45);
+    assert!(!s.downloads.verify_downloads);
+    assert_eq!(s.downloads.acoust_id_api_key, "");
+    assert_eq!(store.raw("Downloads:FingerprintSeconds").as_deref(), Some(""));
 }
 
 #[test]
@@ -207,15 +207,15 @@ fn for_tests_set_notifies_subscribers() {
     let mut rx = store.subscribe();
 
     let mut next = AppSettings::default();
-    next.soulseek.parallel_downloads = 5;
+    next.downloads.parallel_downloads = 5;
     store.set(next);
 
     assert!(rx.has_changed().unwrap());
-    assert_eq!(rx.borrow_and_update().soulseek.parallel_downloads, 5);
-    assert_eq!(store.current().soulseek.parallel_downloads, 5);
+    assert_eq!(rx.borrow_and_update().downloads.parallel_downloads, 5);
+    assert_eq!(store.current().downloads.parallel_downloads, 5);
     // A test store has nothing to reload from, so a reload keeps what set gave it.
     store.reload_now().unwrap();
-    assert_eq!(store.current().soulseek.parallel_downloads, 5);
+    assert_eq!(store.current().downloads.parallel_downloads, 5);
 
     store.set_raw("Library:DownloadPath", Some("/x"));
     assert_eq!(store.raw("library:downloadpath").as_deref(), Some("/x"));
@@ -223,14 +223,14 @@ fn for_tests_set_notifies_subscribers() {
 
 #[test]
 fn restart_tracker_reads_the_live_store() {
-    let file = settings_file(Some(r#"{"Soulseek": {"Password": "a"}}"#));
+    let file = settings_file(Some(r#"{"YouTube": {"ShimUrl": "http://a"}}"#));
     let store = SettingsStore::from_env(env(&[]), Some(file.path.clone()));
     let tracker = crate::settings::RestartTracker::new(&store);
     assert!(tracker.pending(&store).is_empty());
 
-    std::fs::write(&file.path, r#"{"Soulseek": {"Password": "b"}}"#).unwrap();
+    std::fs::write(&file.path, r#"{"YouTube": {"ShimUrl": "http://b"}}"#).unwrap();
     store.reload_now().unwrap();
-    assert_eq!(tracker.pending(&store), ["Soulseek:Password"]);
+    assert_eq!(tracker.pending(&store), ["YouTube:ShimUrl"]);
 }
 
 #[test]

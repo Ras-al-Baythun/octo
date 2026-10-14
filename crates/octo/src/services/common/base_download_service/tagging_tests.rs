@@ -14,7 +14,7 @@ use octo_core::fingerprint::{AcoustIdLookup, VerificationResult, VerificationVer
 use octo_core::models::domain::Song;
 use octo_core::models::download::DownloadHistoryEntry;
 use octo_core::settings::{
-    AppSettings, FolderStructure, MetadataSettings, SoulseekSettings, SubsonicSettings,
+    AppSettings, DownloadSettings, FolderStructure, MetadataSettings, SubsonicSettings,
 };
 use octo_core::tagging::FieldDecision;
 use octo_media::audio::{ILoudnessMeter, Loudness, ReplayGainTags};
@@ -142,7 +142,7 @@ fn landed_flac(root: &Path, folder: &str, tag: impl FnOnce(&mut TagFile)) -> Str
 
 struct Options {
     metadata: MetadataSettings,
-    soulseek: SoulseekSettings,
+    downloads: DownloadSettings,
     loudness: Option<Loudness>,
     layout: FolderStructure,
     /// The downloads log the download reports to, when a test reads it.
@@ -153,7 +153,7 @@ impl Default for Options {
     fn default() -> Self {
         Self {
             metadata: MetadataSettings::default(),
-            soulseek: SoulseekSettings::default(),
+            downloads: DownloadSettings::default(),
             loudness: Some(Loudness::new(-11.5, 6.3, -0.3)),
             layout: FolderStructure::Flat,
             tracker: None,
@@ -172,7 +172,7 @@ async fn build_with(songs: Vec<(&str, Song)>, server: MockServer, options: Optio
             ..Default::default()
         },
         metadata: options.metadata,
-        soulseek: options.soulseek,
+        downloads: options.downloads,
         ..Default::default()
     };
     // The catalog reads its settings live; it shares the service's store below.
@@ -1164,7 +1164,7 @@ async fn write_album_gain_writes_the_album_values_into_every_measured_file() {
 async fn a_landed_path_with_no_audio_fails_and_is_never_recorded() {
     for empty_file in [false, true] {
         let tagging = build_with(vec![("1", teardrop())], serve(vec![]).await, Options::default()).await;
-        let path = tagging.root().join("slskd/incomplete/peer/Teardrop.flac");
+        let path = tagging.root().join(".octo-incoming/lidarr/job/Teardrop.flac");
         if empty_file {
             std::fs::create_dir_all(path.parent().expect("a folder")).expect("made");
             std::fs::write(&path, []).expect("written");

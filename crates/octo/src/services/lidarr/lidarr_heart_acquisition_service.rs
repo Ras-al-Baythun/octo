@@ -117,7 +117,7 @@ pub struct LidarrHeartExtras {
 }
 
 /// Hearts through Lidarr. Lidarr only fetches whole albums, so a heart becomes an album search;
-/// what Lidarr imports is then handed, song by song, to the download pipeline a Soulseek file
+/// what Lidarr imports is then handed, song by song, to the download pipeline a YouTube file
 /// goes through (AcoustID, the spectrum, release matching, tags, placing, history), with Lidarr
 /// as the place the file came from (LidarrImportHandoff). A song already in the library or
 /// removed with a library action is deleted from what Lidarr brought instead.
@@ -1244,7 +1244,7 @@ impl Inner {
 
     /// Why an imported file should not join the library, or None when it should. A song removed
     /// with a library action stays removed, and a song already in the library is not added twice,
-    /// the same rules as a Soulseek download. An owned lossy copy is queued for Better quality
+    /// the same rules as a YouTube download. An owned lossy copy is queued for Better quality
     /// instead, which swaps it in place and keeps its plays.
     async fn should_drop(
         &self,

@@ -10,8 +10,7 @@ use std::sync::{Arc, Weak};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use octo_core::common::dotnet::eq_ignore_case;
-use octo_core::family::abilities::RequestQuality;
-use octo_core::family::request::{FamilyRequest, RequestState};
+use octo_core::family::request::FamilyRequest;
 use octo_core::json::datetime;
 use tracing::warn;
 
@@ -67,22 +66,6 @@ pub struct LiveRequests {
 #[async_trait]
 impl RequestService for LiveRequests {
     async fn create(&self, ask: NewRequest) -> Result<FamilyRequest, FamilyError> {
-        // An MP3 asked for a song whose FLAC request failed is that request tried again.
-        if ask.quality == RequestQuality::Mp3
-            && let Some(failed) = self
-                .service
-                .requests_of(&ask.username)
-                .into_iter()
-                .rev()
-                .find(|r| {
-                    r.target == ask.target
-                        && r.state == RequestState::Failed
-                        && r.quality == RequestQuality::Flac
-                        && ask.kind.is_none_or(|kind| kind == r.kind)
-                })
-        {
-            return self.retry_as_mp3(&failed.id, &ask.username).await;
-        }
         self.service
             .create(&ask.username, &ask.target, ask.quality, ask.kind)
             .await
@@ -107,10 +90,6 @@ impl RequestService for LiveRequests {
             self.service.decline(id, by, note)
         }
         .map_err(request_failure)
-    }
-
-    async fn retry_as_mp3(&self, id: &str, by: &str) -> Result<FamilyRequest, FamilyError> {
-        self.service.retry_as_mp3(id, by).await.map_err(request_failure)
     }
 }
 

@@ -24,7 +24,7 @@ pub struct DownloadHistoryEntry {
     #[serde(deserialize_with = "crate::models::null_as_default")]
     pub format: String,
 
-    /// Where it came from: "Soulseek" (FLAC) or "YouTube" (MP3).
+    /// Where it came from: "Lidarr" (FLAC) or "YouTube" (MP3).
     #[serde(deserialize_with = "crate::models::null_as_default")]
     pub source: String,
 

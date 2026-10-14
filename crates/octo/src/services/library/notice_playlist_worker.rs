@@ -9,7 +9,7 @@ use futures::FutureExt;
 use octo_core::common::dotnet;
 use octo_core::fingerprint::acoust_id_client::AcoustIdSubmission;
 use octo_core::fingerprint::verification::InconclusiveReason;
-use octo_core::settings::{LibraryActionSettings, NoticeKind, SettingsStore, SoulseekSettings};
+use octo_core::settings::{DownloadSettings, LibraryActionSettings, NoticeKind, SettingsStore};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
@@ -163,7 +163,7 @@ pub struct NoticePlaylistWorker {
     identity: NavidromeIdentityService,
     acoust_id: Arc<AcoustIdClient>,
     music_brainz: Arc<MusicBrainzClient>,
-    /// The library action and Soulseek settings, read at each sweep.
+    /// The library action and download settings, read at each sweep.
     settings: Arc<SettingsStore>,
 }
 
@@ -325,15 +325,15 @@ impl NoticePlaylistWorker {
     /// 120-second fingerprint AcoustID's own tools make, and only with one unambiguous recording.
     /// `Err` when MusicBrainz timed out or answered nonsense.
     async fn submit_kept(&self, settings: &LibraryActionSettings) -> anyhow::Result<()> {
-        let soulseek = self.settings.current().soulseek.clone();
-        if !Self::may_submit(settings, &soulseek) {
+        let downloads = self.settings.current().downloads.clone();
+        if !Self::may_submit(settings, &downloads) {
             return Ok(());
         }
 
         let mut ready: Vec<(NoticeEntry, AcoustIdSubmission)> = Vec::new();
         let mut refused: Vec<String> = Vec::new();
         for entry in self.queue.awaiting_submission() {
-            if !Self::submittable(&entry, &soulseek) {
+            if !Self::submittable(&entry, &downloads) {
                 refused.push(entry.key.clone());
                 continue;
             }
@@ -370,10 +370,10 @@ impl NoticePlaylistWorker {
             if !self
                 .acoust_id
                 .submit(
-                    &soulseek.acoust_id_api_key,
-                    &soulseek.acoust_id_user_api_key,
+                    &downloads.acoust_id_api_key,
+                    &downloads.acoust_id_user_api_key,
                     &items,
-                    soulseek.effective_acoust_id_timeout_seconds(),
+                    downloads.effective_acoust_id_timeout_seconds(),
                 )
                 .await
             {
@@ -387,24 +387,24 @@ impl NoticePlaylistWorker {
     }
 
     /// Consent and both keys, and never in a dry run.
-    pub fn may_submit(settings: &LibraryActionSettings, soulseek: &SoulseekSettings) -> bool {
-        soulseek.submit_confirmed_fingerprints
+    pub fn may_submit(settings: &LibraryActionSettings, downloads: &DownloadSettings) -> bool {
+        downloads.submit_confirmed_fingerprints
             && !settings.dry_run
-            && !dotnet::is_blank(&soulseek.acoust_id_api_key)
-            && !dotnet::is_blank(&soulseek.acoust_id_user_api_key)
+            && !dotnet::is_blank(&downloads.acoust_id_api_key)
+            && !dotnet::is_blank(&downloads.acoust_id_user_api_key)
     }
 
     /// Only what AcoustID could not place: a track it confidently named as something else was
     /// kept for a reason that is not "AcoustID is missing this". And only the standard
     /// 120-second fingerprint AcoustID's own tools make, so a shortened one never lands beside
     /// them. Never a library sweep question: its tags were never confirmed by anyone.
-    pub fn submittable(entry: &NoticeEntry, soulseek: &SoulseekSettings) -> bool {
+    pub fn submittable(entry: &NoticeEntry, downloads: &DownloadSettings) -> bool {
         entry.origin == NoticeOrigin::Download
             && matches!(
                 entry.cause,
                 InconclusiveReason::NoEntry | InconclusiveReason::BelowThreshold
             )
-            && soulseek.fingerprint_seconds == 120
+            && downloads.fingerprint_seconds == 120
             && entry.duration_seconds > 0
             && entry.fingerprint.as_deref().is_some_and(|f| !f.is_empty())
     }

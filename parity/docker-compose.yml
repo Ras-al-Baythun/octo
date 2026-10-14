@@ -39,8 +39,6 @@ services:
     volumes:
       - ./stubs:/stubs:ro
       - ./certs:/certs:ro
-      # The slskd stub "downloads" a file by writing it into the job folder Octo asked for.
-      - ${PARITY_MUSIC:-./fixtures/music}:/music
     mem_limit: 128m
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health')"]
@@ -77,8 +75,7 @@ services:
           - accounts.spotify.com
           - api.spotify.com
           - open.spotify.com
-          # Plain http: the Soulseek port test, and octo-sonic (Sounds alike).
-          - tools.slsknet.org
+          # Plain http: octo-sonic (Sounds alike).
           - octo-sonic
 
   navidrome:
@@ -144,13 +141,9 @@ services:
       Subsonic__EnableExternalPlaylists: "false"
       Subsonic__EnableSyncCatalog: "true"
       Subsonic__SyncCatalogClients: Symfonium
-      Subsonic__WaitForLosslessOnPlay: "false"
       Subsonic__DownloadOnPlay: "false"
       Library__DownloadPath: /music
       YouTube__ShimUrl: http://stubs:8090
-      Soulseek__BaseUrl: http://stubs:5030
-      Soulseek__Username: slskd
-      Soulseek__Password: slskd
       Lidarr__BaseUrl: http://stubs:8686
       Lidarr__ApiKey: parity-lidarr-key
       # A Last.fm key turns on search discovery (track.search, stubbed). Radio stays off:
@@ -176,18 +169,11 @@ services:
       LastFm__UserSessions__ghost__SessionKey: parity-lastfm-session-ghost
       LastFm__UserSessions__ghost__LastFmUser: ghost-on-lastfm
       ListenBrainz__UserTokens__ghost: parity-lb-ghost-token
-      # Downloads (13-downloads, 95-acquisition): the deny list and the AcoustID check run, the
-      # fixture FLAC (0.9 MB) is big enough to be a whole song, and songs are filed by artist and
+      # Downloads (13-downloads): the AcoustID check runs, and songs are filed by artist and
       # album.
-      Soulseek__VerifyDownloads: "true"
-      Soulseek__AcoustIdApiKey: parity-acoustid-key
-      Soulseek__MinFileSizeBytes: "700000"
+      Downloads__VerifyDownloads: "true"
+      Downloads__AcoustIdApiKey: parity-acoustid-key
       Subsonic__FolderStructure: Organized
-      # Sharing (18-dashboard): what the slskd stub's slskd.yml already holds, so the share
-      # switch's startup check only reads and then sleeps for 10 minutes.
-      Soulseek__ShareLibrary: "true"
-      Soulseek__SharedFolders: "[Music]/music"
-      Soulseek__CheckListenPort: "true"
       # Imports (12-imports): a Spotify app id (PKCE, not a secret), and the trickle and the
       # list refresh off, so nothing is fetched or read again on a timer.
       Imports__SpotifyClientId: parity-spotify-client

@@ -13,8 +13,6 @@ pub mod external_search_service;
 pub mod heart_acquisition_coordinator;
 pub mod replace_anyway;
 pub mod song_finder;
-pub mod soulseek_hold_resumer;
-pub mod soulseek_hold_store;
 pub mod star_on_arrival;
 pub mod top_songs_service;
 pub mod track_acquisition_queue;
@@ -39,8 +37,6 @@ pub use heart_acquisition_coordinator::{
     FamilyHooks, HeartAcquisitionCoordinator, HeartCoordinatorExtras, TrackOutcome,
 };
 pub use song_finder::{SongFinder, SongFinderServices};
-pub use soulseek_hold_resumer::SoulseekHoldResumer;
-pub use soulseek_hold_store::{HeldAcquisition, HeldKind, SoulseekHoldStore};
 pub use star_on_arrival::{StarNavidrome, StarOnArrival};
 pub use top_songs_service::{ChartFetch, TopList, TopSong, TopSongsService};
 pub use track_acquisition_queue::{

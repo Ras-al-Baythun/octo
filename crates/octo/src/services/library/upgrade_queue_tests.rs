@@ -3,18 +3,17 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use chrono::{TimeZone, Utc};
 use futures::FutureExt;
 use octo_core::common::Clock;
-use octo_core::settings::{AppSettings, LibraryAction, SettingsStore, SoulseekSettings};
+use octo_core::settings::{AppSettings, DownloadSettings, LibraryAction, SettingsStore};
 use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use super::*;
-use crate::services::soulseek::soulseek_link::OFFLINE_TEXT;
 
 fn ask(id: &str) -> UpgradeAsk {
     UpgradeAsk {
@@ -116,7 +115,7 @@ fn clear_forgets_only_finished_jobs() {
 
 type Apply = Arc<dyn Fn(LibraryActionRequest) -> BoxFuture<'static, LibraryActionOutcome> + Send + Sync>;
 
-fn seams(width: i32, apply: Apply, offline: Arc<AtomicBool>) -> UpgradeWorkerSeams {
+fn seams(width: i32, apply: Apply) -> UpgradeWorkerSeams {
     UpgradeWorkerSeams {
         apply: Arc::new(move |request| {
             let apply = apply.clone();
@@ -124,23 +123,14 @@ fn seams(width: i32, apply: Apply, offline: Arc<AtomicBool>) -> UpgradeWorkerSea
         }),
         describe: Arc::new(|_| async { None }.boxed()),
         width: Arc::new(move || width),
-        soulseek_offline: Arc::new(move || {
-            let offline = offline.load(Ordering::SeqCst);
-            async move { offline }.boxed()
-        }),
-        source_name: Arc::new(|| "Soulseek".to_string()),
+        source_name: Arc::new(|| "Lidarr".to_string()),
     }
 }
 
-fn worker(
-    queue: &Arc<UpgradeQueue>,
-    width: i32,
-    apply: Apply,
-    offline: Option<Arc<AtomicBool>>,
-) -> Arc<UpgradeWorker> {
+fn worker(queue: &Arc<UpgradeQueue>, width: i32, apply: Apply) -> Arc<UpgradeWorker> {
     Arc::new(UpgradeWorker::with_seams(
         queue.clone(),
-        seams(width, apply, offline.unwrap_or_default()),
+        seams(width, apply),
         None,
         None,
         None,
@@ -170,7 +160,7 @@ async fn no_more_run_at_once_than_downloads_may() {
         }
         .boxed()
     });
-    let worker = worker(&queue, 3, apply, None);
+    let worker = worker(&queue, 3, apply);
     let ct = CancellationToken::new();
 
     assert_eq!(worker.tick(&ct).await, 3);
@@ -195,52 +185,11 @@ async fn no_more_run_at_once_than_downloads_may() {
     );
 }
 
-#[tokio::test]
-async fn during_an_outage_a_job_waits_then_runs_once_soulseek_is_back() {
-    let queue = Arc::new(UpgradeQueue::new());
-    queue.add(asks(&["a"]), "alice", "app");
-    let offline = Arc::new(AtomicBool::new(true));
-    let tries = Arc::new(AtomicUsize::new(0));
-    let (out, tried) = (offline.clone(), tries.clone());
-    let apply: Apply = Arc::new(move |_| {
-        tried.fetch_add(1, Ordering::SeqCst);
-        let answer = if out.load(Ordering::SeqCst) {
-            LibraryActionOutcome {
-                code: Some(LibraryActionCodes::SOULSEEK_OFFLINE.to_string()),
-                ..outcome(LibraryActionState::Failed, OFFLINE_TEXT)
-            }
-        } else {
-            outcome(LibraryActionState::Applied, "Replaced.")
-        };
-        async move { answer }.boxed()
-    });
-    let worker = worker(&queue, 1, apply, Some(offline.clone()));
-    let ct = CancellationToken::new();
-
-    worker.tick(&ct).await;
-    worker.drain().await;
-    let job = queue.snapshot().remove(0);
-    assert_eq!(job.state, UpgradeStates::WAITING);
-    assert_eq!(job.detail.as_deref(), Some("Waiting for Soulseek"));
-
-    assert_eq!(worker.tick(&ct).await, 0, "still out: not tried again");
-    offline.store(false, Ordering::SeqCst);
-    assert_eq!(worker.tick(&ct).await, 1);
-    worker.drain().await;
-    assert_eq!(queue.snapshot()[0].state, UpgradeStates::UPGRADED);
-    assert_eq!(tries.load(Ordering::SeqCst), 2);
-}
-
 #[test]
 fn outcomes_map_on_the_code_not_the_words() {
     let cases = [
         (LibraryActionState::Applied, None, UpgradeStates::UPGRADED),
         (LibraryActionState::Rehearsed, None, UpgradeStates::REHEARSED),
-        (
-            LibraryActionState::Failed,
-            Some(LibraryActionCodes::SOULSEEK_OFFLINE),
-            UpgradeStates::WAITING,
-        ),
         (
             LibraryActionState::Failed,
             Some(LibraryActionCodes::NO_REPLACEMENT),
@@ -253,7 +202,7 @@ fn outcomes_map_on_the_code_not_the_words() {
     for (state, code, expected) in cases {
         let outcome = LibraryActionOutcome {
             code: code.map(str::to_string),
-            ..outcome(state, "No Soulseek FLAC found, whatever")
+            ..outcome(state, "No FLAC found, whatever")
         };
         assert_eq!(UpgradeWorker::state_for(&outcome), expected, "{state:?} {code:?}");
     }
@@ -265,19 +214,19 @@ async fn the_replacements_download_is_written_on_the_job() {
     queue.add(asks(&["a"]), "alice", "app");
     let apply: Apply = Arc::new(|request| {
         if let Some(queued) = &request.on_replacement_queued {
-            queued("soulseek", "ext-1");
+            queued("outside", "ext-1");
         }
         assert_eq!(request.action, LibraryAction::BetterQuality);
         assert_eq!(request.username, "alice");
         assert!(request.on_replacement_queued.is_some());
         async { outcome(LibraryActionState::Applied, "ok") }.boxed()
     });
-    let worker = worker(&queue, 1, apply, None);
+    let worker = worker(&queue, 1, apply);
     worker.tick(&CancellationToken::new()).await;
     worker.drain().await;
     assert_eq!(
         queue.snapshot()[0].acquisition_key.as_deref(),
-        Some("soulseek:ext-1")
+        Some("outside:ext-1")
     );
 }
 
@@ -305,7 +254,7 @@ async fn a_song_with_no_copy_anywhere_is_not_retried_by_the_weekly_run() {
     });
     let worker = Arc::new(UpgradeWorker::with_seams(
         queue.clone(),
-        seams(1, apply, Arc::default()),
+        seams(1, apply),
         None,
         Some(store.clone()),
         None,
@@ -315,7 +264,7 @@ async fn a_song_with_no_copy_anywhere_is_not_retried_by_the_weekly_run() {
     assert!(store.snapshot().attempts.contains_key("Artist/a.mp3|100"));
     assert_eq!(
         queue.snapshot()[0].detail.as_deref(),
-        Some("No lossless copy of this song on Soulseek right now. Your copy is unchanged.")
+        Some("No lossless copy of this song on Lidarr right now. Your copy is unchanged.")
     );
 }
 
@@ -340,9 +289,9 @@ fn flac_of(seconds: u64) -> Vec<u8> {
     bytes
 }
 
-fn soulseek(settings: SoulseekSettings) -> Arc<SettingsStore> {
+fn downloads(settings: DownloadSettings) -> Arc<SettingsStore> {
     Arc::new(SettingsStore::for_tests(AppSettings {
-        soulseek: settings,
+        downloads: settings,
         ..Default::default()
     }))
 }
@@ -351,7 +300,6 @@ fn idle_seams() -> UpgradeWorkerSeams {
     seams(
         1,
         Arc::new(|_| async { outcome(LibraryActionState::Failed, "unused") }.boxed()),
-        Arc::default(),
     )
 }
 
@@ -363,7 +311,7 @@ fn an_upgrade_says_what_changed_and_what_it_passed() {
     let kept = dir.path().join(".octo-trash").join("2026-10-03").join("Song.mp3");
     std::fs::create_dir_all(kept.parent().expect("a folder")).expect("created");
     std::fs::write(&kept, mp3()).expect("written");
-    let settings = soulseek(SoulseekSettings {
+    let settings = downloads(DownloadSettings {
         verify_downloads: true,
         acoust_id_api_key: "key".into(),
         detect_transcodes: true,
@@ -411,7 +359,7 @@ fn an_upgrade_says_what_changed_and_what_it_passed() {
 
 #[test]
 fn without_acoust_id_the_report_does_not_claim_it() {
-    let settings = soulseek(SoulseekSettings {
+    let settings = downloads(DownloadSettings {
         verify_downloads: false,
         detect_transcodes: true,
         ..Default::default()

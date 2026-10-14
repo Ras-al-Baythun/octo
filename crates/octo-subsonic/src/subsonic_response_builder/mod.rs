@@ -30,7 +30,6 @@ use octo_core::json::format_double;
 use octo_core::models::domain::{Album, Artist, Song, explicit_status};
 use octo_core::models::radio::LastFmRadioStation;
 use octo_core::models::subsonic::ExternalPlaylist;
-use octo_core::settings::SubsonicSettings;
 use octo_core::soulseek::{RoutingKind, SoulseekRouting, StreamFacts};
 use serde_json::{Map, Number, Value, json};
 
@@ -157,29 +156,20 @@ pub trait IdRegistry: Send + Sync {
 pub struct SubsonicResponseBuilder {
     id_registry: Arc<dyn IdRegistry>,
 
-    /// Whether an external id resolves to a lossless file. Read once at construction on
-    /// purpose: it decides what every search result DECLARES, so it must not change under
-    /// a client that has already cached those rows. The setting is restart-required.
-    externals_are_lossless: bool,
-
     /// The clock, for the `created` of album rows. A seam for tests.
     clock: Clock,
 }
 
 impl std::fmt::Debug for SubsonicResponseBuilder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SubsonicResponseBuilder")
-            .field("externals_are_lossless", &self.externals_are_lossless)
-            .finish_non_exhaustive()
+        f.debug_struct("SubsonicResponseBuilder").finish_non_exhaustive()
     }
 }
 
 impl SubsonicResponseBuilder {
-    /// `subsonic` is read here and not again: see `externals_are_lossless`.
-    pub fn new(id_registry: Arc<dyn IdRegistry>, subsonic: &SubsonicSettings) -> Self {
+    pub fn new(id_registry: Arc<dyn IdRegistry>) -> Self {
         Self {
             id_registry,
-            externals_are_lossless: subsonic.wait_for_lossless_on_play,
             clock: Clock::system(),
         }
     }
@@ -752,29 +742,22 @@ impl SubsonicResponseBuilder {
         //
         // A library song is declared as Navidrome described it when that is known, and as FLAC
         // only when it is not: radio and the Discovery blend put library MP3s here too.
-        let lossless_external = !song.is_local && self.externals_are_lossless;
         let local_suffix = match song.suffix.as_deref() {
             Some(suffix) if !is_blank(suffix) => to_lower_invariant(suffix.trim()),
             _ => "flac".to_string(),
         };
         let bit_rate: i32 = if song.is_local {
             song.bit_rate.filter(|rate| *rate > 0).unwrap_or(1411)
-        } else if lossless_external {
-            950
         } else {
             128
         };
         let suffix = if song.is_local {
             local_suffix.clone()
-        } else if lossless_external {
-            "flac".to_string()
         } else {
             "m4a".to_string()
         };
         let content_type = if song.is_local {
             Self::content_type_for(&local_suffix)
-        } else if lossless_external {
-            "audio/flac"
         } else {
             "audio/mp4"
         };
@@ -889,13 +872,7 @@ impl SubsonicResponseBuilder {
         }
 
         if !song.is_local {
-            // A FLAC's rate is a guess until it is fetched; the 128 of the AAC stream is real.
-            let size = if lossless_external {
-                fields.shift_remove("bitRate");
-                None
-            } else {
-                self.declare_outside_stream(&mut fields, &song.id)
-            };
+            let size = self.declare_outside_stream(&mut fields, &song.id);
             // No file on the server, so nothing about one; the size of the stream it relays is
             // the one fact it can truthfully give, once known.
             for key in FILE_ONLY_FIELDS {
@@ -917,8 +894,7 @@ impl SubsonicResponseBuilder {
     /// An outside song that streams from YouTube: once the stream is known, the suffix, content
     /// type and bit rate of the format it is served in, and its exact size (returned). A stream
     /// not known yet keeps the m4a declaration and goes without a size, and is asked about for
-    /// next time. Wait-for-lossless rows never come here: their bytes are not known until the
-    /// FLAC lands.
+    /// next time.
     fn declare_outside_stream(&self, fields: &mut Fields, song_id: &str) -> Option<u64> {
         let facts = self.id_registry.stream_facts(song_id).unwrap_or_default();
         if let Some(declared) = facts.declared() {

@@ -20,7 +20,7 @@ use crate::services::soulseek::{ExternalIdRegistry, SoulseekMetadataService};
 /// Drains [`TrackAcquisitionQueue`].
 ///
 /// One dispatcher. Up to `DownloadConcurrency.current()` requests run at once, and that is 1
-/// until slskd has proven it puts each download in its own folder: before job folders,
+/// as the setting says: every download lands in a folder of its own, so before job folders,
 /// ResolveLocalPath matched a finished file by leaf name with a 64KB size tolerance across the
 /// whole music directory, so two transfers could claim and move each other's files. The
 /// existence check and the in-progress marker stay together under DownloadLock, and so does

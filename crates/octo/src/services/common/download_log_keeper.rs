@@ -87,7 +87,7 @@ mod tests {
         DownloadLogKeeper::attach(&tracker, history.clone());
 
         tracker.begin(
-            "soulseek",
+            "outside",
             "song-1",
             Some("song-1"),
             Some("alice"),
@@ -96,18 +96,18 @@ mod tests {
             None,
         );
         tracker.found(
-            "soulseek",
+            "outside",
             "song-1",
             "Found 2 copies",
             vec![
                 AcquisitionCandidate {
-                    source: "Soulseek".into(),
+                    source: "Lidarr".into(),
                     peer: Some("peer1".into()),
                     rank: Some(1),
                     ..Default::default()
                 },
                 AcquisitionCandidate {
-                    source: "Soulseek".into(),
+                    source: "Lidarr".into(),
                     peer: Some("peer2".into()),
                     note: Some("Too short".into()),
                     ..Default::default()
@@ -116,10 +116,10 @@ mod tests {
             None,
         );
         tracker.trying(
-            "soulseek",
+            "outside",
             "song-1",
             AcquisitionCandidate {
-                source: "Soulseek".into(),
+                source: "Lidarr".into(),
                 peer: Some("peer1".into()),
                 format: Some("flac".into()),
                 ..Default::default()
@@ -131,10 +131,10 @@ mod tests {
             artist: "Daft Punk".into(),
             title: "Digital Love".into(),
             downloaded_at: now_text(),
-            key: Some("soulseek:song-1".into()),
+            key: Some("outside:song-1".into()),
             ..Default::default()
         });
-        tracker.complete("soulseek", "song-1", Some("nd-1"));
+        tracker.complete("outside", "song-1", Some("nd-1"));
 
         let log = history.get_recent(200)[0].log.clone().expect("a saved log");
         assert_eq!(log[log.len() - 1].kind, acquisition_event_kinds::DONE);
@@ -142,7 +142,7 @@ mod tests {
             && line.candidates.as_ref().map(Vec::len) == Some(2)));
 
         tracker.log(
-            "soulseek",
+            "outside",
             "song-1",
             acquisition_event_kinds::LYRICS,
             "Found word-timed lyrics",
@@ -153,7 +153,7 @@ mod tests {
         assert_eq!(log[log.len() - 1].text, "Found word-timed lyrics");
 
         tracker.begin(
-            "soulseek",
+            "outside",
             "song-2",
             Some("song-2"),
             Some("alice"),
@@ -161,7 +161,7 @@ mod tests {
             Some("Aerodynamic"),
             None,
         );
-        tracker.fail("soulseek", "song-2", Some("No copy that fits was found."));
+        tracker.fail("outside", "song-2", Some("No copy that fits was found."));
         assert_eq!(DownloadHistoryService::new(&path).get_recent(200).len(), 1);
     }
 }

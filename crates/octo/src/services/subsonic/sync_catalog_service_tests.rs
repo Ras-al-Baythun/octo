@@ -311,7 +311,7 @@ fn metadata(stations: &[LastFmRadioStation]) -> Arc<FakeMetadata> {
                 album: String::new(),
                 duration: Some(track.duration.unwrap_or(180)),
                 is_local: false,
-                external_provider: Some("soulseek".into()),
+                external_provider: Some("outside".into()),
                 ..Default::default()
             },
         );
@@ -423,7 +423,7 @@ async fn build_leaves_out_what_the_library_owns_and_files_under_the_librarys_art
     assert_eq!(first_record.song_count, Some(6));
     assert_eq!(first_record.artist_id.as_deref(), Some(stranger_id.as_str()));
     assert!(!first_record.is_local);
-    assert_eq!(first_record.external_provider.as_deref(), Some("soulseek"));
+    assert_eq!(first_record.external_provider.as_deref(), Some("outside"));
 
     let artists: Vec<&str> = catalog
         .artists()
@@ -621,10 +621,8 @@ fn slice_takes_the_window_of_one_kind() {
 #[test]
 fn catalog_rows_reach_the_page_with_the_date_they_joined() {
     let catalog = small_catalog(added_at());
-    let builder = crate::services::subsonic::new_subsonic_response_builder(
-        Arc::new(ExternalIdRegistry::in_memory()),
-        &SubsonicSettings::default(),
-    );
+    let builder =
+        crate::services::subsonic::new_subsonic_response_builder(Arc::new(ExternalIdRegistry::in_memory()));
     let (songs, albums, artists) = SyncCatalogService::slice(&catalog, SyncCatalogKind::Song, 0, 1);
     let body = br#"{"subsonic-response":{"status":"ok","version":"1.16.1","searchResult3":{"song":[{"id":"lib-1"}]}}}"#;
 

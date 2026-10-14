@@ -1,12 +1,11 @@
 //! Hand-written fakes for the acquisition tests: the download service, the Lidarr heart
-//! acquisition service and the metadata service, an offline Soulseek link, and `until`.
+//! acquisition service and the metadata service, and `until`.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use chrono::{DateTime, TimeDelta, Utc};
 use octo_core::models::domain::{Album, Artist, Song};
 use octo_core::models::download::DownloadInfo;
 use octo_core::models::search::SearchResult;
@@ -19,8 +18,6 @@ use crate::services::i_download_service::{AudioStream, DirectStreamInfo, IDownlo
 use crate::services::i_music_metadata_service::IMusicMetadataService;
 use crate::services::library::ReplacementHandoff;
 use crate::services::lidarr::ILidarrHeartAcquisitionService;
-use crate::services::soulseek::ISoulseekLink;
-use crate::services::soulseek::soulseek_link::{SoulseekLinkState, SoulseekServerReading};
 
 /// Waits up to ten seconds for a condition.
 pub(crate) async fn until(condition: impl Fn() -> bool) {
@@ -357,59 +354,5 @@ impl IMusicMetadataService for FakeMetadata {
 
     async fn get_playlist_tracks(&self, _: &str, _: &str) -> Vec<Song> {
         Vec::new()
-    }
-}
-
-/// slskd is offline, and a Soulseek heart would wait up to six hours.
-pub(crate) struct OfflineLink;
-
-#[async_trait]
-impl ISoulseekLink for OfflineLink {
-    async fn read(&self, _fresh: bool) -> Option<SoulseekServerReading> {
-        Some(SoulseekServerReading::new(
-            SoulseekLinkState::NotLoggedIn,
-            Some("Disconnecting".into()),
-            None,
-            None,
-        ))
-    }
-
-    fn hold_limit(&self) -> TimeDelta {
-        TimeDelta::hours(6)
-    }
-
-    fn utc_now(&self) -> DateTime<Utc> {
-        Utc::now()
-    }
-
-    async fn wait_for_login(&self, _deadline_utc: DateTime<Utc>) -> bool {
-        std::future::pending::<()>().await;
-        false
-    }
-}
-
-/// Soulseek is switched off: no step uses it.
-pub(crate) struct OffLink;
-
-#[async_trait]
-impl ISoulseekLink for OffLink {
-    async fn read(&self, _fresh: bool) -> Option<SoulseekServerReading> {
-        None
-    }
-
-    fn hold_limit(&self) -> TimeDelta {
-        TimeDelta::hours(6)
-    }
-
-    fn utc_now(&self) -> DateTime<Utc> {
-        Utc::now()
-    }
-
-    async fn wait_for_login(&self, _deadline_utc: DateTime<Utc>) -> bool {
-        false
-    }
-
-    fn is_off(&self) -> bool {
-        true
     }
 }

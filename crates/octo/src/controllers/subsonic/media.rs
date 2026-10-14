@@ -1,9 +1,6 @@
 //! `stream`, `download`, `getCoverArt` and `getTranscodeDecision`.
 
-use std::io::SeekFrom;
-use std::path::Path;
 use std::sync::Arc;
-use std::time::Duration;
 
 use axum::body::Body;
 use axum::extract::{Request, State};
@@ -20,8 +17,6 @@ use octo_media::cover::{CoverGlyph, CoverSeed, ListCover, list_kinds};
 use octo_subsonic::SubsonicCredential;
 use octo_subsonic::subsonic_request_parser::Parameters;
 use serde_json::json;
-use tokio::io::{AsyncReadExt, AsyncSeekExt};
-use tokio_util::io::ReaderStream;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
@@ -32,14 +27,12 @@ use super::caller_checks::{
 };
 use crate::app::AppState;
 use crate::http::catch_all;
-use crate::http::error::{AppError, AppResult, json_status, problem};
+use crate::http::error::{AppResult, json_status, problem};
 use crate::http::routes::RouteSet;
 use crate::http::static_files::{RangeOutcome, parse_range};
-use crate::services::common::track_acquisition_queue::Completion;
 use crate::services::cover_art::local_cover_cache::{CoverPicture, Fetched, NotKept};
-use crate::services::family::{FamilyCaller, LibraryScope, audio_gate, family_caller};
 use crate::services::i_music_metadata_service::IMusicMetadataService;
-use crate::services::library::{GeneratedPlaylist, navidrome_song_list};
+use crate::services::library::GeneratedPlaylist;
 use crate::services::subsonic::subsonic_proxy_service::content_type_of;
 use crate::services::subsonic::{CredentialVerdict, SubsonicProxyService};
 
@@ -60,7 +53,6 @@ pub fn routes() -> RouteSet {
 
 /// Downloads on-the-fly if needed, or streams directly in Stream mode.
 pub async fn stream(State(state): State<AppState>, req: Request) -> AppResult {
-    let caller = family_caller(req.extensions()).cloned();
     let call = match SubsonicCall::read(&state, req).await {
         Ok(call) => call,
         Err(response) => return Ok(response),
@@ -104,39 +96,7 @@ pub async fn stream(State(state): State<AppState>, req: Request) -> AppResult {
     let provider = provider.unwrap_or_default();
     let external_id = external_id.unwrap_or_default();
 
-    // A local file may only be served under an external id when this session DECLARES
-    // that id as lossless. search3 already told the client a suffix, bitrate and size,
-    // and a player picks its decoder from those, so handing back different bytes is
-    // what makes tracks silently refuse to start. With the default settings the
-    // lossless copy is reached as its own library track after the rescan instead.
-    if state.settings.current().subsonic.wait_for_lossless_on_play {
-        let local_path = state
-            .local_library
-            .get_local_path_for_external_song(&provider, &external_id)
-            .await;
-        if let Some(local_path) = local_path
-            && Path::new(&local_path).is_file()
-        {
-            match outside_file(&state, &call, caller.as_ref(), &local_path).await {
-                OutsideFile::Serve => return serve_file(&call, &local_path).await,
-                OutsideFile::Relayed(response) => return Ok(response),
-                // Not this caller's to have as a file: it plays from its source below.
-                OutsideFile::Withheld => {}
-            }
-        }
-    }
-
-    match play_external(
-        &state,
-        &call,
-        caller.as_ref(),
-        &provider,
-        &external_id,
-        &id,
-        &format,
-    )
-    .await
-    {
+    match play_external(&state, &call, &provider, &external_id, &id, &format).await {
         Ok(response) => Ok(response),
         Err(error) => {
             error!("Failed to stream track {id}: {error:#}");
@@ -170,23 +130,19 @@ pub async fn download(State(state): State<AppState>, req: Request) -> AppResult 
     }
 }
 
-/// Queues the play, waits for a lossless copy when asked to, else serves the preview. An error
-/// here is the 500 `{"error":"Failed to stream: ..."}`. (A client that hangs up drops this
+/// Queues the play, then serves the preview. An error here is the 500 `{"error":"Failed to stream: ..."}`. (A client that hangs up drops this
 /// future, and gets nothing.)
 async fn play_external(
     state: &AppState,
     call: &SubsonicCall,
-    caller: Option<&FamilyCaller>,
     provider: &str,
     external_id: &str,
     id: &str,
     format: &str,
 ) -> anyhow::Result<Response> {
-    let settings = state.settings.current().subsonic.clone();
-    // Lossless-on-play remains an explicit opt-in. Normal playback starts no
-    // acquisition unless DownloadOnPlay or LidarrAlbumOnPlay are on: owned ids
-    // already went to Navidrome above, and missing ids stream from YouTube below.
-    // Hearts are the normal permanent-copy gesture.
+    // Normal playback starts no acquisition unless DownloadOnPlay or LidarrAlbumOnPlay are
+    // on: owned ids already went to Navidrome above, and missing ids stream from YouTube
+    // below. Hearts are the normal permanent-copy gesture.
     // Only a request from the first byte is a play. Clients ask again with a later
     // Range on every seek and while buffering. A transcoded request (format,
     // maxBitRate) is still a play and counts.
@@ -201,40 +157,6 @@ async fn play_external(
             Some(&who),
         );
     }
-    if settings.wait_for_lossless_on_play {
-        let who = signed_in_user(state, call).await.map_err(anyhow::Error::new)?;
-        // A family member's play keeps a copy only when they may add songs at once, and then
-        // in their own library; otherwise it plays from the source below.
-        if let Some(target) = state.family_write_gate.play_target(Some(&who)) {
-            let acquisition = state.track_acquisition_queue.enqueue_for(
-                &target,
-                false,
-                provider,
-                external_id,
-                false,
-                false,
-                true,
-                None,
-                true,
-                requester_for(state, Some(&who)).as_deref(),
-                false,
-                None,
-            );
-            return serve_acquired(
-                state,
-                call,
-                caller,
-                acquisition,
-                provider,
-                external_id,
-                id,
-                format,
-                true,
-            )
-            .await;
-        }
-    }
-
     if let Some(direct) = try_direct_stream(state, call, provider, external_id, id).await? {
         return Ok(direct);
     }
@@ -248,140 +170,6 @@ async fn play_external(
         .into_response();
     *response.status_mut() = StatusCode::NOT_FOUND;
     Ok(response)
-}
-
-/// Wait for a queued acquisition and serve the file.
-///
-/// Abandoning the WAIT leaves the transfer running, so a client that gives up costs it
-/// nothing.
-#[allow(clippy::too_many_arguments)]
-async fn serve_acquired(
-    state: &AppState,
-    call: &SubsonicCall,
-    caller: Option<&FamilyCaller>,
-    acquisition: Completion,
-    provider: &str,
-    external_id: &str,
-    id: &str,
-    format: &str,
-    allow_preview_fallback: bool,
-) -> anyhow::Result<Response> {
-    // Above 0, the wait is bounded and the preview stands in while the fetch keeps
-    // running in the background; the next play of this id serves the landed file.
-    let timeout = state
-        .settings
-        .current()
-        .subsonic
-        .lossless_wait_timeout_seconds
-        .max(0);
-    let fallback = allow_preview_fallback && timeout > 0;
-
-    let outcome = if fallback {
-        match tokio::time::timeout(Duration::from_secs(timeout as u64), acquisition.wait()).await {
-            Ok(outcome) => outcome.map_err(|e| (e.to_string(), false)),
-            Err(_) => Err(("The operation has timed out.".to_string(), true)),
-        }
-    } else {
-        acquisition.wait().await.map_err(|e| (e.to_string(), false))
-    };
-
-    let path = match outcome {
-        Ok(path) => path,
-        Err((message, timed_out)) => {
-            if fallback {
-                // The user opted into a bounded wait, trading the declared-lossless
-                // contract for playback that starts. Strict clients may refuse the
-                // lossy bytes; timeout 0 keeps the contract exact.
-                let reason = if timed_out {
-                    format!("timeout {timeout}s")
-                } else {
-                    message.clone()
-                };
-                info!(
-                    "Lossless wait ended early for {id} ({reason}); serving the preview while the fetch continues"
-                );
-                if let Some(preview) = try_direct_stream(state, call, provider, external_id, id).await? {
-                    return Ok(preview);
-                }
-            } else {
-                // Never fall back to the lossy stream here. This session declared the id
-                // lossless, so lossy bytes would be the same contract violation in reverse.
-                warn!("Lossless acquisition failed for {id}: {message}");
-            }
-            return Ok(state
-                .subsonic_response_builder
-                .create_error(format, 70, &format!("Could not fetch a lossless copy: {message}"))
-                .into_response());
-        }
-    };
-
-    if !Path::new(&path).is_file() {
-        return Ok(state
-            .subsonic_response_builder
-            .create_error(format, 70, "Lossless copy is no longer on disk")
-            .into_response());
-    }
-    match outside_file(state, call, caller, &path).await {
-        OutsideFile::Serve => serve_file(call, &path).await.map_err(anyhow::Error::new),
-        OutsideFile::Relayed(response) => Ok(response),
-        OutsideFile::Withheld => {
-            if let Some(preview) = try_direct_stream(state, call, provider, external_id, id).await? {
-                return Ok(preview);
-            }
-            Ok(state
-                .subsonic_response_builder
-                .create_error(format, 70, "No playable source found for this track")
-                .into_response())
-        }
-    }
-}
-
-/// What Octo does with a file it holds for an outside song, for one caller.
-enum OutsideFile {
-    /// Send the file, as with Family off.
-    Serve,
-    /// The library copy, relayed from Navidrome with the caller's quality.
-    Relayed(Response),
-    /// Not for this caller as a file: play the song from its source instead.
-    Withheld,
-}
-
-/// Whether to send a file Octo holds for an outside song. With Family on, a file in another
-/// member's own library (or the family pool) is never sent, and when the caller's audio has a
-/// ceiling the library copy is relayed with it instead, so no file goes out above it. A file
-/// the library index does not know yet cannot be relayed, so it is withheld then.
-async fn outside_file(
-    state: &AppState,
-    call: &SubsonicCall,
-    caller: Option<&FamilyCaller>,
-    path: &str,
-) -> OutsideFile {
-    let Some(caller) = caller else {
-        return OutsideFile::Serve;
-    };
-    let full = navidrome_song_list::full_path(path);
-    let song = state.library_index.find_by_path(&full);
-    let scope = if caller.managed {
-        LibraryScope::Viewer(caller.user.clone())
-    } else {
-        LibraryScope::Shared
-    };
-    if !state
-        .library_scope
-        .allows(&scope, song.as_ref().map(|s| s.id.as_str()), Some(&full))
-    {
-        return OutsideFile::Withheld;
-    }
-    if audio_gate::ceiling(caller).is_none() {
-        return OutsideFile::Serve;
-    }
-    let Some(song) = song else {
-        return OutsideFile::Withheld;
-    };
-    let mut parameters = call.parameters.clone();
-    parameters.insert("id".into(), song.id);
-    audio_gate::rewrite_parameters(caller, "stream", &mut parameters);
-    OutsideFile::Relayed(call.proxy.relay_stream(&parameters).await)
 }
 
 /// Proxy the lossy preview straight from the CDN. `None` when no source resolved.
@@ -469,65 +257,6 @@ fn range_not_satisfiable(size: u64) -> Response {
     }
     headers.insert(header::CONTENT_LENGTH, HeaderValue::from_static("0"));
     response
-}
-
-/// The file, typed by its extension, with single-range support and no ETag or Last-Modified.
-async fn serve_file(call: &SubsonicCall, path: &str) -> Result<Response, AppError> {
-    let content_type = content_type_for_file(path);
-    let mut file = tokio::fs::File::open(path).await?;
-    let length = file.metadata().await?.len();
-
-    // An If-Range the file cannot be checked against (it has no validators) sends it whole.
-    let range = call
-        .headers()
-        .get(header::RANGE)
-        .and_then(|v| v.to_str().ok())
-        .filter(|_| !call.headers().contains_key(header::IF_RANGE))
-        .map(|v| parse_range(v, length))
-        .unwrap_or(RangeOutcome::Whole);
-
-    let (status, from, count, content_range) = match range {
-        RangeOutcome::Whole => (StatusCode::OK, 0, length, None),
-        RangeOutcome::Partial(from, to) => (
-            StatusCode::PARTIAL_CONTENT,
-            from,
-            to - from + 1,
-            Some(format!("bytes {from}-{to}/{length}")),
-        ),
-        RangeOutcome::Unsatisfiable => return Ok(range_not_satisfiable(length)),
-    };
-
-    if from > 0 {
-        file.seek(SeekFrom::Start(from)).await?;
-    }
-    let body = Body::from_stream(ReaderStream::new(file.take(count)));
-    let mut response = Response::new(body);
-    *response.status_mut() = status;
-    let headers = response.headers_mut();
-    headers.insert(header::CONTENT_LENGTH, HeaderValue::from(count));
-    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
-    headers.insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
-    if let Some(range) = content_range.and_then(|r| HeaderValue::from_str(&r).ok()) {
-        headers.insert(header::CONTENT_RANGE, range);
-    }
-    Ok(response)
-}
-
-/// `GetContentType`: the audio type of a file by its extension, `audio/mpeg` by default.
-fn content_type_for_file(path: &str) -> &'static str {
-    let extension = Path::new(path)
-        .extension()
-        .map(|e| dotnet::to_lower_invariant(&e.to_string_lossy()))
-        .unwrap_or_default();
-    match extension.as_str() {
-        "mp3" => "audio/mpeg",
-        "flac" => "audio/flac",
-        "ogg" => "audio/ogg",
-        "m4a" => "audio/mp4",
-        "wav" => "audio/wav",
-        "aac" => "audio/aac",
-        _ => "audio/mpeg",
-    }
 }
 
 // ---------------------------------------------------------------------------------------
@@ -1336,25 +1065,4 @@ fn direct_play_response(state: &AppState) -> Response {
             "transcodeDecision": { "canDirectPlay": true, "canTranscode": false },
         }))
         .into_response()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_file_is_typed_by_its_extension() {
-        for (path, content_type) in [
-            ("/m/a.mp3", "audio/mpeg"),
-            ("/m/a.FLAC", "audio/flac"),
-            ("/m/a.ogg", "audio/ogg"),
-            ("/m/a.m4a", "audio/mp4"),
-            ("/m/a.wav", "audio/wav"),
-            ("/m/a.aac", "audio/aac"),
-            ("/m/a.opus", "audio/mpeg"),
-            ("/m/a", "audio/mpeg"),
-        ] {
-            assert_eq!(content_type_for_file(path), content_type, "{path}");
-        }
-    }
 }

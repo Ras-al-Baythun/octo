@@ -559,7 +559,7 @@ async fn not_kept_without_a_favorite_stars_nothing() {
 }
 
 /// A stand-in `IDownloadService` set up for exactly one acquisition: the worker must hand the
-/// download this handoff, the Soulseek source, the slow search and the permanent copy.
+/// download this handoff, the Lidarr source, the slow search and the permanent copy.
 struct ExpectingDownloads {
     handoff: Arc<ReplacementHandoff>,
 }
@@ -601,15 +601,7 @@ impl IDownloadService for ExpectingDownloads {
             source_override,
             upgrade_search,
         );
-        if expected
-            != (
-                "soulseek",
-                "id-1",
-                false,
-                true,
-                Some(DownloadSource::Soulseek),
-                true,
-            )
+        if expected != ("outside", "id-1", false, true, Some(DownloadSource::Lidarr), true)
             || !replacement.is_some_and(|h| Arc::ptr_eq(&h, &self.handoff))
         {
             anyhow::bail!("not the acquisition that was set up");
@@ -680,12 +672,12 @@ async fn the_worker_hands_the_replacement_handoff_to_the_download() {
 
     let path = queue
         .enqueue(
-            "soulseek",
+            "outside",
             "id-1",
             true,
             false,
             true,
-            Some(DownloadSource::Soulseek),
+            Some(DownloadSource::Lidarr),
             false,
             None,
             true,

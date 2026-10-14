@@ -37,7 +37,7 @@ fn merge_keeps_keys_the_patch_does_not_name() {
     let dir = settings_dir();
     std::fs::write(
         &dir.path,
-        r#"{ "Soulseek": { "Password": "kept" }, "LastFm": { "ApiKey": "old" } }"#,
+        r#"{ "Lidarr": { "Password": "kept" }, "LastFm": { "ApiKey": "old" } }"#,
     )
     .unwrap();
     let writer = SettingsFileWriter::new(&dir.path);
@@ -48,7 +48,7 @@ fn merge_keeps_keys_the_patch_does_not_name() {
 
     let saved = saved(&dir.path);
     assert_eq!(
-        at(&saved, &["Soulseek", "Password"]).and_then(Node::as_str),
+        at(&saved, &["Lidarr", "Password"]).and_then(Node::as_str),
         Some("kept")
     );
     assert_eq!(
@@ -62,7 +62,7 @@ fn merge_keeps_keys_the_patch_does_not_name() {
 #[test]
 fn merge_refuses_a_corrupt_file_and_leaves_it_untouched() {
     let dir = settings_dir();
-    let broken = r#"{ "Soulseek": { "Password": "kept" "#;
+    let broken = r#"{ "Lidarr": { "Password": "kept" "#;
     std::fs::write(&dir.path, broken).unwrap();
     let writer = SettingsFileWriter::new(&dir.path);
 
@@ -82,7 +82,7 @@ fn merge_accepts_comments_and_trailing_commas() {
     let dir = settings_dir();
     std::fs::write(
         &dir.path,
-        "{\n  // set by hand\n  \"Soulseek\": { \"Password\": \"kept\", },\n}\n",
+        "{\n  // set by hand\n  \"Lidarr\": { \"Password\": \"kept\", },\n}\n",
     )
     .unwrap();
     let writer = SettingsFileWriter::new(&dir.path);
@@ -94,7 +94,7 @@ fn merge_accepts_comments_and_trailing_commas() {
 
     let saved = saved(&dir.path);
     assert_eq!(
-        at(&saved, &["Soulseek", "Password"]).and_then(Node::as_str),
+        at(&saved, &["Lidarr", "Password"]).and_then(Node::as_str),
         Some("kept")
     );
 }

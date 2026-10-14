@@ -4,7 +4,6 @@
 pub enum NotificationEventType {
     DownloadStarted,
     DownloadCompleted,
-    LosslessFallback,
     DownloadFailed,
     AlbumCompleted,
 
@@ -42,7 +41,7 @@ pub struct NotificationEvent {
     /// "FLAC" / "MP3" / "M4A".
     pub format: Option<String>,
 
-    /// "Soulseek" / "YouTube".
+    /// "YouTube" / "Lidarr".
     pub source: Option<String>,
 
     pub cover_art_url: Option<String>,

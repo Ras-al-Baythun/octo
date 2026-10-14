@@ -116,7 +116,7 @@ mod tests {
             title: title.into(),
             album: Some(title.into()),
             format: "FLAC".into(),
-            source: "Soulseek".into(),
+            source: "Lidarr".into(),
             cover_art_url: cover,
             size_bytes: 1024,
             downloaded_at: "2021-06-03T12:00:00.0000000Z".into(),

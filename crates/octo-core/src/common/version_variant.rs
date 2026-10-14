@@ -17,7 +17,49 @@ use unicode_general_category::{GeneralCategory, get_general_category};
 use super::dotnet::{is_blank, is_letter, utf16_class_view, utf16_len, word_boundary_view};
 use super::live_version;
 use super::song_identity::SongIdentity;
-use crate::soulseek::soulseek_download_service::name_title;
+
+static TITLE_BRACKET: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\s*[\(\[\{]([^\(\)\[\]\{\}]*)[\)\]\}]").expect("a fixed pattern"));
+
+static TITLE_WHITESPACE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").expect("a fixed pattern"));
+
+/// The part of a title a file name has to carry: the title without its guest credit and its
+/// version tags. "Take Care (feat. Rihanna)" used to demand the words "feat" and "Rihanna",
+/// and "Too Close (Radio Edit)" the words "radio" and "edit", so a plainly named
+/// "04 - Take Care.flac" never answered either and only files that spelled the tag out were
+/// ever downloaded. Which version a file is gets decided by the version rules, not here. A
+/// title with nothing left once they are off is kept whole.
+pub fn name_title(title: &str) -> String {
+    fn is_version(tag: &str) -> bool {
+        !SongIdentity::parse_title(&format!("x ({tag})"), None)
+            .versions
+            .is_empty()
+    }
+
+    let text = SongIdentity::strip_features(title);
+    let mut text = TITLE_BRACKET
+        .replace_all(&text, |caps: &regex::Captures| {
+            if is_version(&caps[1]) {
+                " ".to_string()
+            } else {
+                caps[0].to_string()
+            }
+        })
+        .into_owned();
+    // " - Radio Edit", " - Remastered 2011": a dash tail that is only a version tag.
+    for _ in 0..3 {
+        match text.rfind(" - ") {
+            Some(dash) if dash > 0 && is_version(&text[dash + 3..]) => text.truncate(dash),
+            _ => break,
+        }
+    }
+    let text = TITLE_WHITESPACE.replace_all(&text, " ").trim().to_string();
+    if SongIdentity::key(&text).is_empty() {
+        title.to_string()
+    } else {
+        text
+    }
+}
 
 /// A case-insensitive pattern, with no locale.
 fn rxi(pattern: &str) -> Regex {
@@ -484,4 +526,36 @@ pub fn mash_up(filename: &str, title: Option<&str>, artist: Option<&str>) -> boo
         .is_some_and(|run_on| another_song(&run_on[1]))
 }
 
-// The download's checks test these too: `soulseek/download_matching_tests.rs`.
+#[cfg(test)]
+mod name_title_tests {
+    use super::name_title;
+
+    #[test]
+    fn the_name_title_drops_only_guests_and_version_tags() {
+        for (title, expected) in [
+            ("Too Close (Radio Edit)", "Too Close"),
+            ("Too Close - Radio Edit", "Too Close"),
+            ("Teardrop - Remastered 2011", "Teardrop"),
+            ("Take Care (feat. Rihanna)", "Take Care"),
+            ("Blue (Da Ba Dee)", "Blue (Da Ba Dee)"),
+            ("Song (Pt. 2)", "Song (Pt. 2)"),
+            ("(Exchange)", "(Exchange)"),
+        ] {
+            assert_eq!(name_title(title), expected, "{title}");
+        }
+    }
+
+    #[test]
+    fn a_guest_credit_inside_a_version_tag_leaves_the_bare_title() {
+        for title in [
+            "Get Lucky (Radio Edit - feat. Pharrell Williams and Nile Rodgers)",
+            "Get Lucky [Radio Edit - feat. Pharrell Williams and Nile Rodgers]",
+            "Get Lucky (Radio Edit, feat. Pharrell Williams & Nile Rodgers)",
+            "Get Lucky - Radio Edit - feat. Pharrell Williams and Nile Rodgers",
+            "Get Lucky (feat. Pharrell Williams and Nile Rodgers) - Radio Edit",
+            "Get Lucky feat. Pharrell Williams and Nile Rodgers (Radio Edit)",
+        ] {
+            assert_eq!(name_title(title), "Get Lucky", "{title}");
+        }
+    }
+}

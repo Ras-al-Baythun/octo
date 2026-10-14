@@ -35,7 +35,7 @@ pub type RecordingIsrcs = HashMap<String, Vec<String>>;
 pub struct DownloadVerificationService {
     fingerprinter: Arc<AudioFingerprinter>,
     client: Arc<AcoustIdClient>,
-    /// The Soulseek settings, read at every use.
+    /// The download settings, read at every use.
     settings: Arc<SettingsStore>,
     music_brainz: Option<Arc<MusicBrainzClient>>,
     spectrum: Option<Arc<SpectrumAnalyzer>>,
@@ -73,7 +73,7 @@ impl DownloadVerificationService {
         requested_artist: Option<&str>,
         requested_title: Option<&str>,
     ) -> SpectrumReport {
-        let settings = self.settings.current().soulseek.clone();
+        let settings = self.settings.current().downloads.clone();
         let spectrum = match &self.spectrum {
             Some(spectrum) if settings.detect_transcodes && SpectrumAnalyzer::claims_lossless(path) => {
                 spectrum
@@ -101,21 +101,20 @@ impl DownloadVerificationService {
 
     /// AcoustID can answer at all.
     pub fn has_api_key(&self) -> bool {
-        !dotnet::is_blank(&self.settings.current().soulseek.acoust_id_api_key)
+        !dotnet::is_blank(&self.settings.current().downloads.acoust_id_api_key)
     }
 
-    /// The user asked Octo to police what peers deliver. Governs the deny-list on its own,
-    /// because the duration check needs no API key and its verdicts are just as durable.
-    pub fn remembers_rejections(&self) -> bool {
-        self.settings.current().soulseek.verify_downloads
+    /// The user asked Octo to check what a source delivers. Separate from the key, because the
+    /// duration check needs none and its verdicts are just as durable.
+    pub fn verifies_downloads(&self) -> bool {
+        self.settings.current().downloads.verify_downloads
     }
 
     /// A lookup can actually happen. Split from the above deliberately, in the shape
     /// LastFmService uses for HasApiKey/IsRadioEnabled: collapsing them would mean a user who
-    /// switches verification on without a key gets no bad-peer memory either, and the
-    /// duration check quietly keeps re-downloading the same wrong file.
+    /// switches verification on without a key gets no duration check either.
     pub fn is_fingerprinting_enabled(&self) -> bool {
-        self.remembers_rejections() && self.has_api_key()
+        self.verifies_downloads() && self.has_api_key()
     }
 
     /// No cancellation token, deliberately. There must be no way for a caller who has already
@@ -132,7 +131,7 @@ impl DownloadVerificationService {
         requested_isrc: Option<&str>,
         refuse_live: bool,
     ) -> VerificationResult {
-        if !self.remembers_rejections() {
+        if !self.verifies_downloads() {
             return VerificationResult::inconclusive();
         }
 
@@ -220,7 +219,7 @@ impl DownloadVerificationService {
         tagged_match: bool,
         refuse_live: bool,
     ) -> VerificationResult {
-        let settings = self.settings.current().soulseek.clone();
+        let settings = self.settings.current().downloads.clone();
         let fingerprint = self
             .fingerprinter
             .fingerprint(
@@ -280,7 +279,7 @@ impl DownloadVerificationService {
         if lookup.results.is_empty() {
             info!(
                 "acoustid has no entry for '{artist} - {title}'; keeping the file. Obscure music is \
-                 exactly what Soulseek is for, so an absent match is never treated as a mismatch."
+                 exactly what Octo is for, so an absent match is never treated as a mismatch."
             );
             // Kept with the fingerprint: this is the one case a person listening can settle, and
             // the one where their answer is worth sending back to AcoustID.

@@ -456,9 +456,9 @@ mod tests {
     }
 
     #[test]
-    fn flac_above_kid_max_is_refused() {
+    fn best_above_kid_max_is_refused() {
         let kid = Abilities::preset(Preset::Kid);
-        let RequestDecision::Refuse(message) = request_decision(&kid, RequestQuality::Flac, 0, 0) else {
+        let RequestDecision::Refuse(message) = request_decision(&kid, RequestQuality::Best, 0, 0) else {
             panic!("refused");
         };
         assert!(message.contains("MP3"), "{message}");
@@ -494,7 +494,7 @@ mod tests {
             ..listener()
         };
         assert_eq!(
-            request_decision(&listener_auto, RequestQuality::Flac, 3, 0),
+            request_decision(&listener_auto, RequestQuality::Best, 3, 0),
             RequestDecision::AutoApprove
         );
     }

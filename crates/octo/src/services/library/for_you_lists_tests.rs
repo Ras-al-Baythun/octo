@@ -547,8 +547,7 @@ fn service_with(
     .with_for_you(ForYouServices {
         builder: Arc::new(NewReleasesBuilder::new(upstream.deezer(), Arc::clone(&registry))),
         responses: Arc::new(SubsonicResponseBuilder::new(
-            Arc::clone(&registry) as Arc<dyn octo_subsonic::subsonic_response_builder::IdRegistry>,
-            &SubsonicSettings::default(),
+            Arc::clone(&registry) as Arc<dyn octo_subsonic::subsonic_response_builder::IdRegistry>
         )),
     });
     Built {
@@ -879,11 +878,8 @@ async fn all_three_off_and_mixes_off_is_nothing() {
 // ---- What a client is told about the lists ------------------------------------------------
 
 fn builder() -> SubsonicResponseBuilder {
-    SubsonicResponseBuilder::new(
-        Arc::new(ExternalIdRegistry::new(None::<&str>))
-            as Arc<dyn octo_subsonic::subsonic_response_builder::IdRegistry>,
-        &SubsonicSettings::default(),
-    )
+    SubsonicResponseBuilder::new(Arc::new(ExternalIdRegistry::new(None::<&str>))
+        as Arc<dyn octo_subsonic::subsonic_response_builder::IdRegistry>)
 }
 
 fn list(kind: &str, songs: i32) -> GeneratedPlaylist {

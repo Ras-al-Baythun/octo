@@ -170,10 +170,6 @@ async fn wired(family_on: bool) -> Wired {
 
     let closed = format!("http://{}", crate::services::test_support::refused_address());
     let settings = AppSettings {
-        soulseek: octo_core::settings::SoulseekSettings {
-            base_url: Some(closed.clone()),
-            ..Default::default()
-        },
         radio_sources: octo_core::settings::RadioSourceSettings {
             sonic_url: format!("{closed}/sonic"),
             ..Default::default()
@@ -215,7 +211,6 @@ async fn wired(family_on: bool) -> Wired {
             deezer_base_url: Some(closed.clone()),
             raw_settings: vec![
                 ("YouTube:ShimUrl".into(), closed.clone()),
-                ("Soulseek:BaseUrl".into(), closed),
                 (
                     "Library:DownloadPath".into(),
                     music.to_string_lossy().into_owned(),
@@ -391,7 +386,7 @@ async fn web_requests_go_through_the_request_service() {
             Method::POST,
             "/api/family/me/requests",
             "alex",
-            Some(json!({ "id": OUTSIDE, "quality": "Flac" })),
+            Some(json!({ "id": OUTSIDE, "quality": "Best" })),
         )
         .await;
     assert_eq!(made.status, StatusCode::OK, "{}", made.body);
@@ -450,47 +445,6 @@ async fn web_requests_go_through_the_request_service() {
     assert_eq!(declined.status, StatusCode::OK, "{}", declined.body);
     assert_eq!(declined.json()["state"], "Declined");
     assert_eq!(declined.json()["note"], "Not now");
-}
-
-#[tokio::test]
-async fn a_failed_flac_request_asked_again_as_mp3_is_tried_again() {
-    let w = wired(true).await;
-    let failed = w.state.family_requests.create(
-        octo_core::family::request::FamilyRequest {
-            id: String::new(),
-            username: "alex".into(),
-            kind: RequestKind::Song,
-            target: OUTSIDE.into(),
-            title: "Outside".into(),
-            artist: "Somebody".into(),
-            album: "Elsewhere".into(),
-            cover_art: OUTSIDE.into(),
-            quality: octo_core::family::abilities::RequestQuality::Flac,
-            state: RequestState::Failed,
-            created: Utc::now(),
-            decided_by: None,
-            decided: None,
-            note: String::new(),
-            library_song_id: None,
-            failure: Some("No real FLAC copy found".into()),
-            outcome: None,
-        },
-        Utc::now(),
-    );
-    let retried = w
-        .page(
-            Method::POST,
-            "/api/family/me/requests",
-            "alex",
-            Some(json!({ "id": OUTSIDE, "quality": "Mp3" })),
-        )
-        .await;
-    assert_eq!(retried.status, StatusCode::OK, "{}", retried.body);
-    let retried = retried.json();
-    assert_eq!(retried["quality"], "Mp3");
-    assert_eq!(retried["title"], "Outside");
-    assert_ne!(retried["id"], json!(failed.id));
-    assert_eq!(w.state.family_requests.for_user("alex").len(), 2);
 }
 
 #[tokio::test]

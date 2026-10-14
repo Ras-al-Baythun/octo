@@ -17,7 +17,7 @@ pub struct LidarrImport {
 /// The files a Lidarr heart brought in, waiting for the download pipeline to take them by the
 /// song's external id. Lidarr is then only how the file was found: the pipeline checks it with
 /// AcoustID and the spectrum, identifies, tags, places and records it exactly as it does a
-/// Soulseek download.
+/// YouTube download.
 #[derive(Default)]
 pub struct LidarrImportHandoff {
     offers: Mutex<HashMap<String, LidarrImport>>,

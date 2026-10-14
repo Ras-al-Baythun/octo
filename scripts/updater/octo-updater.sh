@@ -132,7 +132,7 @@ pinned_older() { # the tag octo's image names
 
 # The services that run one of Octo's own published images, on one line: octo, and
 # every service whose image is named after Octo's (ghcr.io/winters27/octo-yt-dlp-shim
-# beside ghcr.io/winters27/octo). Others, such as slskd, are not Octo's to update.
+# beside ghcr.io/winters27/octo). Others, such as Navidrome, are not Octo's to update.
 # A service whose profile is off is not in the config, so it is never started here.
 published_services() {
   { docker compose config 2>/dev/null || true; } | awk '

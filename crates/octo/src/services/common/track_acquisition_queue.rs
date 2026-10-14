@@ -356,8 +356,8 @@ impl Receivers {
 /// Serializes permanent-copy downloads onto a single background worker.
 ///
 /// The point is that a download must never be tied to the HTTP request that asked for it.
-/// Playing a track used to run the whole Soulseek transfer inside the stream request, so a
-/// client giving up canceled the transfer mid-flight while slskd finished the file anyway,
+/// Playing a track used to run the whole transfer inside the stream request, so a
+/// client giving up canceled the transfer mid-flight while the source finished the file anyway,
 /// and Octo kept no record of it (issue #9).
 ///
 /// Stars get their own channel and are never dropped: a star is explicit user intent,

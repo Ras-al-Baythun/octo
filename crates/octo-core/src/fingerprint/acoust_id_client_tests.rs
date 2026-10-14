@@ -211,7 +211,7 @@ fn parse_lookup_result_with_no_recordings_yields_no_metadata() {
 }
 
 /// The most important case in the whole feature. A legitimately obscure track, which is
-/// the music Soulseek is best at and the reason Octo uses it, has no AcoustID entry at
+/// the music Octo exists to find, has no AcoustID entry at
 /// all. Rejecting on absence would make verification worst exactly where the library is
 /// rarest.
 #[test]

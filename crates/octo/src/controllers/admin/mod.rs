@@ -32,7 +32,6 @@ pub mod raw_config;
 pub mod request_binding;
 pub mod secrets;
 pub mod settings;
-pub mod soulseek_sharing;
 pub mod system;
 pub mod tidy;
 pub mod trash;
@@ -105,10 +104,6 @@ pub fn admin_controller_routes() -> RouteSet {
         .route("/api/admin/lidarr/test", post(system::test_lidarr_connection))
         .route("/api/admin/restart", post(system::restart))
         .route(
-            "/api/admin/soulseek/rejected-peers/clear",
-            post(system::clear_rejected_peers),
-        )
-        .route(
             "/api/admin/clear-metadata-cache",
             post(system::clear_metadata_cache),
         )
@@ -124,8 +119,8 @@ pub fn routes() -> RouteSet {
 
 /// The library and job routes: the library actions, questions and checks, Recently removed,
 /// Library health, the Better quality page, genre normalization, the cover upgrade, the
-/// explicit marking, the lyrics tools, the update card, the download log and Find songs, the
-/// Sharing card, and Sounds alike and radio outcomes.
+/// explicit marking, the lyrics tools, the update card, the download log and Find songs, and
+/// Sounds alike and radio outcomes.
 pub fn library_and_job_routes() -> RouteSet {
     RouteSet::new()
         .merge(library_actions::routes())
@@ -139,7 +134,6 @@ pub fn library_and_job_routes() -> RouteSet {
         .merge(lyrics_admin::routes())
         .merge(update::routes())
         .merge(downloads::routes())
-        .merge(soulseek_sharing::routes())
         .merge(radio_admin::routes())
 }
 

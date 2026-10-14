@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicI64, AtomicUsize};
 use chrono::TimeZone;
 use octo_core::fingerprint::acoust_id_client::AcoustIdRecording;
 use octo_core::models::subsonic::ScanStatus;
-use octo_core::settings::{AppSettings, NoticeKind, SoulseekSettings, SubsonicSettings};
+use octo_core::settings::{AppSettings, DownloadSettings, NoticeKind, SubsonicSettings};
 
 use super::*;
 use crate::services::library::notice_playlist_worker::NoticePlaylistWorker;
@@ -372,11 +372,11 @@ async fn starting_over_while_the_library_is_listed_lists_it_again() {
 }
 
 #[tokio::test]
-async fn a_song_in_slskds_incomplete_folder_is_never_checked() {
+async fn a_song_in_octos_staging_folder_is_never_checked() {
     let sweep = Sweep::new();
-    std::fs::create_dir_all(sweep.root.path().join("incomplete")).expect("created");
+    std::fs::create_dir_all(sweep.root.path().join(".octo-incoming")).expect("created");
     std::fs::create_dir_all(sweep.root.path().join("Artist")).expect("created");
-    sweep.song("incomplete/half.flac");
+    sweep.song(".octo-incoming/half.flac");
     sweep.song("Artist/whole.flac");
     let verifier = FakeVerifier::confirming();
     let worker = sweep.worker(verifier.clone(), Options::default());
@@ -607,7 +607,7 @@ fn keeping_a_library_question_sends_nothing_to_acoust_id() {
             origin: NoticeOrigin::LibrarySweep,
             ..Default::default()
         },
-        &SoulseekSettings {
+        &DownloadSettings {
             fingerprint_seconds: 120,
             ..Default::default()
         }

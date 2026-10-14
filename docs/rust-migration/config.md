@@ -7,7 +7,7 @@ Sources read: `.env.example`, `docker-compose.yml`, `octo/appsettings.json`, `oc
 **Totals:** 164 settings across 14 sections (12 bound classes plus two raw `IConfiguration` keys). This counts each list or dictionary as one setting, and its element fields are listed under it. There are also 5 host-level variables.
 
 > [!NOTE] 2026.10.05 (wave G1)
-> 2026.10.05 adds three sections and 21 settings: `RadioSources` (§3.15, 11), `Admin` (§3.16, 2) and `Imports` (§3.17, 4), plus four in `Soulseek` (§3.6) and seven in `GeneratedPlaylists` (§3.12). That is 199 settings across 17 sections. The secret rules changed: every credential now reads as the placeholder (§6). The env vars the release added that Octo itself never reads (the slskd share and upload limits, `SONIC_CPUS`, `OCTO_IMAGE_TAG`, the starter stack's `COMPOSE_PROFILES` and `NAVIDROME_*`) configure other containers; they are listed in §3.18 so the compose and the installer keep them.
+> 2026.10.05 adds three sections and 21 settings: `RadioSources` (§3.15, 11), `Admin` (§3.16, 2) and `Imports` (§3.17, 4), plus seven in `GeneratedPlaylists` (§3.12). (The download client section that held four more has since been removed; §3.6 is now `Downloads`.) The secret rules changed: every credential now reads as the placeholder (§6). The env vars the release added that Octo itself never reads (`SONIC_CPUS`, `OCTO_IMAGE_TAG`, the starter stack's `COMPOSE_PROFILES` and `NAVIDROME_*`) configure other containers; they are listed in §3.18 so the compose and the installer keep them.
 
 ---
 
@@ -65,15 +65,12 @@ Consequences the Rust loader must reproduce:
 
 - **Raw form:** `Section__Key` → `Section:Key`, and `Section__List__0__Field` → `Section:List:0:Field`. Only a double underscore maps; `_` is literal.
 - **Keys are case-insensitive:** `SUBSONIC__URL` = `Subsonic__Url`. If both spellings are set in one environment, which one wins is unspecified (hashtable enumeration order). Rust: last wins in `std::env::vars()` order, and log a warning on a case-only duplicate.
-- **There is no `UPPER_SNAKE` mapping inside Octo.** The friendly names (`SUBSONIC_URL`, `SLSKD_SEARCH_WAIT_SECONDS`, …) exist only in `docker-compose.yml`, which interpolates them into the raw `Section__Key` names.
+- **There is no `UPPER_SNAKE` mapping inside Octo.** The friendly names (`SUBSONIC_URL`, `VERIFY_DOWNLOADS`, …) exist only in `docker-compose.yml`, which interpolates them into the raw `Section__Key` names.
   - XML doc comments in the settings classes name some env vars that **nothing maps**: `GENRE_BLOCKLIST` ("comma separated") and `PLAYLISTS_DIRECTORY`. Neither is in compose, and no code splits `GENRE_BLOCKLIST`. Rust must not invent these.
-- **`.env.example` → container:** `.env.example` has **146** keys. 11 of them do not reach Octo:
-  - `DOWNLOAD_PATH`, `OCTO_CONFIG_DIR`, `SLSKD_STATE_DIR` (volume paths)
+- **`.env.example` → container:** the keys of `.env.example` that do not reach Octo:
+  - `DOWNLOAD_PATH`, `OCTO_CONFIG_DIR` (volume paths)
   - `YTDLP_MAX_CONCURRENT`, `YTDLP_GATE_RESERVE`, `YTDLP_BG_GATE_WAIT_SEC`, `YTDLP_SEARCH_CACHE_MAX`, `YTDLP_URL_CACHE_MAX`, `YTDLP_URL_CACHE_TTL` (yt-dlp-shim)
-  - `SLSKD_SOULSEEK_USERNAME`, `SLSKD_SOULSEEK_PASSWORD` (slskd)
-
-  `SLSKD_USERNAME` and `SLSKD_PASSWORD` feed both slskd and Octo's `Soulseek__Username` / `Soulseek__Password`.
-- **Compose:** reads three variables that are missing from `.env.example`: `ENABLE_SYNC_CATALOG`, `SYNC_CATALOG_CLIENTS`, `SYNC_CATALOG_MAX_SONGS`. In total compose sets **141** raw `Section__Key` variables on the octo service. 138 of them are interpolated, and three are literals: `Library__DownloadPath=/music`, `YouTube__ShimUrl=http://yt-dlp-shim:8080`, `Soulseek__BaseUrl=http://slskd:5030`.
+- **Compose:** reads three variables that are missing from `.env.example`: `ENABLE_SYNC_CATALOG`, `SYNC_CATALOG_CLIENTS`, `SYNC_CATALOG_MAX_SONGS`. Compose sets the raw `Section__Key` variables on the octo service; all but two are interpolated, and the two literals are `Library__DownloadPath=/music` and `YouTube__ShimUrl=http://yt-dlp-shim:8080`.
 - **Compose always passes a value**, often the empty string, because the form `${X:-}` yields `""`. An empty env value is a real value: it overrides `appsettings.json`. That is fine for strings. For numbers, bools and enums, `""` is a binding exception (see above), but compose always supplies a non-empty default for those.
 
 ### Value parsing (ConfigurationBinder + TypeConverter, invariant culture)
@@ -94,18 +91,18 @@ Every bounds check happens **at read time** in `Effective*` properties or at the
 
 ### How settings are consumed (hot reload)
 
-- **Binding:** `Program.cs` calls `Configure<T>(Configuration.GetSection(name))` for 12 classes: `Genre`, `LibraryActions`, `GeneratedPlaylists`, `Subsonic`, `Soulseek`, `Lidarr`, `LastFm`, `Notifications`, `Metadata`, `Server`, `ListenBrainz`, `Updates`.
+- **Binding:** `Program.cs` calls `Configure<T>(Configuration.GetSection(name))` for 12 classes: `Genre`, `LibraryActions`, `GeneratedPlaylists`, `Subsonic`, `Downloads`, `Lidarr`, `LastFm`, `Notifications`, `Metadata`, `Server`, `ListenBrainz`, `Updates`.
 - **Not bound:** `Library:DownloadPath` and `YouTube:ShimUrl` are read straight from `IConfiguration`. `AdminController` also reads `Updates` through `_config.GetSection("Updates").Get<UpdateSettings>()` on each request.
 - **No `IOptionsSnapshot`.** Most consumers hold `IOptionsMonitor<T>` and read `.CurrentValue` at use, so they are live. The exceptions:
-  - `IOptions<T>.Value`, captured in a singleton at construction, so read once at startup: `SoulseekClient`, `SoulseekDownloadService`, `SoulseekStartupValidator` (Soulseek); `SubsonicResponseBuilder`, `SubsonicStartupValidator`, `StartupValidationOrchestrator` (Subsonic); `LastFmCoverArtLookup` (LastFm, Metadata); `DeezerCoverArtLookup`, `LastFmService` (Metadata: the Accept-Language header is set once).
-  - `IConfiguration["Library:DownloadPath"]` captured in constructors: `BaseDownloadService`, `LocalLibraryService`, `PlaylistSyncService`. Read per call in `AdminController`, `GenreBackfillWorker`, `CoverUpgrade*`, `Lidarr*`, `NavidromeSongPathResolver`, `SoulseekStartupValidator`.
+  - `IOptions<T>.Value`, captured in a singleton at construction, so read once at startup: `SubsonicResponseBuilder`, `SubsonicStartupValidator`, `StartupValidationOrchestrator` (Subsonic); `LastFmCoverArtLookup` (LastFm, Metadata); `DeezerCoverArtLookup`, `LastFmService` (Metadata: the Accept-Language header is set once).
+  - `IConfiguration["Library:DownloadPath"]` captured in constructors: `BaseDownloadService`, `LocalLibraryService`, `PlaylistSyncService`. Read per call in `AdminController`, `GenreBackfillWorker`, `CoverUpgrade*`, `Lidarr*`, `NavidromeSongPathResolver`.
   - Decided once when a worker starts: `LibraryActionPlaylistWorker` (`Enabled`, `PlaylistsEnabled`, `PollIntervalSeconds`) and `CacheCleanupService` (`StorageMode == Cache`).
   - **The only `OnChange` subscriber:** `LastFmRadioRefreshWorker`. It fingerprints the station definitions, `EnableRadio` and the personalized "shape", and on a change it re-queues a station rebuild for every known user.
 - **`RestartTracker`** (`Services/Admin/RestartTracker.cs`) snapshots 15 keys at startup and reports the ones that differ now in `GET /api/admin/settings` → `_meta.RestartPending`, as `"Section:Key"` strings.
   - Comparison: empty or whitespace equals missing; values are trimmed; if both sides parse as bool, they compare as bools (`True` = `true`); otherwise the comparison is ordinal and case-sensitive.
-  - The keys: `Library:DownloadPath`, `YouTube:ShimUrl`, `Subsonic:Url`, `Subsonic:LibraryPath`, `Subsonic:WaitForLosslessOnPlay`, `Soulseek:BaseUrl`, `Soulseek:Username`, `Soulseek:Password`, `Soulseek:SearchWaitSeconds`, `Soulseek:DownloadTimeoutSeconds`, `Soulseek:MinFileSizeBytes`, `Soulseek:PreferredExtension`, `LibraryActions:Enabled`, `LibraryActions:PlaylistsEnabled`, `LibraryActions:PollIntervalSeconds`.
+  - The keys: `Library:DownloadPath`, `YouTube:ShimUrl`, `Subsonic:Url`, `Subsonic:LibraryPath`, `LibraryActions:Enabled`, `LibraryActions:PlaylistsEnabled`, `LibraryActions:PollIntervalSeconds`.
   - The dashboard's `data-restart="true"` markers name the same 15 fields.
-- **Rust model** (per PLAN.md): an `ArcSwap<Settings>` snapshot that is rebuilt on every reload. A consumer that must keep C#'s "captured at startup" behavior copies the value out at construction. This matters most for `Subsonic.WaitForLosslessOnPlay` (§3.1), which is captured on purpose.
+- **Rust model** (per PLAN.md): an `ArcSwap<Settings>` snapshot that is rebuilt on every reload. A consumer that must keep C#'s "captured at startup" behavior copies the value out at construction.
 
 **Reload column legend used below:**
 
@@ -144,8 +141,8 @@ Enums:
 - `DownloadMode { Track, Album }`
 - `ExplicitFilter { All, ExplicitOnly, CleanOnly }`
 - `FolderStructure { Organized, Flat, ByArtist }`
-- `DownloadSource { Soulseek, YouTube, SoulseekThenYouTube, Lidarr }`
-- `HeartDownloadSource { Soulseek, YouTube, Lidarr }`
+- `DownloadSource { YouTube, Lidarr }`
+- `HeartDownloadSource { YouTube, Lidarr }`
 
 | JSON key | .env var (→ `Subsonic__Key`) | Type | Class / appsettings / Compose | Validation, parsing, notes | Reload | Form |
 |---|---|---|---|---|---|---|
@@ -175,20 +172,18 @@ Enums:
 | `RecordRequestedBy` | `RECORD_REQUESTED_BY` | bool | true / `true` / `true` | - | Live | yes |
 | `StarDownloadsForRequester` | `STAR_DOWNLOADS_FOR_REQUESTER` | bool | false / `false` / `false` | - | Live | yes |
 | `SkipOwnedSongs` | `SKIP_OWNED_SONGS` | bool | true / `true` / `true` | - | Live | yes |
-| `WaitForLosslessOnPlay` | `WAIT_FOR_LOSSLESS_ON_PLAY` | bool | false / `false` / `false` | **Captured deliberately**: `SubsonicResponseBuilder` (a singleton) reads it through `IOptions` at construction, because it decides the suffix and content type search results advertise. `SubSonicController` and `HeartAcquisitionCoordinator` read it live, so the two disagree until a restart. Rust must capture it at startup for the response builder. | Partial, RT | yes |
-| `LosslessWaitTimeoutSeconds` | `LOSSLESS_WAIT_TIMEOUT_SECONDS` | int | 0 / - / `0` | `Math.Max(0, v)`. 0 means wait as long as needed. | Live | yes |
-| `DownloadOnPlay` | `DOWNLOAD_ON_PLAY` | bool | false / `false` / `false` | Ignored while `WaitForLosslessOnPlay` is on. | Live | yes |
+| `DownloadOnPlay` | `DOWNLOAD_ON_PLAY` | bool | false / `false` / `false` | - | Live | yes |
 | `LidarrAlbumOnPlay` | `LIDARR_ALBUM_ON_PLAY` | bool | false / `false` / `false` | - | Live | yes |
 | `FolderStructure` | `FOLDER_STRUCTURE` | enum FolderStructure | Flat / `Flat` / `Flat` | - | Live | yes |
-| `DownloadSource` | `DOWNLOAD_SOURCE` | enum DownloadSource | Soulseek / `Soulseek` / `Soulseek` | The legacy heart chain, used when `HeartDownloadSources` is empty. | Live | no (only in JS/HTML text) |
-| `HeartDownloadSources` | - (raw: `Subsonic__HeartDownloadSources__0__Source`, …) | `List<HeartDownloadStep>` | `[]` / - / - | Element: `Source` (enum HeartDownloadSource), `Enabled` (bool?, legacy), `SongEnabled` (bool?), `AlbumEnabled` (bool?). `EffectiveHeartDownloadSources()` works as follows. It drops steps whose `Source` is undefined and keeps the first step per source. It sets `SongEnabled = SongEnabled ?? Enabled ?? false`, and the same for `AlbumEnabled`. It appends each missing source as disabled. If the list ends up empty, it derives one from `DownloadSource` + `DownloadOnStar` + `DownloadAlbumOnStar` in the order Soulseek, YouTube, Lidarr: YouTube → only YouTube on; SoulseekThenYouTube → Soulseek and YouTube; Lidarr → Lidarr; otherwise Soulseek. `GET /api/admin/settings` and `/raw-config` return the **effective** list (`Source` as a name, booleans non-null). | Live | yes |
+| `DownloadSource` | `DOWNLOAD_SOURCE` | enum DownloadSource | YouTube / `YouTube` / `YouTube` | The legacy heart chain, used when `HeartDownloadSources` is empty. | Live | no (only in JS/HTML text) |
+| `HeartDownloadSources` | - (raw: `Subsonic__HeartDownloadSources__0__Source`, …) | `List<HeartDownloadStep>` | `[]` / - / - | Element: `Source` (enum HeartDownloadSource), `Enabled` (bool?, legacy), `SongEnabled` (bool?), `AlbumEnabled` (bool?). `EffectiveHeartDownloadSources()` works as follows. It drops steps whose `Source` is undefined and keeps the first step per source. It sets `SongEnabled = SongEnabled ?? Enabled ?? false`, and the same for `AlbumEnabled`. It appends each missing source as disabled. If the list ends up empty, it derives one from `DownloadSource` + `DownloadOnStar` + `DownloadAlbumOnStar` in the order YouTube, Lidarr: Lidarr → Lidarr; otherwise YouTube. `GET /api/admin/settings` and `/raw-config` return the **effective** list (`Source` as a name, booleans non-null). | Live | yes |
 | `UseLocalStaging` | `USE_LOCAL_STAGING` | bool | false / `false` / `false` | **Dead:** bound and shown, but nothing reads it. | Dead | yes |
 
 ### 3.2 `Library` → raw `IConfiguration` (1)
 
 | JSON key | .env var | Type | Defaults | Notes | Reload | Form |
 |---|---|---|---|---|---|---|
-| `DownloadPath` | literal `Library__DownloadPath=/music` (compose); host side `DOWNLOAD_PATH` is the volume | string | (no class) / `/music` / `/music` | **The fallback when the key is missing differs by consumer:** `./downloads` (BaseDownloadService, GenreBackfillWorker, PlaylistSyncService, NavidromeSongPathResolver, admin genre and browse), `/music` (CoverUpgrade, LidarrHeartAcquisition, LidarrTrackFetcher, SoulseekStartupValidator, admin GET), `<cwd>/downloads` (LocalLibraryService). It is never missing in practice, because appsettings defines it. It is overridden by the detected Navidrome folder when `Subsonic.AutoDetectDownloadPath` is on. | Partial, RT (captured by BaseDownloadService, LocalLibraryService and PlaylistSyncService; read per call elsewhere) | yes |
+| `DownloadPath` | literal `Library__DownloadPath=/music` (compose); host side `DOWNLOAD_PATH` is the volume | string | (no class) / `/music` / `/music` | **The fallback when the key is missing differs by consumer:** `./downloads` (BaseDownloadService, GenreBackfillWorker, PlaylistSyncService, NavidromeSongPathResolver, admin genre and browse), `/music` (CoverUpgrade, LidarrHeartAcquisition, LidarrTrackFetcher, admin GET), `<cwd>/downloads` (LocalLibraryService). It is never missing in practice, because appsettings defines it. It is overridden by the detected Navidrome folder when `Subsonic.AutoDetectDownloadPath` is on. | Partial, RT (captured by BaseDownloadService, LocalLibraryService and PlaylistSyncService; read per call elsewhere) | yes |
 
 ### 3.3 `YouTube` → raw `IConfiguration` (1)
 
@@ -209,38 +204,24 @@ Enums:
 | `Check` | `UPDATES_CHECK` | bool | true / `true` / `true` | `ReleaseCheck` re-reads it on its 5-min loop; the GitHub check runs every 6 h. | Live | yes |
 | `Repo` | `UPDATES_REPO` | string `owner/name` | `winters27/octo` / same / same | Blank → `winters27/octo`, else `Trim().Trim('/')`. A repo change (compared case-insensitively) forces a re-check. | Live | no (shown, no field) |
 
-### 3.6 `Soulseek` → `SoulseekSettings` (24)
+### 3.6 `Downloads` → `DownloadSettings` (12)
 
-| JSON key | .env var (→ `Soulseek__Key`) | Type | Class / appsettings / Compose | Validation, parsing | Reload | Form |
+The source-neutral download settings (verification, fingerprinting, naming, concurrency). This section replaced the download client's own section; every key here reads as `Downloads__<Key>`.
+
+| JSON key | .env var (→ `Downloads__Key`) | Type | Class / appsettings / Compose | Validation, parsing | Reload | Form |
 |---|---|---|---|---|---|---|
-| `BaseUrl` | literal `http://slskd:5030` | string? | null / `http://slskd:5030` / literal | `SoulseekClient`: null → `http://localhost:5030`, `TrimEnd('/')`. | Restart, RT (`SoulseekClient` uses `IOptions`) | yes |
-| `Username` | `SLSKD_USERNAME` | string? | null / `""` / `slskd` | slskd API login; the session is not made when user or password is blank. | Restart, RT | yes |
-| `Password` | `SLSKD_PASSWORD` | string? | null / `""` / `slskd` | **Secret**: the placeholder in GET since 2026.10.05 (§6). A save that sends the placeholder back with a changed `Username` is refused: "Retype the slskd password for the new username." | Restart, RT | yes |
-| `WebUrl` | `SLSKD_WEB_URL` | string | `""` / `""` / `""` | The address Open slskd opens. `EffectiveWebUrl` = `SafeWebUrl(WebUrl)`: an absolute http or https address with a host, trimmed, as `Uri.ToString()` writes it (a bare host gains its `/`), else null. A save of a non-blank value that is not one is refused (400 "slskd's page must be a whole http:// or https:// address, such as http://192.168.1.5:5030."). | Live | yes |
-| `CheckListenPort` | `SLSKD_CHECK_PORT` | bool | true / `true` / `true` | Ask Soulseek's port test at most every 6 hours. | Live | yes |
-| `ShareLibrary` | `SLSKD_SHARE_LIBRARY` | bool | **false** / `false` / `false` | Off in the class and appsettings so an update never starts sharing; the installer and `.env.example` turn it on for new installs. | Live (applied to slskd within seconds) | yes |
-| `SharedFolders` | `SLSKD_SHARED_DIR` | string | `[Music]/share` / `[Music]/share` / `[Music]/share` | `SharedFolderList`: split on `;`, trimmed, blanks dropped. A `!` in front keeps a folder out. | Live | yes |
-| `SearchWaitSeconds` | `SLSKD_SEARCH_WAIT_SECONDS` | int | 30 / `30` / `30` | No clamp. The interactive search ceiling; an album search uses `max(v, 45)`. | Restart, RT (`SoulseekDownloadService` uses `IOptions`) | yes |
-| `UpgradeSearchWaitSeconds` | `SLSKD_UPGRADE_SEARCH_WAIT_SECONDS` | int | 90 / `90` / `90` | `Math.Clamp(v, 30, 300)` | **Restart, but not RT** (read only through `SoulseekDownloadService`'s captured `IOptions`; a gap in RestartTracker) | no |
-| `MinFileSizeBytes` | `SLSKD_MIN_FILE_SIZE_BYTES` | **long** | 5242880 / `5242880` / `5242880` | No clamp. | Restart, RT | yes |
-| `PreferredExtension` | `SLSKD_PREFERRED_EXTENSION` | string | `flac` / `flac` / `flac` | Normalized with `Trim().TrimStart('.').ToLowerInvariant()`; uppercased for display. | Restart, RT | yes |
-| `DownloadTimeoutSeconds` | `SLSKD_DOWNLOAD_TIMEOUT_SECONDS` | int | 180 / `180` / `180` | No clamp. A no-progress timeout per attempt. | Restart, RT | yes |
-| `VerifyDownloads` | `SLSKD_VERIFY_DOWNLOADS` | bool | false / `false` / `false` | Turns on AcoustID verification and the rejected-peer memory. | Live | yes |
-| `AcoustIdApiKey` | `ACOUSTID_API_KEY` | string | `""` / `""` / `""` | **Secret, in clear** in GET; masked in config-sources (ends in `ApiKey`). | Live | yes |
-| `TagFromMusicBrainz` | `SLSKD_TAG_FROM_MUSICBRAINZ` | bool | false / `false` / `false` | Implied true when `NameFromMatch` is on. | Live | yes |
-| `NameFromMatch` | `NAME_FROM_MATCH` | bool | false / `false` / `false` | - | Live | yes |
-| `MinMatchScore` | `SLSKD_MIN_MATCH_SCORE` | int (percent) | 85 / `85` / `85` | `Math.Clamp(v, 50, 99)`; the fraction is that value / 100.0. | Live | yes |
-| `RejectedPeerTtlDays` | `SLSKD_REJECTED_PEER_DAYS` | int | 30 / `30` / `30` | `v <= 0 → 0` (never forget), else `Clamp(v, 1, 3650)`. Read through a `Func` on each use. | Live | no |
-| `FingerprintSeconds` | `SLSKD_FINGERPRINT_SECONDS` | int | 120 / `120` / `120` | `Clamp(15, 600)` | Live | no |
-| `FingerprintTimeoutSeconds` | `SLSKD_FINGERPRINT_TIMEOUT_SECONDS` | int | 30 / `30` / `30` | `Clamp(5, 300)` | Live | no |
-| `AcoustIdTimeoutSeconds` | `SLSKD_ACOUSTID_TIMEOUT_SECONDS` | int | 10 / `10` / `10` | `Clamp(2, 120)`. The `AcoustId` named HTTP client also has a fixed 10 s `HttpClient.Timeout`. | Live | no |
-| `DetectTranscodes` | - | bool | true / `true` / - | - | Live | yes |
-| `TranscodeCheckTimeoutSeconds` | - | int | 20 / `20` / - | `Clamp(5, 300)` | Live | no |
-| `OutageHoldHours` | `SLSKD_OUTAGE_HOLD_HOURS` | int | 6 / `6` / `6` | `Clamp(0, 48)`; 0 means do not wait. | Live | yes |
-| `ParallelDownloads` | `SLSKD_PARALLEL_DOWNLOADS` | int | 3 / `3` / `3` | `Clamp(1, 6)` | Live | yes |
-| `AlbumFolders` | `SLSKD_ALBUM_FOLDERS` | bool | true / `true` / `true` | - | Live | yes |
+| `VerifyDownloads` | `VERIFY_DOWNLOADS` | bool | false / `false` / `false` | Turns on AcoustID verification. | Live | yes |
+| `AcoustIdApiKey` | `ACOUSTID_API_KEY` | string | `""` / `""` / `""` | **Secret**: the placeholder in GET; masked in config-sources (ends in `ApiKey`). | Live | yes |
+| `AcoustIdUserApiKey` | `ACOUSTID_USER_KEY` | string | `""` / `""` / `""` | **Secret**: the placeholder in GET; masked in config-sources. | Live | yes |
 | `SubmitConfirmedFingerprints` | `ACOUSTID_SUBMIT` | bool | false / `false` / `false` | Needs `AcoustIdUserApiKey`. | Live | yes |
-| `AcoustIdUserApiKey` | `ACOUSTID_USER_KEY` | string | `""` / `""` / `""` | **Secret, in clear** in GET; masked in config-sources. | Live | yes |
+| `MinMatchScore` | `MIN_MATCH_SCORE` | int (percent) | 85 / `85` / `85` | `Math.Clamp(v, 50, 99)`; the fraction is that value / 100.0. | Live | yes |
+| `TagFromMusicBrainz` | `TAG_FROM_MUSICBRAINZ` | bool | false / `false` / `false` | Implied true when `NameFromMatch` is on. | Live | yes |
+| `FingerprintSeconds` | `FINGERPRINT_SECONDS` | int | 120 / `120` / `120` | `Clamp(15, 600)` | Live | no |
+| `FingerprintTimeoutSeconds` | `FINGERPRINT_TIMEOUT_SECONDS` | int | 30 / `30` / `30` | `Clamp(5, 300)` | Live | no |
+| `AcoustIdTimeoutSeconds` | `ACOUSTID_TIMEOUT_SECONDS` | int | 10 / `10` / `10` | `Clamp(2, 120)`. The `AcoustId` named HTTP client also has a fixed 10 s `HttpClient.Timeout`. | Live | no |
+| `NameFromMatch` | `NAME_FROM_MATCH` | bool | false / `false` / `false` | - | Live | yes |
+| `ParallelDownloads` | `PARALLEL_DOWNLOADS` | int | 3 / `3` / `3` | `Clamp(1, 6)` | Live | yes |
+| `DetectTranscodes` | `DETECT_TRANSCODES` | bool | true / `true` / `true` | - | Live | yes |
 
 ### 3.7 `Lidarr` → `LidarrSettings` (7)
 
@@ -312,7 +293,7 @@ Enums:
 
 - `LibraryAction { Delete, WrongSong, WrongVersion, BetterQuality, Keep }`. **This order is persisted as numbers** in `library-actions.json`.
 - `LibraryRatingScope { Auto, NoticeOnly, Global }`
-- `UpgradeSourceChoice { Auto, Soulseek, Lidarr }`
+- `UpgradeSourceChoice { Auto, Lidarr }`
 
 | JSON key | .env var (→ `LibraryActions__Key`) | Type | Class / appsettings / Compose | Validation, parsing | Reload | Form |
 |---|---|---|---|---|---|---|
@@ -399,7 +380,6 @@ Enums:
 | `DiscordWebhookUrl` | `DISCORD_WEBHOOK_URL` | string | `""` / `""` / `""` | A non-blank value turns on the Discord sink. **Secret** (it embeds a token): in clear in GET, masked in config-sources. | Live | yes |
 | `NotifyDownloadStarted` | `NOTIFY_DOWNLOAD_STARTED` | bool | false / `false` / `false` | - | Live | yes |
 | `NotifyDownloadCompleted` | `NOTIFY_DOWNLOAD_COMPLETED` | bool | true / `true` / `true` | - | Live | yes |
-| `NotifyLosslessFallback` | `NOTIFY_LOSSLESS_FALLBACK` | bool | true / `true` / `true` | - | Live | yes |
 | `NotifyDownloadFailed` | `NOTIFY_DOWNLOAD_FAILED` | bool | true / `true` / `true` | - | Live | yes |
 | `NotifyAlbumCompleted` | `NOTIFY_ALBUM_COMPLETED` | bool | true / `true` / `true` | - | Live | yes |
 
@@ -454,7 +434,7 @@ Absent from `appsettings.json`; read through `_config.GetSection("Imports").Get<
 
 ### 3.18 Variables for other containers (2026.10.05)
 
-Compose and the installer pass these to slskd, octo-sonic or the starter Navidrome, or use them themselves. Octo does not read them: `SLSKD_SHARE_RESCAN_MINUTES`, `SLSKD_UPLOAD_SLOTS`, `SLSKD_UPLOAD_SPEED_LIMIT` (slskd), `SONIC_CPUS` (octo-sonic), `COMPOSE_PROFILES`, `NAVIDROME_ADMIN_PASSWORD`, `NAVIDROME_PORT`, `NAVIDROME_DATA_DIR` (the starter stack), `OCTO_IMAGE_TAG` (the image compose pulls). One raw key was added for tests: `Octo:StateDirectory`, where the radio state files go instead of beside settings.json (the C# tests' only way to move them; Rust tests pass their own paths).
+Compose and the installer pass these to octo-sonic or the starter Navidrome, or use them themselves. Octo does not read them: `SONIC_CPUS` (octo-sonic), `COMPOSE_PROFILES`, `NAVIDROME_ADMIN_PASSWORD`, `NAVIDROME_PORT`, `NAVIDROME_DATA_DIR` (the starter stack), `OCTO_IMAGE_TAG` (the image compose pulls). One raw key was added for tests: `Octo:StateDirectory`, where the radio state files go instead of beside settings.json (the C# tests' only way to move them; Rust tests pass their own paths).
 
 ---
 
@@ -535,8 +515,8 @@ File.Move(path + ".tmp", path, overwrite: true)      // rename(2): atomic on one
 
 | Endpoint / code path | Effect on settings.json | Validation and secret handling |
 |---|---|---|
-| `GET /api/admin/settings` | - | Returns the **effective** values (§3), plus `_meta`: `ConfigFilePath`, `RejectedPeerCount`, `ConfigFileExists`, `ConfigFileValid`, `RestartPending` (array of `"Section:Key"`), `SecretPlaceholder` = `"(saved, not shown)"`, `Version` (InformationalVersion with the `+sha` cut off). Keys are PascalCase (a `Dictionary`, so no camelCase), and enums are returned as names. Leaving masking aside, three fields differ from the raw stored value: `HeartDownloadSources` and `LibraryActions.Actions` are the effective lists, and `Metadata.SaveLyricsTo` is normalized. `LastFm.DiscoveryStations` and `Genre.Mappings` come from the raw file when present. |
-| `POST /api/admin/settings` | `Merge(patch, ["ListenBrainz.UserTokens"])` | Body must be a JSON object, otherwise 400 `empty body` / `invalid JSON: …`. `_meta` is removed. Validates `LibraryActions`, `Genre.Mappings` and `LastFm.DiscoveryStations` (§3), with a 400 on failure. Since 2026.10.05, in this order: a saved credential never follows a new address (§6, `SecretSentElsewhere`); the admin password and the slskd password as in §3; `Soulseek.WebUrl` (§3.6); `LastFm.UserSessions` is always removed; then every other placeholder is taken out (`KeepSavedSecrets`, §6). Corrupt file → 409; any other exception → 500 `{error}`. Logs `{Who} saved settings: {Section,Section}` (who: the Navidrome user, "someone with the recovery code", "someone (the dashboard sign-in is off)", "{user} (from the Octo app)"). Answers `{"ok":true,"persisted":<merged, every credential masked>}`. |
+| `GET /api/admin/settings` | - | Returns the **effective** values (§3), plus `_meta`: `ConfigFilePath`, `ConfigFileExists`, `ConfigFileValid`, `RestartPending` (array of `"Section:Key"`), `SecretPlaceholder` = `"(saved, not shown)"`, `Version` (InformationalVersion with the `+sha` cut off). Keys are PascalCase (a `Dictionary`, so no camelCase), and enums are returned as names. Leaving masking aside, three fields differ from the raw stored value: `HeartDownloadSources` and `LibraryActions.Actions` are the effective lists, and `Metadata.SaveLyricsTo` is normalized. `LastFm.DiscoveryStations` and `Genre.Mappings` come from the raw file when present. |
+| `POST /api/admin/settings` | `Merge(patch, ["ListenBrainz.UserTokens"])` | Body must be a JSON object, otherwise 400 `empty body` / `invalid JSON: …`. `_meta` is removed. Validates `LibraryActions`, `Genre.Mappings` and `LastFm.DiscoveryStations` (§3), with a 400 on failure. Since 2026.10.05, in this order: a saved credential never follows a new address (§6, `SecretSentElsewhere`); the admin password as in §3; `LastFm.UserSessions` is always removed; then every other placeholder is taken out (`KeepSavedSecrets`, §6). Corrupt file → 409; any other exception → 500 `{error}`. Logs `{Who} saved settings: {Section,Section}` (who: the Navidrome user, "someone with the recovery code", "someone (the dashboard sign-in is off)", "{user} (from the Octo app)"). Answers `{"ok":true,"persisted":<merged, every credential masked>}`. |
 | `GET /api/admin/raw-config` | - | The effective document as indented JSON (the same masking as GET settings). It always includes every section, so a plain Save does not delete any. Differences from GET settings: `DiscoveryStations` is always the class serialized (never the raw file); `AllowedUsers`, `Blocklist` and `BackfillExtensions` are serialized arrays. |
 | `PUT /api/admin/raw-config` | `Replace(parsed)`, wholesale | Body must be a JSON object. Since 2026.10.05 `SecretSentElsewhere` runs first (§6). Placeholders are swapped back from the existing file (every credential of §6, each listener's ListenBrainz token by name); if the file is unreadable, the running values of every credential are used instead (`RunningSecrets`). Logs `{Who} saved the raw config ({Bytes} bytes)`. A placeholder with no stored value → the key is dropped, so env keeps applying. A session whose key exists only in env is dropped whole. Placeholder plus extra text → 400 (admin password, shared secret, or session key: `Connect {user} to Last.fm again…`). Answers `{"ok":true,"bytes":N}`. **No LibraryActions, Genre or DiscoveryStations validation on this path.** |
 | `GET /api/admin/config-sources` | - | `{keys:[{Key,Value,IsSecret}], configFile}` for a fixed list of `Section:Key` strings, read through `IConfiguration[key]`. Despite the name, it does **not** report which source a value came from. Lists come out as `""`, because the section has no scalar value. A value counts as secret when its key ends in `Password`, `ApiKey`, `Secret`, `Token` or `WebhookUrl` (case-insensitive); a non-empty secret shows as `'•'` repeated `min(len, 16)` times. |
@@ -552,22 +532,21 @@ No other code path writes `settings.json`. `LyricsAdminController`, `UpdateContr
 ## 6. Secrets: redaction contract
 
 > [!CORRECTION] 2026.10.05
-> Every credential now reads as the placeholder (031e563, and 9f9502d for the slskd password); nothing in the table below goes out in clear any more. The lists the C# keeps (`SecretFields`, `SecretAddresses`, `SecretMaps`) are `controllers::admin::secrets` in Rust, and a test walks the settings structs so a new credential cannot go out in clear unnoticed.
+> Every credential now reads as the placeholder (031e563); nothing in the table below goes out in clear any more. The lists the C# keeps (`SecretFields`, `SecretAddresses`, `SecretMaps`) are `controllers::admin::secrets` in Rust, and a test walks the settings structs so a new credential cannot go out in clear unnoticed.
 
 | Setting | GET settings / raw-config | POST echo (`persisted`) | config-sources | Logs |
 |---|---|---|---|---|
 | `Subsonic.AdminPassword` | placeholder `(saved, not shown)`, or `""` if unset | masked | masked | never logged |
 | `LastFm.ApiSecret` | placeholder | masked | masked | `api_sig` query param redacted |
 | `LastFm.UserSessions.*.SessionKey` | placeholder; entries with a blank key are omitted | masked | (not listed) | `sk` query param redacted |
-| `Soulseek.Password` | placeholder | masked | masked | - |
-| `Soulseek.AcoustIdApiKey`, `Soulseek.AcoustIdUserApiKey` | placeholder | masked | masked | `client`, `user` query params redacted |
+| `Downloads.AcoustIdApiKey`, `Downloads.AcoustIdUserApiKey` | placeholder | masked | masked | `client`, `user` query params redacted |
 | `Lidarr.ApiKey` | placeholder | masked | masked | - (sent as a header) |
 | `LastFm.ApiKey` | placeholder | masked | masked | `api_key` redacted |
 | `Notifications.NtfyToken`, `Notifications.DiscordWebhookUrl` | placeholder (the webhook address carries its own token) | masked | masked | - |
 | `ListenBrainz.Token`, `ListenBrainz.UserTokens` | placeholder; a blank user token is left out, names kept | masked | Token masked; UserTokens not listed | - |
 
 - **Saving it back keeps what is saved** (`KeepSavedSecrets`): a field that reads exactly as the placeholder is taken out of the patch; the placeholder with text after it is refused ("Retype the whole {words}; it was added to the hidden placeholder."); a listener's ListenBrainz token sent as the placeholder is replaced by the stored one (the map is saved whole), or dropped when none is stored.
-- **A saved credential never follows a new address** (`SecretSentElsewhere`, 9210c63): for `Subsonic.Url`/`AdminPassword`, `Soulseek.BaseUrl`/`Password`, `Lidarr.BaseUrl`/`ApiKey` and `Notifications.NtfyUrl`/`NtfyToken`, a patch that changes the address (compared trimmed, without trailing slashes, ignoring case, against the running `IConfiguration` value) while a credential is stored and the patch does not type a new one is refused: "Retype the {words} for the new address."
+- **A saved credential never follows a new address** (`SecretSentElsewhere`, 9210c63): for `Subsonic.Url`/`AdminPassword`, `Lidarr.BaseUrl`/`ApiKey` and `Notifications.NtfyUrl`/`NtfyToken`, a patch that changes the address (compared trimmed, without trailing slashes, ignoring case, against the running `IConfiguration` value) while a credential is stored and the patch does not type a new one is refused: "Retype the {words} for the new address."
 - **The checks that send a credential somewhere take the placeholder as the saved one:** `lastfm/check` (shared secret), `listenbrainz/validate` (token), `lidarr/test` (API key). `lidarr/test` sends the saved key to whatever address the request names (BACKLOG, "Found while building the harness"; kept as C# does it, Brandon to decide).
 - **Log redaction** (`LogRedaction.cs`, wrapping the whole `ILoggerFactory`, so it applies to request lines, HttpClient lines and app logs, at every level):
   - Regex `(?<=[?&;](?:t|s|p|apikey|token|api_key|client|user|sk|api_sig)=)[^&#\s"'<>]+`, case-insensitive, replaced with `***`.
@@ -579,7 +558,7 @@ No other code path writes `settings.json`. `LyricsAdminController`, `UpdateContr
 
 ## 7. Fixed values referenced by settings (not configurable)
 
-- `GenreSettings.BuiltInBlocklist`: music, people & blogs, people and blogs, gaming, entertainment, education, news & politics, science & technology, howto & style, film & animation, autos & vehicles, pets & animals, sports, travel & events, comedy, nonprofits & activism, shows, trailers, unknown, other, misc, miscellaneous, genre, audio, soundtrack music, youtube, soulseek, lossless, flac, mp3, 320kbps, cd, vinyl, album.
+- `GenreSettings.BuiltInBlocklist`: music, people & blogs, people and blogs, gaming, entertainment, education, news & politics, science & technology, howto & style, film & animation, autos & vehicles, pets & animals, sports, travel & events, comedy, nonprofits & activism, shows, trailers, unknown, other, misc, miscellaneous, genre, audio, soundtrack music, youtube, lossless, flac, mp3, 320kbps, cd, vinyl, album.
 - `MetadataSettings.KnownLyricsSources` = `song, kugou, lrclib, netease, lyricsovh`. `EmbeddedCoverSide` = 1500.
 - `LibraryActionSettings` default names and ratings: Delete 1, Wrong song 2, Wrong version 3, Better quality 4, Keep 5.
 - `GenreSettings.BroadGenrePreset()`: the ordered pattern → genre table served by `GET /api/admin/genre/presets` (copy it verbatim from `GenreSettings.cs`).
@@ -592,9 +571,9 @@ No other code path writes `settings.json`. `LyricsAdminController`, `UpdateContr
 1. **`settings.json` outranks env vars.** A dashboard save, and above all a Raw config save, permanently shadows `.env`.
 2. **A JSON `null` (which a cleared number field produces) shadows lower sources** as `""`, and makes the whole section fail to bind for int, bool and enum keys.
 3. **Enums parse case-insensitively and also take numbers**, including undefined values and comma flag-ORs. **Ints take hex** (`0x`, `&h`, `#`). Bools take only `true`/`false`, in any case.
-4. **Class defaults disagree with `appsettings.json`:** `StorageMode` (Permanent vs `Stream`), `EnableExternalPlaylists` (true vs `false`), `LyricsSources` (`song,…` vs no `song`). **Compose disagrees with appsettings:** `Soulseek.Username`/`Password` (`slskd` vs `""`), `GeneratedPlaylists.NameFormat` (`""` vs `{0} Mix`). The load order must be reproduced exactly, and the C# class defaults matter for keys absent from appsettings (all of `ListenBrainz` and `Server`, several `LastFm`, `Subsonic` and `Metadata` keys).
+4. **Class defaults disagree with `appsettings.json`:** `StorageMode` (Permanent vs `Stream`), `EnableExternalPlaylists` (true vs `false`), `LyricsSources` (`song,…` vs no `song`). **Compose disagrees with appsettings:** `GeneratedPlaylists.NameFormat` (`""` vs `{0} Mix`). The load order must be reproduced exactly, and the C# class defaults matter for keys absent from appsettings (all of `ListenBrainz` and `Server`, several `LastFm`, `Subsonic` and `Metadata` keys).
 5. **`SyncCatalogClients` matches by substring**, not by equal name.
-6. **`UpgradeSearchWaitSeconds` needs a restart** but is missing from `RestartTracker`. **`Metadata.Language` and `LastFm.ApiKey` partly need a restart** (Last.fm and cover-lookup clients). Neither is flagged in the dashboard.
+6. **`Metadata.Language` and `LastFm.ApiKey` partly need a restart** (Last.fm and cover-lookup clients). Neither is flagged in the dashboard.
 7. **Dead settings:** `Subsonic.UseLocalStaging` (no reader) and `Subsonic.PlaylistsDirectory` (its reader is never registered). Keep them in the schema, the GET output and the form; nothing has to act on them.
 8. **The `SettingsFileWriter` merge is case-sensitive**, while the config provider is case-insensitive and rejects case-duplicates.
 9. **Non-ASCII and HTML characters are `\u`-escaped** on every write, which `serde_json` does not do by default.

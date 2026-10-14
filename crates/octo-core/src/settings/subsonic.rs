@@ -70,19 +70,13 @@ pub enum FolderStructure {
 /// Where a starred track's permanent copy comes from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Deserialize, Serialize)]
 pub enum DownloadSource {
-    /// Lossless FLAC via Soulseek/slskd (default).
+    /// Lossy MP3 via the yt-dlp shim (default).
     #[default]
-    Soulseek,
-
-    /// Lossy MP3 via the yt-dlp shim.
     YouTube,
-
-    /// Try Soulseek FLAC first; fall back to YouTube MP3 if it fails.
-    SoulseekThenYouTube,
 
     /// Submit external track/album hearts to an existing Lidarr instance. Lidarr is
     /// album-oriented, so a track heart acquires the track's full album. Non-heart
-    /// permanent downloads continue to use Soulseek.
+    /// permanent downloads continue to use YouTube.
     Lidarr,
 }
 
@@ -90,18 +84,13 @@ pub enum DownloadSource {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Deserialize, Serialize)]
 pub enum HeartDownloadSource {
     #[default]
-    Soulseek,
     YouTube,
     Lidarr,
 }
 
 impl HeartDownloadSource {
     /// `Enum.GetValues<HeartDownloadSource>()`, in declaration order.
-    pub const ALL: [HeartDownloadSource; 3] = [
-        HeartDownloadSource::Soulseek,
-        HeartDownloadSource::YouTube,
-        HeartDownloadSource::Lidarr,
-    ];
+    pub const ALL: [HeartDownloadSource; 2] = [HeartDownloadSource::YouTube, HeartDownloadSource::Lidarr];
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
@@ -160,7 +149,7 @@ pub struct SubsonicSettings {
 
     /// Legacy storage mode for direct-download jobs (default: Permanent).
     /// Environment variable: STORAGE_MODE
-    /// Ordinary external playback always streams from YouTube unless lossless waiting is enabled.
+    /// Ordinary external playback always streams from YouTube.
     pub storage_mode: StorageMode,
 
     /// Cache duration in hours for Cache storage mode (default: 1)
@@ -299,43 +288,17 @@ pub struct SubsonicSettings {
 
     /// Never download a song already in the library (default: true). A heart, an album walk or a
     /// play of a song you have keeps your copy; a lossy copy is queued for a higher quality one
-    /// when a lossless source is in the chain and Better quality may run. The same song means the
+    /// when Lidarr is in the chain and Better quality may run. The same song means the
     /// same artist and title in one version, and a length within 8 seconds or the same album.
     /// Environment variable: SKIP_OWNED_SONGS
     pub skip_owned_songs: bool,
-
-    /// In Permanent mode, block the first play until the lossless copy has been fetched
-    /// (default: false).
-    /// Environment variable: WAIT_FOR_LOSSLESS_ON_PLAY
-    ///
-    /// This also decides what search results DECLARE for external tracks, which is why it
-    /// is restart-required. A Subsonic client picks its decoder from the declared suffix
-    /// and content type, so those have to describe the bytes that will actually arrive:
-    /// off, an external id is always the lossy stream and the lossless copy shows up as a
-    /// separate library track after the rescan; on, the id is declared lossless and the
-    /// request waits for it.
-    ///
-    /// Off by default because a Soulseek fetch routinely runs for minutes, and no client
-    /// waits that long: turning it on means the first play of each track appears to fail
-    /// while the file lands in the background.
-    pub wait_for_lossless_on_play: bool,
-
-    /// With WaitForLosslessOnPlay on, give up waiting after this many seconds and fall
-    /// back to the lossy preview while the fetch finishes in the background (default: 0,
-    /// wait as long as the fetch needs).
-    /// Environment variable: LOSSLESS_WAIT_TIMEOUT_SECONDS
-    ///
-    /// A fallback serves lossy bytes under an id this session declared lossless, which
-    /// strict clients can refuse to start. That trade is why it is opt-in and 0 keeps
-    /// the declared contract exact.
-    pub lossless_wait_timeout_seconds: i32,
 
     /// Keep a copy of every external track that is played, not only of hearted ones
     /// (default: false).
     /// Environment variable: DOWNLOAD_ON_PLAY
     ///
     /// The copy comes from the first source with song hearts enabled in the heart download
-    /// priority that Octo downloads from itself (Soulseek, YouTube; Lidarr is skipped, see
+    /// priority that Octo downloads from itself (YouTube; Lidarr is skipped, see
     /// LidarrAlbumOnPlay). Playback still starts from the YouTube stream. Only a play from
     /// the first byte counts, not a seek. Hearts always go first: at most one played track
     /// waits to download, and one played while another waits is skipped until it is played
@@ -355,10 +318,9 @@ pub struct SubsonicSettings {
     /// Values: "Organized" (Artist/Album/Track.flac), "Flat" (Artist - Title.flac)
     pub folder_structure: FolderStructure,
 
-    /// Download source (default: Soulseek). Lidarr applies to hearts only.
+    /// Download source (default: YouTube). Lidarr applies to hearts only.
     /// Environment variable: DOWNLOAD_SOURCE
-    /// Values: "Soulseek" (FLAC), "YouTube" (MP3), "SoulseekThenYouTube"
-    /// (FLAC with MP3 fallback), or "Lidarr" (heart-only, full album).
+    /// Values: "YouTube" (MP3) or "Lidarr" (heart-only, full album).
     pub download_source: DownloadSource,
 
     /// Ordered sources for explicit track and album hearts. Empty keeps older
@@ -402,12 +364,10 @@ impl Default for SubsonicSettings {
             record_requested_by: true,
             star_downloads_for_requester: false,
             skip_owned_songs: true,
-            wait_for_lossless_on_play: false,
-            lossless_wait_timeout_seconds: 0,
             download_on_play: false,
             lidarr_album_on_play: false,
             folder_structure: FolderStructure::Flat,
-            download_source: DownloadSource::Soulseek,
+            download_source: DownloadSource::YouTube,
             heart_download_sources: Vec::new(),
             use_local_staging: false,
         }
@@ -492,14 +452,12 @@ impl SubsonicSettings {
         }
 
         match self.download_source {
-            DownloadSource::YouTube => self.default_heart_sources(false, true, false),
-            DownloadSource::SoulseekThenYouTube => self.default_heart_sources(true, true, false),
-            DownloadSource::Lidarr => self.default_heart_sources(false, false, true),
-            _ => self.default_heart_sources(true, false, false),
+            DownloadSource::YouTube => self.default_heart_sources(true, false),
+            DownloadSource::Lidarr => self.default_heart_sources(false, true),
         }
     }
 
-    fn default_heart_sources(&self, soulseek: bool, youtube: bool, lidarr: bool) -> Vec<HeartDownloadStep> {
+    fn default_heart_sources(&self, youtube: bool, lidarr: bool) -> Vec<HeartDownloadStep> {
         let step = |source, on: bool| HeartDownloadStep {
             source,
             enabled: None,
@@ -507,7 +465,6 @@ impl SubsonicSettings {
             album_enabled: Some(on && self.download_album_on_star),
         };
         vec![
-            step(HeartDownloadSource::Soulseek, soulseek),
             step(HeartDownloadSource::YouTube, youtube),
             step(HeartDownloadSource::Lidarr, lidarr),
         ]
@@ -521,56 +478,70 @@ mod tests {
     #[test]
     fn legacy_fallback_maps_to_ordered_sources_with_lidarr_last() {
         let settings = SubsonicSettings {
-            download_source: DownloadSource::SoulseekThenYouTube,
+            download_source: DownloadSource::YouTube,
             ..Default::default()
         };
 
         let steps = settings.effective_heart_download_sources();
 
-        assert_eq!(steps.len(), 3);
-        assert_eq!(steps[0].source, HeartDownloadSource::Soulseek);
+        assert_eq!(steps.len(), 2);
+        assert_eq!(steps[0].source, HeartDownloadSource::YouTube);
         assert_eq!(
             (steps[0].song_enabled, steps[0].album_enabled),
             (Some(true), Some(true))
         );
-        assert_eq!(steps[1].source, HeartDownloadSource::YouTube);
+        assert_eq!(steps[1].source, HeartDownloadSource::Lidarr);
         assert_eq!(
             (steps[1].song_enabled, steps[1].album_enabled),
-            (Some(true), Some(true))
-        );
-        assert_eq!(steps[2].source, HeartDownloadSource::Lidarr);
-        assert_eq!(
-            (steps[2].song_enabled, steps[2].album_enabled),
             (Some(false), Some(false))
         );
+    }
+
+    /// An empty list, the state an older settings.json is in once its entries are gone, is the
+    /// YouTube default: hearts download, Lidarr stays off until it is chosen.
+    #[test]
+    fn an_empty_list_falls_back_to_the_youtube_default() {
+        let settings = SubsonicSettings::default();
+        let steps = settings.effective_heart_download_sources();
+        assert_eq!(steps.len(), 2);
+        assert_eq!(steps[0].source, HeartDownloadSource::YouTube);
+        assert_eq!(steps[0].song_enabled, Some(true));
+        assert_eq!(steps[1].source, HeartDownloadSource::Lidarr);
+        assert_eq!(steps[1].song_enabled, Some(false));
+    }
+
+    /// The Lidarr legacy source puts Lidarr first and leaves YouTube off.
+    #[test]
+    fn the_lidarr_legacy_source_leaves_youtube_off() {
+        let settings = SubsonicSettings {
+            download_source: DownloadSource::Lidarr,
+            ..Default::default()
+        };
+        let steps = settings.effective_heart_download_sources();
+        assert_eq!(steps[0].source, HeartDownloadSource::YouTube);
+        assert_eq!(steps[0].song_enabled, Some(false));
+        assert_eq!(steps[1].source, HeartDownloadSource::Lidarr);
+        assert_eq!(steps[1].song_enabled, Some(true));
     }
 
     #[test]
     fn configured_order_is_preserved_and_missing_sources_are_appended_disabled() {
         let settings = SubsonicSettings {
-            heart_download_sources: vec![
-                HeartDownloadStep {
-                    source: HeartDownloadSource::Lidarr,
-                    enabled: Some(true),
-                    ..Default::default()
-                },
-                HeartDownloadStep {
-                    source: HeartDownloadSource::YouTube,
-                    enabled: Some(true),
-                    ..Default::default()
-                },
-            ],
+            heart_download_sources: vec![HeartDownloadStep {
+                source: HeartDownloadSource::Lidarr,
+                enabled: Some(true),
+                ..Default::default()
+            }],
             ..Default::default()
         };
 
         let steps = settings.effective_heart_download_sources();
 
-        assert_eq!(steps.len(), 3);
+        assert_eq!(steps.len(), 2);
         assert_eq!(steps[0].source, HeartDownloadSource::Lidarr);
         assert_eq!(steps[1].source, HeartDownloadSource::YouTube);
-        assert_eq!(steps[2].source, HeartDownloadSource::Soulseek);
         assert_eq!(
-            (steps[2].song_enabled, steps[2].album_enabled),
+            (steps[1].song_enabled, steps[1].album_enabled),
             (Some(false), Some(false))
         );
     }
@@ -594,7 +565,7 @@ mod tests {
             ..Default::default()
         };
         let steps = settings.effective_heart_download_sources();
-        assert_eq!(steps.len(), 3);
+        assert_eq!(steps.len(), 2);
         assert_eq!(
             (steps[0].song_enabled, steps[0].album_enabled),
             (Some(true), Some(false))

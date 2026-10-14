@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use octo_core::models::domain::Song;
-use octo_core::settings::{AppSettings, SettingsStore, SoulseekSettings, SubsonicSettings};
+use octo_core::settings::{AppSettings, DownloadSettings, SettingsStore, SubsonicSettings};
 use tokio_util::sync::CancellationToken;
 
 use super::{BaseDownloadService, DownloadBackend, DownloadCore, DownloadServices, TrackDownload};
@@ -177,7 +177,8 @@ fn catalog() -> Arc<FakeMetadata> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn transfers_overlap_up_to_the_width_and_placements_never() {
-    for (width, proven) in [(3, true), (3, false)] {
+    {
+        let width = 3;
         let root = tempfile::Builder::new()
             .prefix("octo-split-")
             .tempdir()
@@ -191,7 +192,7 @@ async fn transfers_overlap_up_to_the_width_and_placements_never() {
                 auto_detect_download_path: false,
                 ..Default::default()
             },
-            soulseek: SoulseekSettings {
+            downloads: DownloadSettings {
                 parallel_downloads: width,
                 ..Default::default()
             },
@@ -199,9 +200,6 @@ async fn transfers_overlap_up_to_the_width_and_placements_never() {
         }));
         settings.set_raw("Library:DownloadPath", Some(&root_text));
         let concurrency = Arc::new(DownloadConcurrency::new(Arc::clone(&settings)));
-        if proven {
-            concurrency.prove();
-        }
         let core = DownloadCore {
             settings: Arc::clone(&settings),
             local_library: Arc::new(CountingLibrary {
@@ -253,21 +251,17 @@ async fn transfers_overlap_up_to_the_width_and_placements_never() {
             }
         }
 
-        let case = format!("width {width}, proven {proven}");
+        let case = format!("width {width}");
         assert_eq!(placements.most(), 1, "{case}");
-        if proven {
-            assert!(
-                transfers.most() > 1,
-                "{case}: the transfers never overlapped, so the split proves nothing"
-            );
-            assert!(
-                transfers.most() <= width,
-                "{case}: {} transfers at once against a width of {width}",
-                transfers.most()
-            );
-        } else {
-            assert_eq!(transfers.most(), 1, "{case}");
-        }
+        assert!(
+            transfers.most() > 1,
+            "{case}: the transfers never overlapped, so the split proves nothing"
+        );
+        assert!(
+            transfers.most() <= width,
+            "{case}: {} transfers at once against a width of {width}",
+            transfers.most()
+        );
         assert_eq!(concurrency.transfers().in_use(), 0, "{case}");
     }
 }

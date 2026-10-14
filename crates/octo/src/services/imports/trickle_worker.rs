@@ -8,8 +8,7 @@ use futures::future::BoxFuture;
 use octo_core::common::Clock;
 use octo_core::common::acquisition_tracker::user_safe;
 use octo_core::common::dotnet::eq_ignore_case;
-use octo_core::settings::{HeartDownloadSource, SettingsStore};
-use octo_core::soulseek::soulseek_link::SoulseekLinkState;
+use octo_core::settings::SettingsStore;
 use octo_core::soulseek::soulseek_metadata_service::{RoutingKind, SoulseekRouting};
 use parking_lot::Mutex;
 use tokio::task::JoinHandle;
@@ -24,7 +23,7 @@ use crate::services::common::acquisition_tracker::{
 };
 use crate::services::common::{HeartAcquisitionCoordinator, TrackAcquisitionQueue};
 use crate::services::library::LibraryOwnership;
-use crate::services::soulseek::{ExternalIdRegistry, ISoulseekLink, SoulseekMetadataService};
+use crate::services::soulseek::{ExternalIdRegistry, SoulseekMetadataService};
 
 /// A song the trickle may not fetch for this person now (a family member whose library is full,
 /// or who only saves songs), with the words they read. The job is skipped rather than failed.
@@ -53,8 +52,6 @@ pub mod trickle_states {
     pub const OFF: &str = "off";
     /// Someone's own downloads come first.
     pub const YIELDING: &str = "yielding";
-    /// Soulseek is out and nothing else can fetch.
-    pub const WAITING_FOR_SOULSEEK: &str = "waitingForSoulseek";
 }
 
 /// A song the library already has: its id there, when Navidrome said.
@@ -66,7 +63,6 @@ pub type OwnedSeam =
 pub type StartSeam = Arc<dyn Fn(TrickleJob) -> BoxFuture<'static, anyhow::Result<String>> + Send + Sync>;
 pub type RowSeam = Arc<dyn Fn(&str) -> Option<AcquisitionSnapshot> + Send + Sync>;
 pub type BusySeam = Arc<dyn Fn() -> bool + Send + Sync>;
-pub type SoulseekOutSeam = Arc<dyn Fn() -> BoxFuture<'static, bool> + Send + Sync>;
 pub type FinishedListener = Arc<dyn Fn(&TrickleJob) + Send + Sync>;
 
 /// Seams, so the pace and the outcomes can be tested without downloading anything.
@@ -76,7 +72,6 @@ pub struct TrickleSeams {
     pub start: StartSeam,
     pub row: RowSeam,
     pub people_downloading: BusySeam,
-    pub soulseek_out: SoulseekOutSeam,
     pub clock: Clock,
 }
 
@@ -90,7 +85,6 @@ impl Default for TrickleSeams {
             }),
             row: Arc::new(|_| None),
             people_downloading: Arc::new(|| false),
-            soulseek_out: Arc::new(|| Box::pin(async { false })),
             clock: Clock::system(),
         }
     }
@@ -98,10 +92,9 @@ impl Default for TrickleSeams {
 
 /// Works through the missing songs a few an hour, through the same chain a heart takes: the
 /// library check first (a song already there is done, never downloaded twice), then the heart
-/// sources in their order, Soulseek's outage hold, Lidarr, parallel downloads and all, so an
-/// import is fetched exactly the way a heart would be. It never queues ahead of a person: while
-/// anyone's own download runs, it waits, and while Soulseek is out with nothing behind it, it
-/// waits for Soulseek rather than taking a YouTube copy.
+/// sources in their order, Lidarr, parallel downloads and all, so an import is fetched exactly
+/// the way a heart would be. It never queues ahead of a person: while anyone's own download
+/// runs, it waits.
 ///
 /// One song at a time, started no closer together than the songs-per-hour setting allows. A song
 /// handed to Lidarr is followed until Lidarr's import lands, without holding the next one back.
@@ -124,7 +117,6 @@ pub struct TrickleServices {
     pub hearts: Arc<HeartAcquisitionCoordinator>,
     pub downloads: Arc<TrackAcquisitionQueue>,
     pub tracker: Arc<AcquisitionTracker>,
-    pub soulseek: Arc<dyn ISoulseekLink>,
 }
 
 impl TrickleWorker {
@@ -158,12 +150,10 @@ impl TrickleWorker {
             hearts,
             downloads,
             tracker,
-            soulseek,
         } = services;
         let start_queue = queue.clone();
         let start_tracker = tracker.clone();
         let row_tracker = tracker.clone();
-        let out_settings = settings.clone();
         let seams = TrickleSeams {
             owned: Arc::new(move |job| {
                 let owned = owned.clone();
@@ -214,7 +204,7 @@ impl TrickleWorker {
                         job.album.as_deref(),
                     );
                     hearts
-                        .acquire_track_for(provider, &external_id, Some(&job.owner), None, &target)
+                        .acquire_track_for(provider, &external_id, Some(&job.owner), &target)
                         .await?;
                     Ok(key)
                 })
@@ -226,31 +216,6 @@ impl TrickleWorker {
                     .find(|row| key_of(&row.provider, &row.external_id) == key)
             }),
             people_downloading: Arc::new(move || !downloads.is_idle()),
-            soulseek_out: Arc::new(move || {
-                let (settings, soulseek) = (out_settings.clone(), soulseek.clone());
-                Box::pin(async move {
-                    let steps: Vec<HeartDownloadSource> = settings
-                        .current()
-                        .subsonic
-                        .effective_heart_download_sources()
-                        .into_iter()
-                        .filter(|step| step.song_enabled == Some(true))
-                        .map(|step| step.source)
-                        .collect();
-                    // With Lidarr in the chain an outage still leaves a source; without it the
-                    // heart chain would hold or fall back to YouTube, and a trickle that is in no
-                    // hurry waits instead.
-                    if !steps.contains(&HeartDownloadSource::Soulseek)
-                        || steps.contains(&HeartDownloadSource::Lidarr)
-                    {
-                        return false;
-                    }
-                    soulseek
-                        .read(false)
-                        .await
-                        .is_some_and(|reading| reading.link == SoulseekLinkState::NotLoggedIn)
-                })
-            }),
             clock: Clock::system(),
         };
         let worker = Self::new(queue, settings, seams);
@@ -309,7 +274,7 @@ impl TrickleWorker {
         }
         if jobs.iter().any(|job| job.state == import_track_states::QUEUED) {
             let waiting = *self.waiting_for.lock();
-            if waiting == trickle_states::YIELDING || waiting == trickle_states::WAITING_FOR_SOULSEEK {
+            if waiting == trickle_states::YIELDING {
                 return TrickleStatus {
                     state: waiting,
                     next_utc: None,
@@ -358,10 +323,6 @@ impl TrickleWorker {
         let seams = self.seams();
         if (seams.people_downloading)() {
             *self.waiting_for.lock() = trickle_states::YIELDING;
-            return false;
-        }
-        if (seams.soulseek_out)().await {
-            *self.waiting_for.lock() = trickle_states::WAITING_FOR_SOULSEEK;
             return false;
         }
         *self.waiting_for.lock() = trickle_states::RUNNING;

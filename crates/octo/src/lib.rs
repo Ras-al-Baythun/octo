@@ -1,4 +1,4 @@
-//! Octo: a Subsonic proxy that adds Soulseek, YouTube and Last.fm to a Navidrome library.
+//! Octo: a Subsonic proxy that adds YouTube, Lidarr and Last.fm to a Navidrome library.
 
 pub mod app;
 pub mod controllers;

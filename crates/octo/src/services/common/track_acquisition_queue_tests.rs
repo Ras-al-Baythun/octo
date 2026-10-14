@@ -205,7 +205,7 @@ fn a_real_flac_ask_is_its_own_job() {
         true,
         false,
         true,
-        Some(DownloadSource::Soulseek),
+        Some(DownloadSource::YouTube),
         true,
         Some("alex"),
         false,

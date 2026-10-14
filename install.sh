@@ -170,13 +170,12 @@ bold "  Octo · installer"
 bold "═══════════════════════════════════════════════════════════"
 echo
 echo "Sets up your own music service in one Docker Compose stack: Octo"
-echo "(search, radio, previews and downloads), a yt-dlp shim, slskd, and, if"
-echo "you don't run one yet, a Navidrome music server."
+echo "(search, radio, previews and downloads), a yt-dlp shim, and, if you"
+echo "don't run one yet, a Navidrome music server."
 echo
 echo "What you'll need handy:"
 echo "  • Your Navidrome address, if you already run one"
 echo "  • A free Last.fm API key: https://www.last.fm/api/account/create"
-echo "  • A free Soulseek (slsknet.org) account"
 echo "  • Optionally, an existing Lidarr server"
 echo
 require_docker
@@ -275,36 +274,12 @@ LASTFM_API_KEY=$(ask_secret "Last.fm API key" "$(existing LASTFM_API_KEY)")
 echo
 
 # ─────────────────────────────────────────────────────────────────
-# Soulseek
-# ─────────────────────────────────────────────────────────────────
-bold "─── Soulseek (downloads when you star a song) ──────────────"
-echo "  Sign up free at https://www.slsknet.org/news/node/1"
-echo "  These are your Soulseek-network credentials — slskd uses them to log in."
-SLSKD_SOULSEEK_USERNAME=$(ask "Your Soulseek username" "$(existing SLSKD_SOULSEEK_USERNAME)")
-SLSKD_SOULSEEK_PASSWORD=$(ask_secret "Your Soulseek password" "$(existing SLSKD_SOULSEEK_PASSWORD)")
-echo
-echo "  Soulseek runs on sharing: many users will not send files to someone who"
-echo "  shares nothing. slskd can share your music folder back, read-only, with"
-echo "  4 uploads at a time. You can turn it on or off later on the dashboard's"
-echo "  Soulseek page."
-SHARE_DEFAULT="y"
-[ "$(existing SLSKD_SHARE_LIBRARY)" = "false" ] && SHARE_DEFAULT="n"
-if ask_yn "  Share your music library on Soulseek?" "$SHARE_DEFAULT"; then
-  SLSKD_SHARE_LIBRARY=true
-  echo "  Forward TCP port 50300 on your router to this machine so people can"
-  echo "  connect. Never forward 5030."
-else
-  SLSKD_SHARE_LIBRARY=false
-fi
-echo
-
-# ─────────────────────────────────────────────────────────────────
 # Optional Lidarr heart source
 # ─────────────────────────────────────────────────────────────────
 bold "─── Heart download source ──────────────────────────────────"
-echo "  Soulseek — individual lossless tracks (default)"
-echo "  Lidarr   — your existing Lidarr server; always fetches the full album"
-DOWNLOAD_SOURCE=$(ask "Heart download source" "$(existing DOWNLOAD_SOURCE "Soulseek")")
+echo "  YouTube — the song as an MP3, through the yt-dlp shim (default)"
+echo "  Lidarr  — your existing Lidarr server; always fetches the full album"
+DOWNLOAD_SOURCE=$(ask "Heart download source" "$(existing DOWNLOAD_SOURCE "YouTube")")
 LIDARR_URL="$(existing LIDARR_URL)"
 LIDARR_API_KEY="$(existing LIDARR_API_KEY)"
 LIDARR_ROOT_FOLDER_PATH="$(existing LIDARR_ROOT_FOLDER_PATH)"
@@ -333,14 +308,6 @@ echo "  Flat       — Artist - Title.flac (no subfolders, easier to browse)"
 echo "  Organized  — Artist/Title/file.flac"
 FOLDER_STRUCTURE=$(ask "Folder layout" "$(existing FOLDER_STRUCTURE "Flat")")
 echo
-
-# slskd web UI admin — auto-generate on first run, preserve on re-run
-SLSKD_USERNAME="$(existing SLSKD_USERNAME "admin")"
-SLSKD_PASSWORD="$(existing SLSKD_PASSWORD)"
-if [ -z "$SLSKD_PASSWORD" ]; then
-  SLSKD_PASSWORD="$(random_password)"
-  green "  ✓ generated random slskd web admin password (saved in .env)"
-fi
 
 # ─────────────────────────────────────────────────────────────────
 # Write .env
@@ -378,17 +345,6 @@ $(setting LASTFM_DISCOVERY_PERCENT 35)
 $(setting LASTFM_REFRESH_INTERVAL_HOURS 12)
 $(setting LASTFM_MINIMUM_PLAYS 10)
 
-# === Soulseek (slskd) ===
-SLSKD_USERNAME=$SLSKD_USERNAME
-SLSKD_PASSWORD=$SLSKD_PASSWORD
-$(setting SLSKD_SEARCH_WAIT_SECONDS 6)
-$(setting SLSKD_MIN_FILE_SIZE_BYTES 5242880)
-$(setting SLSKD_PREFERRED_EXTENSION flac)
-$(setting SLSKD_DOWNLOAD_TIMEOUT_SECONDS 180)
-SLSKD_SOULSEEK_USERNAME=$SLSKD_SOULSEEK_USERNAME
-SLSKD_SOULSEEK_PASSWORD="$SLSKD_SOULSEEK_PASSWORD"
-SLSKD_SHARE_LIBRARY=$SLSKD_SHARE_LIBRARY
-
 # === Existing Lidarr (optional) ===
 LIDARR_URL=$LIDARR_URL
 LIDARR_API_KEY=$LIDARR_API_KEY
@@ -404,7 +360,6 @@ $(setting DOWNLOAD_MODE Track)
 DOWNLOAD_SOURCE=$DOWNLOAD_SOURCE
 $(setting DOWNLOAD_ON_STAR true)
 $(setting DOWNLOAD_ALBUM_ON_STAR true)
-$(setting WAIT_FOR_LOSSLESS_ON_PLAY false)
 FOLDER_STRUCTURE=$FOLDER_STRUCTURE
 $(setting USE_LOCAL_STAGING false)
 $(setting EXPLICIT_FILTER All)
@@ -432,7 +387,7 @@ chmod 600 .env
 green "✓ wrote .env (chmod 600)"
 
 # Make sure the bind-mount targets exist so docker doesn't create them root-owned.
-mkdir -p "$(existing OCTO_CONFIG_DIR octo-config)" "$(existing SLSKD_STATE_DIR slskd-state)"
+mkdir -p "$(existing OCTO_CONFIG_DIR octo-config)"
 # Family members' music needs no folder here: Octo keeps it in the music folder.
 if [ "$STARTER" = true ]; then
   mkdir -p "$(existing NAVIDROME_DATA_DIR navidrome-data)"
@@ -465,9 +420,9 @@ folder_release() {
   fi
 }
 
-# What Octo's image is built from (the Dockerfile's COPY lines): the Rust crates, and the files
-# it shares with the C# app that is still in the folder (the dashboard, images, the cover design
-# and the default settings). A change to the C# app alone changes nothing in the image.
+# What Octo's image is built from (the Dockerfile's COPY lines): the Rust crates, the dashboard,
+# the images, the cover design and the default settings. A change anywhere else in the folder
+# changes nothing in the image.
 OCTO_FILES=Dockerfile,Cargo.toml,Cargo.lock,crates,VERSION,octo/wwwroot,octo/Assets,octo/Services/CoverArt/Design,octo/appsettings.json,octo/appsettings.Development.json,octo/octo.csproj
 
 echo
@@ -524,14 +479,14 @@ done
 
 echo
 bold "─── Service health ─────────────────────────────────────────"
-# Octo answers within seconds of starting, before Navidrome, slskd or the shim may be up, so
+# Octo answers within seconds of starting, before Navidrome or the shim may be up, so
 # those get up to a minute (Octo's answer is fresh every 10 seconds). octo-sonic is not waited
 # for: it says it cannot see the music folder for as long as the folder is empty, as on a
 # fresh starter stack.
 waited=false
 for _ in $(seq 1 12); do
   status_json=$(curl -sS -m 5 "http://localhost:5274/api/admin/status" 2>/dev/null || echo "{}")
-  echo "$status_json" | grep -Eq '"(navidrome|slskd|ytDlpShim)":\{"ok":false' || break
+  echo "$status_json" | grep -Eq '"(navidrome|ytDlpShim)":\{"ok":false' || break
   [ "$waited" = true ] || echo -n "  waiting for the other services to start "
   waited=true
   echo -n "."
@@ -554,7 +509,6 @@ check_svc "Navidrome"  "navidrome"
 check_svc "Last.fm"    "lastfm"
 check_svc "yt-dlp shim" "ytDlpShim"
 check_svc "octo-sonic" "sonic"
-check_svc "slskd"      "slskd"
 if [ "${DOWNLOAD_SOURCE,,}" = "lidarr" ]; then
   check_svc "Lidarr" "lidarr"
 fi
@@ -605,11 +559,9 @@ echo "     up first; recommendations from Last.fm fill the rest. Tap one to hear
 if [ "${DOWNLOAD_SOURCE,,}" = "lidarr" ]; then
   echo "     the YouTube preview. Heart it to send its full album to Lidarr."
 else
-  echo "     the YouTube preview. Heart it to download via Soulseek."
+  echo "     the YouTube preview. Heart it to download it as an MP3."
 fi
 echo
-dim "  slskd web UI:    http://<this-host>:5030    (SLSKD_USERNAME and SLSKD_PASSWORD in .env; or Open slskd on the dashboard)"
-dim "  Sharing:         forward TCP 50300 to this machine; the dashboard's Soulseek page tests it"
 if [ "$STARTER" = true ]; then
   dim "  Navidrome:       http://<this-host>:4533   (add people, change passwords; music apps use 5274)"
 fi

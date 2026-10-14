@@ -29,7 +29,7 @@ use super::i_local_library_service::{ParsedExternalId, ParsedSongId};
 use super::scan_wait::ScanHold;
 use crate::services::family::NavidromeAdmin;
 use crate::services::framework::DotnetDictionary;
-use crate::services::soulseek::ExternalIdRegistry;
+use crate::services::soulseek::{ExternalIdRegistry, SoulseekMetadataService};
 use crate::services::state_file;
 use crate::services::subsonic::NavidromeIdentityService;
 use crate::services::subsonic::navidrome_version::ServerInfo;
@@ -54,7 +54,7 @@ pub struct LocalSongMapping {
     #[serde(with = "datetime::utc")]
     pub downloaded_at: DateTime<Utc>,
 
-    /// Who delivered this file, when it came from Soulseek. Optional, so mappings
+    /// Who delivered this file, when an earlier version fetched it from a peer. Optional, so mappings
     /// written before this existed still load.
     pub source_peer: Option<String>,
     pub source_file: Option<String>,
@@ -438,13 +438,13 @@ impl ILocalLibraryService for LocalLibraryService {
     }
 
     fn parse_external_id(&self, id: &str) -> ParsedExternalId {
-        // First check the registry: IDs we generated for YouTube/Soulseek
-        // entries are pure base62 (no prefix) so they look identical to local
-        // Navidrome IDs to clients but we still know they're ours.
+        // First check the registry: IDs we generated for outside songs are pure base62 (no
+        // prefix) so they look identical to local Navidrome IDs to clients but we still know
+        // they're ours.
         if self.id_registry.lookup(id).is_some() {
             return (
                 true,
-                Some("soulseek".into()),
+                Some(SoulseekMetadataService::PROVIDER_NAME.into()),
                 Some("song".into()),
                 Some(id.to_string()),
             );

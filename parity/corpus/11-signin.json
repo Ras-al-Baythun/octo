@@ -47,7 +47,6 @@
     {"name": "out-get-lyrics-choices", "path": "/api/admin/lyrics/choices", "session": null},
     {"name": "out-get-radio-outcomes", "path": "/api/admin/radio-outcomes", "session": null},
     {"name": "out-get-sonic", "path": "/api/admin/sonic", "session": null},
-    {"name": "out-get-soulseek-sharing", "path": "/api/admin/soulseek/sharing", "session": null},
     {"name": "out-get-update", "path": "/api/admin/update", "session": null},
     {"name": "out-unknown-get", "path": "/api/admin/parity-not-a-route", "session": null},
     {"name": "out-unknown-nested", "path": "/api/admin/a/b/c", "session": null},
@@ -134,7 +133,6 @@
     {"name": "in-get-lyrics-candidates", "path": "/api/admin/lyrics/candidates", "backlog": "base"},
     {"name": "in-get-lyrics-choices", "path": "/api/admin/lyrics/choices", "backlog": "base"},
     {"name": "in-get-radio-outcomes", "path": "/api/admin/radio-outcomes", "backlog": "L"},
-    {"name": "in-get-soulseek-sharing", "path": "/api/admin/soulseek/sharing", "backlog": "E"},
     {"name": "in-get-update", "path": "/api/admin/update", "backlog": "base"}
   ]
 }

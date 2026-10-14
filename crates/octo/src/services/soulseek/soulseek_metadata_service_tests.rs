@@ -1,4 +1,4 @@
-//! Tests of the Soulseek metadata service, including the song lengths: the placeholder,
+//! Tests of the outside-song metadata service, including the song lengths: the placeholder,
 //! completing a song's length, and resolving the top durations.
 //!
 //! Deezer and the yt-dlp shim answer from wiremock servers the services are pointed at, and
@@ -793,7 +793,7 @@ async fn the_long_external_id_round_trips_and_a_bad_one_reads_as_nothing() {
 
     // GetSong falls back to the long form when the registry does not know the id.
     let h = build_service(Vec::new()).await;
-    let song = h.service.get_song("SOULSEEK", &id).await.expect("decoded");
+    let song = h.service.get_song("OUTSIDE", &id).await.expect("decoded");
     assert_eq!(song.title, "Hoppípolla?");
     assert_eq!(song.duration, Some(268));
     assert!(h.service.get_song("deezer", &id).await.is_none());
@@ -1106,7 +1106,7 @@ async fn get_song_with_no_length_of_its_own_takes_the_remembered_one() {
     // song read back by its id has none until the remembered one is applied.
     let song = fixture
         .service
-        .get_song("SOULSEEK", &row.id)
+        .get_song("OUTSIDE", &row.id)
         .await
         .expect("registered");
     assert_eq!(song.duration, None);
@@ -1536,7 +1536,7 @@ async fn get_song_an_unknown_length_is_looked_up_at_once_even_with_the_prewarm_l
     let row = fixture.search("Nobody", "Nothing").await;
     let mut song = fixture
         .service
-        .get_song("SOULSEEK", &row.id)
+        .get_song("OUTSIDE", &row.id)
         .await
         .expect("registered");
     assert_eq!(song.duration, None);
@@ -1583,7 +1583,7 @@ async fn get_song_an_unknown_length_keeps_the_video_a_play_pinned() {
         .you_tube_id = Some("vid-played".into());
     let mut song = fixture
         .service
-        .get_song("SOULSEEK", &row.id)
+        .get_song("OUTSIDE", &row.id)
         .await
         .expect("registered");
 

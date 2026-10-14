@@ -1,7 +1,7 @@
 //! The process and status actions: the service health dots (`status`), the library path chain
 //! (`library-status`), server discovery, Lidarr's choices and connection test, the restart, the
 //! test notification, the fetched-songs log, the hearted downloads, and the two recovery levers
-//! (clear rejected peers, clear the metadata caches).
+//! (clear the metadata caches).
 
 use std::time::Duration;
 
@@ -26,7 +26,6 @@ use crate::middleware::admin_sign_in_gate::{Caller, caller_of};
 use crate::services::admin::AdminCaller;
 use crate::services::admin::directory_browser::is_writable;
 use crate::services::http_client_factory::{connect_failure_message, timeout_message};
-use crate::services::soulseek::soulseek_link::ISoulseekLink;
 use crate::services::subsonic::subsonic_response_builder::acquisition_json;
 
 /// `GET /api/admin/discover-servers`: scans the local network for Subsonic/Navidrome servers so
@@ -215,17 +214,6 @@ async fn probe_navidrome(state: &AppState) -> ServiceProbe {
     }
 }
 
-async fn probe_slskd(state: &AppState) -> ServiceProbe {
-    if state.soulseek_link.is_off() {
-        return ServiceProbe::new(true, "Off. Optional.").unconfigured();
-    }
-    // slskd answering is not slskd able to search: it can be up and out of Soulseek.
-    let reading = state.soulseek_link.read(true).await;
-    let hold = state.settings.current().soulseek.effective_outage_hold_hours();
-    let (up, warning, detail) = octo_core::soulseek::soulseek_link::describe(reading.as_ref(), hold);
-    ServiceProbe::new(up, detail).warning(warning)
-}
-
 async fn probe_lidarr(state: &AppState) -> ServiceProbe {
     let settings = state.settings.current();
     let lidarr = &settings.lidarr;
@@ -356,7 +344,7 @@ fn round_trip_offset(now: chrono::DateTime<Utc>) -> String {
 }
 
 /// `GET /api/admin/status`: a quick health snapshot of each backing service, so the dashboard
-/// shows at a glance whether Octo can reach Navidrome, slskd, Lidarr, the yt-dlp shim, octo-sonic
+/// shows at a glance whether Octo can reach Navidrome, Lidarr, the yt-dlp shim, octo-sonic
 /// and Last.fm. Open without a sign-in, but then it answers only `ok` and `configured` per service
 /// (see [`anonymous_status`]).
 pub async fn get_status(State(state): State<AppState>, caller: Caller) -> Response {
@@ -372,9 +360,8 @@ pub async fn get_status(State(state): State<AppState>, caller: Caller) -> Respon
 
 /// Every service's probe, by name. They run in parallel: the total is the slowest, not the sum.
 async fn probe_all(state: &AppState) -> serde_json::Map<String, serde_json::Value> {
-    let (navidrome, slskd, lidarr, shim, sonic, lastfm) = tokio::join!(
+    let (navidrome, lidarr, shim, sonic, lastfm) = tokio::join!(
         probe_navidrome(state),
-        probe_slskd(state),
         probe_lidarr(state),
         probe_you_tube_shim(state),
         probe_sonic(state),
@@ -382,7 +369,6 @@ async fn probe_all(state: &AppState) -> serde_json::Map<String, serde_json::Valu
     );
     [
         ("navidrome", navidrome),
-        ("slskd", slskd),
         ("lidarr", lidarr),
         ("ytDlpShim", shim),
         ("sonic", sonic),
@@ -555,16 +541,6 @@ pub async fn restart(State(state): State<AppState>, caller: Option<Extension<Adm
         StatusCode::ACCEPTED,
         &json!({ "ok": true, "message": "restarting" }),
     )
-}
-
-/// `POST /api/admin/soulseek/rejected-peers/clear`: forgets every peer and file that download
-/// verification rejected. The recovery lever for a wrong denial: entries lapse on their own
-/// after 30 days, but a user watching a track stop being fetchable should not have to wait a
-/// month to find out whether this list is why.
-pub async fn clear_rejected_peers(State(state): State<AppState>) -> Response {
-    let cleared = state.rejected_peers.clear();
-    info!("Rejected-peer memory cleared by admin request ({cleared} entries)");
-    ok(&json!({ "cleared": cleared }))
 }
 
 /// `POST /api/admin/clear-metadata-cache`: drops every cached metadata answer and cover image.

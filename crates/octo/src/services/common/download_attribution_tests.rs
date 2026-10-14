@@ -109,7 +109,7 @@ fn enqueue_different_tracks_do_not_share_requesters() {
 fn history_entry_written_before_attribution_existed_still_loads() {
     let entry: DownloadHistoryEntry = serde_json::from_str(
         r#"{"Artist":"Portishead","Title":"Glory Box","Path":"/music/a.flac",
-            "Format":"FLAC","Source":"Soulseek","SizeBytes":1,"DownloadedAt":"2026-09-01T00:00:00Z"}"#,
+            "Format":"FLAC","Source":"Lidarr","SizeBytes":1,"DownloadedAt":"2026-09-01T00:00:00Z"}"#,
     )
     .expect("loads");
 

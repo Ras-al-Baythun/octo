@@ -1,4 +1,4 @@
-//! A heart through Lidarr keeps the promises a Soulseek heart does. What Lidarr imports goes
+//! A heart through Lidarr keeps the promises a YouTube heart does. What Lidarr imports goes
 //! through the download pipeline song by song, so it meets the same checks; a song already in the
 //! library is taken back out (an owned MP3 is queued for Better quality instead), a song removed
 //! with a library action stays removed, and the album's monitoring goes back to how it was. The
@@ -85,7 +85,7 @@ impl IDownloadService for Pipeline {
                 source_override,
                 upgrade_search
             ),
-            ("soulseek", false, true, Some(DownloadSource::Lidarr), false)
+            ("outside", false, true, Some(DownloadSource::Lidarr), false)
         );
         assert!(replacement.is_none());
         let title = self
@@ -246,7 +246,7 @@ impl Fixture {
             artist: "Massive Attack".into(),
             album: "Mezzanine".into(),
             track: Some(track),
-            external_provider: Some("soulseek".into()),
+            external_provider: Some("outside".into()),
             external_id: Some(self.id(title)),
             ..Default::default()
         };
@@ -254,9 +254,9 @@ impl Fixture {
         metadata
             .songs
             .lock()
-            .insert(("soulseek".into(), "teardrop-heart".into()), song("Teardrop", 1));
+            .insert(("outside".into(), "teardrop-heart".into()), song("Teardrop", 1));
         metadata.albums.lock().insert(
-            ("soulseek".into(), "mezzanine".into()),
+            ("outside".into(), "mezzanine".into()),
             Album {
                 title: "Mezzanine".into(),
                 artist: "Massive Attack".into(),
@@ -327,7 +327,7 @@ impl Fixture {
         self.lidarr
             .on_search(&[(1, "Angel", "FLAC"), (3, "Teardrop", "FLAC")]);
         let service = self.service(actions, 30);
-        within(service.try_acquire_album("soulseek", "mezzanine", true, Some("alice"))).await
+        within(service.try_acquire_album("outside", "mezzanine", true, Some("alice"))).await
     }
 
     fn taken(&self) -> Vec<String> {
@@ -458,7 +458,7 @@ async fn a_song_heart_lands_its_song_with_a_notice_and_the_rest_quietly() {
         .on_search(&[(1, "Angel", "FLAC"), (3, "Teardrop", "FLAC")]);
 
     let service = f.service(None, 30);
-    assert!(within(service.try_acquire_track("soulseek", "teardrop-heart", true, Some("alice"))).await);
+    assert!(within(service.try_acquire_track("outside", "teardrop-heart", true, Some("alice"))).await);
 
     assert_eq!(f.taken(), ["Angel", "Teardrop"]);
     assert!(!f.quiet("Teardrop"));
@@ -480,7 +480,7 @@ async fn nothing_arriving_in_time_is_a_miss_for_the_next_source() {
     let f = Fixture::new().await;
 
     let service = f.service(None, 1);
-    let landed = within(service.try_acquire_album("soulseek", "mezzanine", true, Some("alice"))).await;
+    let landed = within(service.try_acquire_album("outside", "mezzanine", true, Some("alice"))).await;
 
     assert!(!landed);
     assert!(f.taken.lock().is_empty());
@@ -496,14 +496,14 @@ async fn a_second_heart_on_the_same_album_joins_and_is_answered_too() {
     let first = {
         let service = service.clone();
         tokio::spawn(async move {
-            within(service.try_acquire_album("soulseek", "mezzanine", true, Some("alice"))).await
+            within(service.try_acquire_album("outside", "mezzanine", true, Some("alice"))).await
         })
     };
     until(|| f.lidarr.searches() == 1).await;
     let second = {
         let service = service.clone();
         tokio::spawn(async move {
-            within(service.try_acquire_album("soulseek", "mezzanine", true, Some("bob"))).await
+            within(service.try_acquire_album("outside", "mezzanine", true, Some("bob"))).await
         })
     };
     // Bob has joined the running job before Lidarr brings anything.
@@ -534,7 +534,7 @@ async fn a_heart_waits_for_an_upgrade_on_the_album() {
     let heart = {
         let service = service.clone();
         tokio::spawn(async move {
-            within(service.try_acquire_album("soulseek", "mezzanine", true, Some("alice"))).await
+            within(service.try_acquire_album("outside", "mezzanine", true, Some("alice"))).await
         })
     };
     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -552,8 +552,8 @@ async fn an_album_lidarr_does_not_know_is_a_plain_miss() {
     f.lidarr.set_knows_album(false);
 
     let service = f.service(None, 30);
-    assert!(!within(service.try_acquire_album("soulseek", "mezzanine", true, Some("alice"))).await);
-    assert!(!within(service.try_acquire_track("soulseek", "gone", true, None)).await);
+    assert!(!within(service.try_acquire_album("outside", "mezzanine", true, Some("alice"))).await);
+    assert!(!within(service.try_acquire_track("outside", "gone", true, None)).await);
     assert_eq!(f.lidarr.searches(), 0);
 }
 
@@ -606,7 +606,7 @@ async fn lidarrs_webhook_wakes_the_waiting_heart_at_once() {
     let heart = {
         let service = service.clone();
         tokio::spawn(async move {
-            within(service.try_acquire_album("soulseek", "mezzanine", true, Some("alice"))).await
+            within(service.try_acquire_album("outside", "mezzanine", true, Some("alice"))).await
         })
     };
     until(|| f.lidarr.searches() == 1).await;
@@ -629,7 +629,7 @@ async fn an_import_after_the_heart_stopped_waiting_is_still_taken() {
         .on_search(&[(1, "Angel", "FLAC"), (3, "Teardrop", "FLAC")]);
     f.lidarr.hold_imports();
     let service = f.service(None, 1);
-    assert!(!within(service.try_acquire_album("soulseek", "mezzanine", true, Some("alice"))).await);
+    assert!(!within(service.try_acquire_album("outside", "mezzanine", true, Some("alice"))).await);
     f.job_wound_up(true).await;
     assert!(f.pending.get(ALBUM_ID).is_some());
 
@@ -657,7 +657,7 @@ async fn a_late_import_takes_only_the_files_lidarr_names() {
         .on_search(&[(1, "Angel", "FLAC"), (3, "Teardrop", "FLAC")]);
     f.lidarr.hold_imports();
     let service = f.service(None, 1);
-    assert!(!within(service.try_acquire_album("soulseek", "mezzanine", true, Some("alice"))).await);
+    assert!(!within(service.try_acquire_album("outside", "mezzanine", true, Some("alice"))).await);
     f.job_wound_up(true).await;
     f.lidarr.release_imports();
 
@@ -687,7 +687,7 @@ async fn heart_gave_up_with_angel_owned(f: &Fixture) -> LidarrHeartAcquisitionSe
     f.lidarr.on_search(&[(3, "Teardrop", "FLAC")]);
     f.lidarr.hold_imports();
     let service = f.service(None, 1);
-    assert!(!within(service.try_acquire_album("soulseek", "mezzanine", true, Some("alice"))).await);
+    assert!(!within(service.try_acquire_album("outside", "mezzanine", true, Some("alice"))).await);
     f.job_wound_up(false).await;
     assert!(f.pending.get(ALBUM_ID).is_some());
     service
@@ -738,7 +738,7 @@ async fn a_late_import_never_deletes_through_lidarr() {
         .on_search(&[(1, "Angel", "FLAC"), (3, "Teardrop", "FLAC")]);
     f.lidarr.hold_imports();
     let service = f.service(None, 1);
-    assert!(!within(service.try_acquire_album("soulseek", "mezzanine", true, Some("alice"))).await);
+    assert!(!within(service.try_acquire_album("outside", "mezzanine", true, Some("alice"))).await);
     f.job_wound_up(true).await;
     // Teardrop is refused by the pipeline, Angel is already in the library.
     f.refused.lock().insert("Teardrop".into());
@@ -761,7 +761,7 @@ async fn a_late_import_of_part_of_the_album_keeps_it_listed_for_the_rest() {
     f.lidarr.on_search(&[(1, "Angel", "FLAC")]);
     f.lidarr.hold_imports();
     let service = f.service(None, 1);
-    assert!(!within(service.try_acquire_album("soulseek", "mezzanine", true, Some("alice"))).await);
+    assert!(!within(service.try_acquire_album("outside", "mezzanine", true, Some("alice"))).await);
     f.job_wound_up(true).await;
     f.lidarr.release_imports();
 
@@ -793,7 +793,7 @@ async fn a_late_import_while_the_album_is_busy_is_taken_once_it_is_free() {
     f.lidarr.hold_imports();
     let service = f.service(None, 1);
     service.set_claim_poll(Duration::from_millis(20));
-    assert!(!within(service.try_acquire_album("soulseek", "mezzanine", true, Some("alice"))).await);
+    assert!(!within(service.try_acquire_album("outside", "mezzanine", true, Some("alice"))).await);
     f.job_wound_up(true).await;
     f.lidarr.release_imports();
 

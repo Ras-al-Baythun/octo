@@ -14,7 +14,6 @@ using Octo.Services.Library;
 using Octo.Services.Local;
 using Octo.Services.Lyrics;
 using Octo.Services.Metadata;
-using Octo.Services.Soulseek;
 using Octo.Services.Tagging;
 using Octo.Services.Updates;
 using Octo.Services.Admin;
@@ -75,41 +74,10 @@ Type Nested(Type outer, string name) =>
     {
         new()
         {
-            Artist = "Sigur Rós", Title = "Svefn-g-englar", Album = "Ágætis byrjun",
-            Path = "/music/Sigur Rós/Ágætis byrjun/02 - Svefn-g-englar.flac", Format = "FLAC", Source = "Soulseek",
-            CoverArtUrl = "https://e-cdns-images.dzcdn.net/images/cover/0b5e5a0c3c1f/1000x1000-000000-80-0-0.jpg",
-            SizeBytes = 62914560, TranscodedFrom = null, Tagging = report,
-            DownloadedAt = U("2026-10-03T14:22:05.1234567Z").ToString("o"), RequestedBy = ["brandon", "anh"],
-            Key = "soulseek:Hq3k9ZpL2xW7mN1vB4cR8t",
-            Log =
-            [
-                new AcquisitionEvent(U("2026-10-03T14:20:00.0000000Z"), AcquisitionEventKinds.Queued, "Queued for brandon"),
-                new AcquisitionEvent(U("2026-10-03T14:20:31.5000000Z"), AcquisitionEventKinds.Found, "2 copies on Soulseek",
-                    "The best is FLAC 16-bit 44.1 kHz",
-                    [
-                        new AcquisitionCandidate("Soulseek", Peer: "sigur-fan", File: "Music\\Sigur Rós\\02 Svefn-g-englar.flac",
-                            Folder: "Music\\Sigur Rós", Format: "flac", BitDepth: 16, SampleRate: 44100, Size: 62914560,
-                            Length: 604, QueueLength: 0, FreeSlot: true, Speed: 1048576, Rank: 1),
-                        new AcquisitionCandidate("Soulseek", Peer: "mp3hoard", File: "svefn.mp3", Format: "mp3", BitRate: 320,
-                            Note: "A lossy copy"),
-                    ]),
-                new AcquisitionEvent(U("2026-10-03T14:22:05.0000000Z"), AcquisitionEventKinds.Done, "In the library"),
-            ],
-        },
-        new()
-        {
             Artist = "Queen", Title = "Don't Stop Me Now", Album = "",
             Path = "/music/Queen/Don't Stop Me Now/Don't Stop Me Now.mp3", Format = "MP3", Source = "YouTube",
             CoverArtUrl = null, SizeBytes = 8650752, TranscodedFrom = null, Tagging = null,
             DownloadedAt = U("2026-10-02T09:01:44.0807210Z").ToString("o"), RequestedBy = null,
-        },
-        new()
-        {
-            Artist = "宇多田ヒカル", Title = "First Love", Album = "First Love",
-            Path = "/music/宇多田ヒカル/First Love/01 - First Love.flac", Format = "FLAC", Source = "Soulseek",
-            CoverArtUrl = "https://is1-ssl.mzstatic.com/image/thumb/Music/v4/aa/bb/cc/source/100000x100000-999.jpg",
-            SizeBytes = 41203712, TranscodedFrom = "about 128 kbps MP3", Tagging = null,
-            DownloadedAt = U("2026-10-01T22:10:00.5000000Z").ToString("o"), RequestedBy = ["brandon"],
         },
     };
     // DownloadHistoryService.FileOptions: fields with no value are left out.
@@ -154,7 +122,7 @@ Type Nested(Type outer, string name) =>
                     {
                         Artist = "Múm", Title = "Green Grass of Tunnel", Album = "Finally We Are No One",
                         Genre = "Electronic", Duration = 241, Year = 2002, Score = 0.8734, Source = "lastfm-similar",
-                        ResolvedId = "7YzXwVu6TsRq5PoN4mLk3J", IsLocal = false, ExternalProvider = "soulseek",
+                        ResolvedId = "7YzXwVu6TsRq5PoN4mLk3J", IsLocal = false, ExternalProvider = "outside",
                         YouTubeId = "dQw4w9WgXcQ",
                     },
                     new LastFmRadioTrack
@@ -190,41 +158,31 @@ Type Nested(Type outer, string name) =>
     Write("lastfm-radio-state.json", JsonSerializer.Serialize(doc, new JsonSerializerOptions { WriteIndented = true }));
 }
 
-// ---------------------------------------------------------------- soulseek-holds.json
-{
-    var held = new List<HeldAcquisition>
-    {
-        new(HeldKind.Track, "soulseek", "Hq3k9ZpL2xW7mN1vB4cR8t", "brandon", U("2026-10-03T12:00:01.7654321Z")),
-        new(HeldKind.Album, "soulseek", "Ab9Cd8Ef7Gh6Ij5Kl4Mn3o", null, U("2026-10-03T12:05:30.0000000Z")),
-    };
-    Write("soulseek-holds.json", JsonSerializer.Serialize(held));
-}
-
 // ---------------------------------------------------------------- external-ids.json (real registry)
 {
     var path = P("external-ids.json");
     using (var registry = new ExternalIdRegistry(path))
     {
-        registry.Register(new SoulseekRouting
+        registry.Register(new ExternalRouting
         {
             Kind = RoutingKind.Album, Artist = "Sigur Rós", Album = "( )", ExternalAlbumId = "302127",
         });
-        registry.Register(new SoulseekRouting
+        registry.Register(new ExternalRouting
         {
             Kind = RoutingKind.Artist, Artist = "Simon & Garfunkel", ExternalArtistId = "1392",
         });
-        var song = registry.Register(new SoulseekRouting
+        var song = registry.Register(new ExternalRouting
         {
             Kind = RoutingKind.Song, YouTubeId = "kXYiU_JCYtU", Artist = "宇多田ヒカル", Title = "First Love",
             Album = "First Love", Duration = 257, Track = 1, DiscNumber = 1, TotalTracks = 12, Isrc = "JPTO09900010",
         });
         registry.RememberLength(song, 258, LengthSource.Deezer);
-        registry.Register(new SoulseekRouting
+        registry.Register(new ExternalRouting
         {
             Kind = RoutingKind.Song, Artist = "Eminem", Title = "Lose Yourself", Album = "8 Mile", ExternalAlbumId = "103248",
             ExplicitContent = 1,
         });
-        registry.Register(new SoulseekRouting
+        registry.Register(new ExternalRouting
         {
             Kind = RoutingKind.Song, Artist = "Eminem", Title = "Lose Yourself", Album = "8 Mile", ExternalAlbumId = "103249",
             ExplicitContent = 3, Version = "clean",
@@ -241,18 +199,6 @@ Type Nested(Type outer, string name) =>
     list.Add(New(saved, "60303AE22B998861BCE3B28F33EEC1BE758A213C86C93C076DBE9F558C11C752", "anh",
         U("2026-12-30T09:15:00.0012345Z")));
     Write("browse-sessions.json", JsonSerializer.Serialize(list, list.GetType()));
-}
-
-// ---------------------------------------------------------------- rejected-peers.json
-{
-    var entries = new List<RejectedPeerRegistry.Entry>
-    {
-        new("vinyl_rips_4u", @"@@abcde\Music\Björk\Homogenic\05 - Jóga.flac",
-            "AcoustID thinks this is Björk - Bachelorette", "Björk - Jóga", U("2026-10-03T16:12:44.5550000Z")),
-        new("peer<script>", @"@@xyz12\Shared\Queen\Don't Stop Me Now (Live).mp3",
-            "reported as the wrong song by brandon", "Queen - Don't Stop Me Now", U("2026-09-28T08:00:00.0000000Z")),
-    };
-    Write("rejected-peers.json", JsonSerializer.Serialize(entries));
 }
 
 // ---------------------------------------------------------------- genre-backfill.json
@@ -453,7 +399,7 @@ Type Nested(Type outer, string name) =>
         {
             NavidromeId = "nd-1a2b3c4d", Title = "Don't Stop Me Now", Artist = "Queen", Album = "Jazz", Suffix = "mp3",
             AttemptKey = "Queen/Jazz/12 - Don't Stop Me Now.mp3|8650752", RequestedBy = "brandon", Origin = "app",
-            State = UpgradeStates.Upgraded, Detail = "Replaced with a FLAC", AcquisitionKey = "soulseek:Hq3k9ZpL2xW7mN1vB4cR8t",
+            State = UpgradeStates.Upgraded, Detail = "Replaced with a FLAC", AcquisitionKey = "outside:Hq3k9ZpL2xW7mN1vB4cR8t",
             QueuedUtc = U("2026-10-03T10:00:00.0000000Z"), UpdatedUtc = U("2026-10-03T10:04:31.2500000Z"),
             StartedUtc = U("2026-10-03T10:00:02.0000000Z"),
             Result = new UpgradeResult
@@ -470,11 +416,7 @@ Type Nested(Type outer, string name) =>
             AttemptKey = null, RequestedBy = "anh", Origin = "page", State = UpgradeStates.Queued, Detail = null,
             AcquisitionKey = null, QueuedUtc = U("2026-10-03T11:00:00.1000000Z"), UpdatedUtc = U("2026-10-03T11:00:00.1000000Z"),
             StartedUtc = null, Result = null,
-            Pick = new PickedCopy
-            {
-                Source = "Soulseek", Peer = "bjork-archive", File = "Music\\Björk\\Homogenic\\05 Jóga.flac", Size = 41943040,
-                Format = "flac", BitRate = null, BitDepth = 24, SampleRate = 96000, Length = 305,
-            },
+            Pick = null,
         },
     };
     Write("upgrades.json", JsonSerializer.Serialize(jobs));
@@ -595,9 +537,9 @@ Type Nested(Type outer, string name) =>
 {
     var mappings = new Dictionary<string, LocalSongMapping>
     {
-        ["soulseek:7YzXwVu6TsRq5PoN4mLk3J"] = new()
+        ["outside:7YzXwVu6TsRq5PoN4mLk3J"] = new()
         {
-            ExternalProvider = "soulseek", ExternalId = "7YzXwVu6TsRq5PoN4mLk3J",
+            ExternalProvider = "outside", ExternalId = "7YzXwVu6TsRq5PoN4mLk3J",
             LocalPath = "/music/Sigur Rós/Ágætis byrjun/02 - Svefn-g-englar.flac", LocalSubsonicId = null,
             Title = "Svefn-g-englar", Artist = "Sigur Rós", Album = "Ágætis byrjun",
             DownloadedAt = U("2026-10-03T14:22:05.1234567Z"), SourcePeer = "vinyl_rips_4u",
@@ -625,7 +567,7 @@ Type Nested(Type outer, string name) =>
         [
             new Octo.Services.Local.LocalSongMapping
             {
-                ExternalProvider = "soulseek", ExternalId = "Hq3k9ZpL2xW7mN1vB4cR8t",
+                ExternalProvider = "outside", ExternalId = "Hq3k9ZpL2xW7mN1vB4cR8t",
                 LocalPath = "/music/Sigur Rós/Ágætis byrjun/02 - Svefn-g-englar.flac", LocalSubsonicId = "nd-8f7e6d5c",
                 Title = "Svefn-g-englar", Artist = "Sigur Rós", Album = "Ágætis byrjun",
                 DownloadedAt = U("2026-10-03T14:22:05.1234567Z"), SourcePeer = "sigur-fan",
@@ -690,8 +632,8 @@ Type Nested(Type outer, string name) =>
         new()
         {
             Owner = "anh", Key = "portishead|roads", Title = "Roads", Artist = "Portishead", Album = null, Seconds = null,
-            State = ImportTrackStates.NotFound, Detail = "No copy on Soulseek; tried again in two weeks.",
-            AcquisitionKey = "soulseek:Zz9Yy8Xx7Ww6Vv5Uu4Tt3s", LibraryId = null, Attempts = 2,
+            State = ImportTrackStates.NotFound, Detail = "No copy from the download source; tried again in two weeks.",
+            AcquisitionKey = "outside:Zz9Yy8Xx7Ww6Vv5Uu4Tt3s", LibraryId = null, Attempts = 2,
             QueuedUtc = U("2026-10-02T10:00:00.0000000Z"), UpdatedUtc = U("2026-10-03T10:00:00.7500000Z"),
             StartedUtc = U("2026-10-03T09:58:00.0000000Z"),
         },

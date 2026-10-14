@@ -179,7 +179,7 @@ fn external_routes_are_rehydrated_after_restart() {
     let track = &user.stations[0].tracks[0];
     let id = track.resolved_id.as_deref().expect("a route id");
     assert!(registry.lookup(id).is_some());
-    assert_eq!(track.external_provider.as_deref(), Some("soulseek"));
+    assert_eq!(track.external_provider.as_deref(), Some("outside"));
 }
 
 #[test]
@@ -356,14 +356,10 @@ fn the_fixture_survives_a_load_and_a_save() {
 #[test]
 fn playlist_serializer_has_json_xml_symmetry_and_read_only_metadata() {
     use octo_core::models::domain::Song;
-    use octo_core::settings::SubsonicSettings;
 
     use crate::services::subsonic::subsonic_response_builder::new_subsonic_response_builder;
 
-    let builder = new_subsonic_response_builder(
-        Arc::new(ExternalIdRegistry::in_memory()),
-        &SubsonicSettings::default(),
-    );
+    let builder = new_subsonic_response_builder(Arc::new(ExternalIdRegistry::in_memory()));
     let station = LastFmRadioStation {
         id: station_id("alice", "mix"),
         key: "mix".into(),

@@ -141,7 +141,7 @@ async fn owner_heart_downloads_even_if_a_member_owns_it() {
     let coordinator = chain.coordinator.clone();
     let running = tokio::spawn(async move {
         coordinator
-            .acquire_track_outcome("test", "1", Some("winters"), None, &AcquisitionTarget::Shared)
+            .acquire_track_outcome("test", "1", Some("winters"), &AcquisitionTarget::Shared)
             .await
     });
     let request = next_queued(&chain.queue)
@@ -168,7 +168,6 @@ async fn a_member_heart_counts_their_own_copy_and_never_anothers() {
             "test",
             "1",
             Some("alex"),
-            None,
             &AcquisitionTarget::Member("alex".into()),
         )
         .await
@@ -180,13 +179,7 @@ async fn a_member_heart_counts_their_own_copy_and_never_anothers() {
     let coordinator = chain.coordinator.clone();
     tokio::spawn(async move {
         coordinator
-            .acquire_track_outcome(
-                "test",
-                "1",
-                Some("sam"),
-                None,
-                &AcquisitionTarget::Member("sam".into()),
-            )
+            .acquire_track_outcome("test", "1", Some("sam"), &AcquisitionTarget::Member("sam".into()))
             .await
     });
     let request = next_queued(&chain.queue).await.expect("queued");
@@ -205,13 +198,7 @@ async fn member_chain_skips_lidarr() {
     let coordinator = chain.coordinator.clone();
     tokio::spawn(async move {
         coordinator
-            .acquire_track_outcome(
-                "test",
-                "2",
-                Some("sam"),
-                None,
-                &AcquisitionTarget::Member("sam".into()),
-            )
+            .acquire_track_outcome("test", "2", Some("sam"), &AcquisitionTarget::Member("sam".into()))
             .await
     });
     let request = next_queued(&chain.queue).await.expect("queued");
@@ -221,7 +208,7 @@ async fn member_chain_skips_lidarr() {
     // The owner's chain still starts with Lidarr.
     chain
         .coordinator
-        .acquire_track_outcome("test", "3", Some("winters"), None, &AcquisitionTarget::Shared)
+        .acquire_track_outcome("test", "3", Some("winters"), &AcquisitionTarget::Shared)
         .await
         .expect("ran");
     assert_eq!(chain.lidarr.calls(), 1);
@@ -308,7 +295,7 @@ async fn family_off_plays_and_hearts_as_always() {
     // The file under the members folder is just the library's.
     let owner = chain
         .coordinator
-        .acquire_track_outcome("test", "1", Some("winters"), None, &AcquisitionTarget::Shared)
+        .acquire_track_outcome("test", "1", Some("winters"), &AcquisitionTarget::Shared)
         .await
         .expect("ran");
     assert_eq!(owner, TrackOutcome::AlreadyThere);
@@ -322,7 +309,7 @@ async fn family_turned_off_never_counts_a_members_own_copy_as_the_librarys() {
     let coordinator = chain.coordinator.clone();
     let owner = tokio::spawn(async move {
         coordinator
-            .acquire_track_outcome("test", "1", Some("winters"), None, &AcquisitionTarget::Shared)
+            .acquire_track_outcome("test", "1", Some("winters"), &AcquisitionTarget::Shared)
             .await
     });
     // Alex's library is still there, so the shared library does not have the song: it is fetched.

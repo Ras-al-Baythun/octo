@@ -71,14 +71,8 @@ impl IDownloadService for UpgradeDownloads {
             force_permanent,
             source_override,
             upgrade_search,
-        ) == (
-            "soulseek",
-            "id-1",
-            false,
-            true,
-            Some(DownloadSource::Soulseek),
-            true,
-        ) {
+        ) == ("outside", "id-1", false, true, Some(DownloadSource::Lidarr), true)
+        {
             Ok("/music/a.flac".to_string())
         } else {
             anyhow::bail!("not set up")
@@ -139,12 +133,12 @@ async fn the_worker_hands_the_source_and_upgrade_search_to_the_download() {
     let stopping = CancellationToken::new();
     let running = tokio::spawn(worker.run(stopping.clone()));
     let completion = queue.enqueue(
-        "soulseek",
+        "outside",
         "id-1",
         true,
         false,
         true,
-        Some(DownloadSource::Soulseek),
+        Some(DownloadSource::Lidarr),
         true,
         None,
         true,
@@ -315,22 +309,6 @@ async fn it_waits_while_a_heart_is_queued_or_running() {
 }
 
 #[tokio::test]
-async fn during_a_soulseek_outage_no_song_is_tried_and_the_run_is_not_spent() {
-    let store = Arc::new(QualityUpgradeStore::new());
-    let (w, calls) = worker(7, true, Some(store.clone()));
-    w.configure(|s| s.soulseek_offline = Arc::new(|| async { true }.boxed()));
-
-    assert_eq!(w.tick().await, Tick::Offline);
-    assert_eq!(calls.apply.load(Ordering::SeqCst), 0);
-    assert!(store.snapshot().last_run_utc.is_none());
-
-    // Back online, the same tick runs as normal.
-    w.configure(|s| s.soulseek_offline = Arc::new(|| async { false }.boxed()));
-    assert_eq!(w.tick().await, Tick::Ran);
-    assert_eq!(calls.apply.load(Ordering::SeqCst), 1);
-}
-
-#[tokio::test]
 async fn when_navidrome_cannot_list_the_library_the_weeks_run_is_not_spent() {
     let store = Arc::new(QualityUpgradeStore::new());
     let (w, calls) = worker(7, true, Some(store.clone()));
@@ -446,7 +424,7 @@ fn why_off_names_the_first_missing_piece() {
     assert_eq!(QualityUpgradeWorker::acting_user(&on).as_deref(), Some("alice"));
     assert_eq!(
         QualityUpgradeWorker::why_off(&on, true, false),
-        Some("Better quality has no source set up: it needs slskd or Lidarr.")
+        Some("Better quality has no source set up: it needs Lidarr.")
     );
     assert_eq!(
         QualityUpgradeWorker::why_off(&on, false, true),

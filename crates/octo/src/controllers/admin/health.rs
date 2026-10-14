@@ -619,7 +619,7 @@ async fn preview(State(state): State<AppState>, request: Request) -> Response {
                     None
                 } else {
                     Some(can.why.clone().unwrap_or_else(|| {
-                        "Turn on the Better quality action under Library actions, and set up Soulseek or Lidarr."
+                        "Turn on the Better quality action under Library actions, and set up Lidarr."
                             .to_string()
                     }))
                 },

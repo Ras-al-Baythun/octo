@@ -305,7 +305,7 @@ async fn forget_mapping_drops_the_path_ignoring_case() {
     let f = Fixture::new().await;
     for (id, name) in [("1", "one.flac"), ("2", "two.flac"), ("3", "three.flac")] {
         f.service
-            .register_downloaded_song(&song(id, name, Some("soulseek"), Some(id)), &f.path(name))
+            .register_downloaded_song(&song(id, name, Some("outside"), Some(id)), &f.path(name))
             .await
             .expect("registered");
     }
@@ -325,7 +325,7 @@ async fn forget_mapping_drops_the_path_ignoring_case() {
     assert!(f.service.forget_mapping("  ").await.expect("nothing").is_empty());
     f.service
         .register_downloaded_song(
-            &song("4", "four", Some("soulseek"), Some("4")),
+            &song("4", "four", Some("outside"), Some("4")),
             &f.path("four.flac"),
         )
         .await
@@ -337,7 +337,7 @@ async fn forget_mapping_drops_the_path_ignoring_case() {
         .filter(|line| line.starts_with("  \""))
         .map(|line| line.trim().split('"').nth(1).unwrap_or_default())
         .collect();
-    assert_eq!(keys, ["soulseek:1", "soulseek:4", "soulseek:3"]);
+    assert_eq!(keys, ["outside:1", "outside:4", "outside:3"]);
 }
 
 /// One match by tags, however they are written; none when two files match, or when the file
@@ -347,7 +347,7 @@ async fn find_mapping_by_tags_answers_only_an_unambiguous_file() {
     let f = Fixture::new().await;
     let first = f.path("Too Good.flac");
     std::fs::write(&first, [1]).expect("write");
-    let mut too_good = song("1", "Too Good (feat. Rihanna)", Some("soulseek"), Some("1"));
+    let mut too_good = song("1", "Too Good (feat. Rihanna)", Some("outside"), Some("1"));
     too_good.artist = "Drake".into();
     too_good.album = "Views".into();
     f.service

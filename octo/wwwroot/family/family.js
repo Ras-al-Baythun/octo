@@ -69,7 +69,7 @@
       { key: 'addToLibrary', title: 'A heart on a song from outside the library', help: 'What happens when they heart a song Octo found elsewhere.', kind: 'choice',
         options: [['Direct', 'Add it to their library'], ['Request', 'Save it; they can ask for a copy'], ['SaveOnly', 'Save it only']] },
       { key: 'requestQuality', title: 'Best copy they can ask for', help: 'The highest quality their requests fetch.', kind: 'choice',
-        options: [['Best', 'Best there is'], ['Flac', 'FLAC'], ['Mp3', 'MP3']] },
+        options: [['Best', 'Best there is'], ['Mp3', 'MP3']] },
       { key: 'autoApprove', title: 'Approve their requests at once', help: 'Off means each request waits for you.', kind: 'switch' },
       { key: 'instantFromFamily', title: 'Add songs the family already has at once', help: 'No download and no extra space on disk.', kind: 'switch' },
       { key: 'importPlaylists', title: 'Import playlists', help: 'From Spotify and other services.', kind: 'switch' }
@@ -112,7 +112,7 @@
   };
 
   function qualityWord(q) {
-    return q === 'Flac' ? 'FLAC' : q === 'Mp3' ? 'MP3' : 'Best quality';
+    return q === 'Mp3' ? 'MP3' : 'Best quality';
   }
 
   function badge(text, tone) {
@@ -157,7 +157,7 @@
     else if (a.addToLibrary === 'Request') add(true, 'A heart on a song from outside the library saves it, and you can ask for a copy.');
     else add(true, 'A heart on a song from outside the library saves it to play any time.');
     if (a.addToLibrary !== 'SaveOnly') {
-      add(true, 'You can ask for ' + (a.requestQuality === 'Best' ? 'the best copy there is' : a.requestQuality === 'Flac' ? 'FLAC copies' : 'MP3 copies') +
+      add(true, 'You can ask for ' + (a.requestQuality === 'Best' ? 'the best copy there is' : 'MP3 copies') +
         (a.autoApprove ? ', and requests are approved at once.' : '; each request waits for approval.'));
     }
     if (a.streamCap > 0) add(true, 'Songs stream at up to ' + a.streamCap + ' kbps at home.');
@@ -911,8 +911,8 @@
 
   function askSheet(song) {
     var max = (session.abilities && session.abilities.requestQuality) || 'Best';
-    var rank = { Mp3: 0, Flac: 1, Best: 2 };
-    var options = [['Best', 'Best there is'], ['Flac', 'FLAC'], ['Mp3', 'MP3']].filter(function (o) { return rank[o[0]] <= rank[max]; });
+    var rank = { Mp3: 0, Best: 1 };
+    var options = [['Best', 'Best there is'], ['Mp3', 'MP3']].filter(function (o) { return rank[o[0]] <= rank[max]; });
     var quality = options[0][0];
     var send = el('button', { class: 'btn btn-primary', type: 'button', onclick: async function () {
       var reply = await api('POST', '/me/requests', { id: song.id, quality: quality });
@@ -935,9 +935,6 @@
     }
     if (options.cancel && request.state === 'Pending') {
       side.appendChild(el('button', { class: 'btn btn-sm btn-ghost', type: 'button', onclick: function () { options.cancel(request); } }, 'Cancel'));
-    }
-    if (options.retry && request.state === 'Failed' && request.quality === 'Flac') {
-      side.appendChild(el('button', { class: 'btn btn-sm', type: 'button', onclick: function () { options.retry(request); } }, 'Try MP3'));
     }
     var meta = [request.artist, request.album].filter(Boolean).join(' · ');
     var who = options.decide ? request.displayName + ' asked ' + F.ago(request.created).toLowerCase() : 'Asked ' + F.ago(request.created).toLowerCase();
@@ -966,11 +963,6 @@
         var answer = await api('DELETE', '/me/requests/' + encodeURIComponent(r.id));
         if (!answer.ok) return F.toast(F.errorOf(answer), true);
         F.toast('Canceled');
-        viewRequests(main);
-      }, retry: async function (r) {
-        var answer = await api('POST', '/me/requests', { id: r.target, quality: 'Mp3' });
-        if (!answer.ok) return F.toast(F.errorOf(answer), true);
-        F.toast(answer.data.state === 'Pending' ? 'Asked for an MP3. You will hear back.' : 'Asked for an MP3');
         viewRequests(main);
       } }));
     });

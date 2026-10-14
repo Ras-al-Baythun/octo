@@ -19,7 +19,7 @@ diverged, saying why. Don't silently "fix" anything.
 
 | Crate | Holds | C# sources |
 |---|---|---|
-| `octo-core` | `config` and `json` (done). Also `settings`, `models`, and the pure logic: `common`, `tagging`, `lyrics` (text/identity/choices), `metadata` (genre normalizer, accept-language), `fingerprint` (comparers, verification types), `soulseek` (candidate matching, search profile, song length), `updates` (release version), `validation` | `Models/**`, and the pure parts of `Services/**` |
+| `octo-core` | `config` and `json` (done). Also `settings`, `models`, and the pure logic: `common`, `tagging`, `lyrics` (text/identity/choices), `metadata` (genre normalizer, accept-language), `fingerprint` (comparers, verification types), `updates` (release version), `validation` | `Models/**`, and the pure parts of `Services/**` |
 | `octo-media` | `tags` (lofty), `audio` (ffmpeg/fpcalc: loudness, spectrum, fingerprint), `cover` (list-cover rendering, cover image files) | `Services/Audio`, `Services/Fingerprint/{AudioFingerprinter,SpectrumAnalyzer}`, `Services/Common/TagWriterExtras`, `Services/CoverArt/{CoverBook,CoverPainter,CoverLayout,CoverFonts,CoverColours,CoverBackgrounds,CoverVeil,CoverImage,CoverFiles}` |
 | `octo-subsonic` | The Subsonic wire format: the XML/JSON response model, request parsing, credentials | `Services/Subsonic/{SubsonicRequestParser,SubsonicCredential}`, and the format-only parts of `SubsonicResponseBuilder` |
 | `octo` | Everything with I/O or service wiring: HTTP clients, stores, workers, the acquisition pipeline, controllers, middleware, `main` | the rest |

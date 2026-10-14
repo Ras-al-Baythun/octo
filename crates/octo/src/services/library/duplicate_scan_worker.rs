@@ -200,7 +200,7 @@ pub struct DuplicateScanWorker {
     queue: Arc<NoticeQueue>,
     identity: NavidromeIdentityService,
     http: reqwest::Client,
-    /// The Subsonic, library action and Soulseek settings, read at use.
+    /// The Subsonic, library action and download settings, read at use.
     settings: Arc<SettingsStore>,
     resolver: Option<Arc<NavidromeSongPathResolver>>,
     spectrum: Option<Arc<SpectrumAnalyzer>>,
@@ -365,7 +365,7 @@ impl DuplicateScanWorker {
         let (tracks, complete) = self.walk().await?;
         let (tracks, complete) = self.shared_only(tracks, complete);
         let mut groups = Self::find_groups(&tracks);
-        let detect = self.settings.current().soulseek.detect_transcodes;
+        let detect = self.settings.current().downloads.detect_transcodes;
         if self.resolver.is_some() && self.spectrum.is_some() && detect {
             let decoded = AtomicUsize::new(0);
             groups = Self::check_transcodes(groups, |track| {
@@ -583,7 +583,7 @@ impl DuplicateScanWorker {
         let timeout = self
             .settings
             .current()
-            .soulseek
+            .downloads
             .effective_transcode_check_timeout_seconds();
         let report = spectrum.analyze(Path::new(&file.absolute_path), timeout).await;
         // Unknown from a timeout or a missing ffmpeg is not remembered, so it is asked again.

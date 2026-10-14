@@ -644,7 +644,7 @@ impl AcquisitionTracker {
 
     /// A transfer started or moved on. Any figure may be missing; progress comes from the bytes
     /// when both are known, otherwise from the percentage. Nothing moved yet reads as unknown
-    /// rather than zero: slskd reports a transfer in progress before its first byte, and a
+    /// rather than zero: a source reports a transfer in progress before its first byte, and a
     /// ring drawn at 0% looks like a download that died.
     pub fn transfer(
         &self,
@@ -664,9 +664,7 @@ impl AcquisitionTracker {
                     .or_else(|| entry.source.clone());
                 let text = match (&from, &entry.peer) {
                     (None, _) => "Downloading".to_string(),
-                    (Some(from), Some(who)) if from == "Soulseek" => {
-                        format!("Downloading from {from} ({who})")
-                    }
+                    (Some(from), Some(who)) => format!("Downloading from {from} ({who})"),
                     (Some(from), _) => format!("Downloading from {from}"),
                 };
                 let size = bytes_total.filter(|total| *total > 0).map(size_text);

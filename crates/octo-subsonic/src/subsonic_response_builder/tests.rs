@@ -10,7 +10,7 @@ use octo_core::lyrics::lyrics_models::LyricsResult;
 use octo_core::models::domain::{Album, Artist, Song};
 use octo_core::models::radio::{LastFmRadioStation, LastFmRadioTrack};
 use octo_core::models::subsonic::ExternalPlaylist;
-use octo_core::settings::{LibraryActionSettings, SubsonicSettings};
+use octo_core::settings::LibraryActionSettings;
 use octo_core::soulseek::SoulseekRouting;
 use serde_json::{Value, json};
 
@@ -34,17 +34,7 @@ impl IdRegistry for TestIds {
 const NS: Option<&str> = Some(SUBSONIC_NAMESPACE);
 
 fn builder() -> SubsonicResponseBuilder {
-    builder_with(false)
-}
-
-fn builder_with(wait_for_lossless: bool) -> SubsonicResponseBuilder {
-    SubsonicResponseBuilder::new(
-        Arc::new(TestIds),
-        &SubsonicSettings {
-            wait_for_lossless_on_play: wait_for_lossless,
-            ..Default::default()
-        },
-    )
+    SubsonicResponseBuilder::new(Arc::new(TestIds))
 }
 
 fn json_of(reply: &SubsonicReply) -> Value {
@@ -314,30 +304,20 @@ fn external_song() -> Song {
         artist: "Massive Attack".into(),
         duration: Some(330),
         is_local: false,
-        external_provider: Some("soulseek".into()),
+        external_provider: Some("outside".into()),
         external_id: Some("abc123".into()),
         ..Default::default()
     }
 }
 
+/// An outside song streams from YouTube, and the row says so: declaring anything else is the
+/// exact mismatch that leaves players stuck on "loading".
 #[test]
-fn external_song_declares_lossy_when_not_waiting_for_lossless() {
-    let row = builder_with(false).convert_song_to_json(&external_song());
+fn external_song_declares_the_lossy_stream() {
+    let row = builder().convert_song_to_json(&external_song());
     assert_eq!(row["suffix"], "m4a");
     assert_eq!(row["contentType"], "audio/mp4");
     assert_eq!(row["bitRate"], 128);
-}
-
-/// With the wait enabled, /rest/stream serves the fetched FLAC under this same id,
-/// so the row has to say so. Declaring m4a here is the exact mismatch that leaves
-/// players stuck on "loading".
-#[test]
-fn external_song_declares_lossless_when_waiting_for_lossless() {
-    let row = builder_with(true).convert_song_to_json(&external_song());
-    assert_eq!(row["suffix"], "flac");
-    assert_eq!(row["contentType"], "audio/flac");
-    // A FLAC's rate is unknown until it is fetched, so none is claimed.
-    assert!(!row.contains_key("bitRate"));
 }
 
 /// `TestIds` that also knows the stream of some songs, and notes the ones asked about.
@@ -372,14 +352,8 @@ impl IdRegistry for StreamIds {
     }
 }
 
-fn builder_over(ids: Arc<StreamIds>, wait_for_lossless: bool) -> SubsonicResponseBuilder {
-    SubsonicResponseBuilder::new(
-        ids,
-        &SubsonicSettings {
-            wait_for_lossless_on_play: wait_for_lossless,
-            ..Default::default()
-        },
-    )
+fn builder_over(ids: Arc<StreamIds>) -> SubsonicResponseBuilder {
+    SubsonicResponseBuilder::new(ids)
 }
 
 fn known_stream(itag: &str, ext: &str, size: u64, bit_rate: Option<i32>) -> Arc<StreamIds> {
@@ -400,7 +374,7 @@ fn known_stream(itag: &str, ext: &str, size: u64, bit_rate: Option<i32>) -> Arc<
 #[test]
 fn an_outside_song_with_a_known_stream_carries_its_true_size_in_json_and_xml() {
     let ids = known_stream("140", "m4a", 6_755_585, Some(129));
-    let builder = builder_over(ids.clone(), false);
+    let builder = builder_over(ids.clone());
     let row = builder.convert_song_to_json(&external_song());
     assert_eq!(row["size"], 6_755_585);
     assert_eq!(row["suffix"], "m4a");
@@ -420,14 +394,14 @@ fn an_outside_song_with_a_known_stream_carries_its_true_size_in_json_and_xml() {
 
 #[test]
 fn an_outside_song_served_as_opus_says_so() {
-    let builder = builder_over(known_stream("251", "webm", 7_012_345, Some(160)), false);
+    let builder = builder_over(known_stream("251", "webm", 7_012_345, Some(160)));
     let row = builder.convert_song_to_json(&external_song());
     assert_eq!(row["size"], 7_012_345);
     assert_eq!(row["suffix"], "webm");
     assert_eq!(row["contentType"], "audio/webm");
     assert_eq!(row["bitRate"], 160);
 
-    let builder = builder_over(known_stream("251", "webm", 7_012_345, None), false);
+    let builder = builder_over(known_stream("251", "webm", 7_012_345, None));
     assert!(
         !builder
             .convert_song_to_json(&external_song())
@@ -438,7 +412,7 @@ fn an_outside_song_served_as_opus_says_so() {
 #[test]
 fn an_outside_song_without_a_known_stream_has_no_size_and_is_asked_about() {
     let ids = Arc::new(StreamIds::default());
-    let row = builder_over(ids.clone(), false).convert_song_to_json(&external_song());
+    let row = builder_over(ids.clone()).convert_song_to_json(&external_song());
     assert!(!row.contains_key("size"));
     assert_eq!(row["suffix"], "m4a");
     assert_eq!(
@@ -452,14 +426,14 @@ fn an_outside_song_without_a_known_stream_has_no_size_and_is_asked_about() {
 #[test]
 fn every_outside_row_is_counted_as_listed_sized_or_not() {
     let sized = known_stream("140", "m4a", 6_755_585, Some(129));
-    builder_over(sized.clone(), false).convert_song_to_json(&external_song());
+    builder_over(sized.clone()).convert_song_to_json(&external_song());
     assert_eq!(
         *sized.listed.lock().expect("not poisoned"),
         vec!["abc123".to_string()]
     );
 
     let unsized_ids = Arc::new(StreamIds::default());
-    builder_over(unsized_ids.clone(), false).convert_song_to_xml(&external_song(), NS);
+    builder_over(unsized_ids.clone()).convert_song_to_xml(&external_song(), NS);
     assert_eq!(
         *unsized_ids.listed.lock().expect("not poisoned"),
         vec!["abc123".to_string()]
@@ -480,7 +454,7 @@ fn an_outside_song_with_measured_loudness_sends_its_replay_gain() {
         },
     );
     let ids = Arc::new(ids);
-    let builder = builder_over(ids.clone(), false);
+    let builder = builder_over(ids.clone());
     let row = builder.convert_song_to_json(&external_song());
     assert_eq!(
         row["replayGain"],
@@ -495,33 +469,19 @@ fn an_outside_song_with_measured_loudness_sends_its_replay_gain() {
     assert_eq!(gain.attribute("trackPeak"), Some("1.135011"));
 
     // Not measured yet: the empty object every row carries.
-    let row = builder_over(Arc::new(StreamIds::default()), false).convert_song_to_json(&external_song());
-    assert_eq!(row["replayGain"], json!({}));
-    // Waiting for lossless: the FLAC is not the stream that was measured.
-    let row = builder_over(ids, true).convert_song_to_json(&external_song());
+    let row = builder_over(Arc::new(StreamIds::default())).convert_song_to_json(&external_song());
     assert_eq!(row["replayGain"], json!({}));
 }
 
 #[test]
-fn a_lossless_wait_never_sends_a_size_even_when_the_stream_is_known() {
-    let ids = known_stream("140", "m4a", 6_755_585, Some(129));
-    let row = builder_over(ids.clone(), true).convert_song_to_json(&external_song());
-    assert!(!row.contains_key("size"));
-    assert_eq!(row["suffix"], "flac");
-    assert!(ids.wanted.lock().expect("not poisoned").is_empty());
-}
-
-#[test]
-fn local_song_always_declares_flac_regardless_of_setting() {
+fn local_song_always_declares_flac() {
     let local = Song {
         is_local: true,
         ..external_song()
     };
-    for waiting in [false, true] {
-        let row = builder_with(waiting).convert_song_to_json(&local);
-        assert_eq!(row["suffix"], "flac", "waiting {waiting}");
-        assert_eq!(row["bitRate"], 1411, "waiting {waiting}");
-    }
+    let row = builder().convert_song_to_json(&local);
+    assert_eq!(row["suffix"], "flac");
+    assert_eq!(row["bitRate"], 1411);
 }
 
 // ---- ISRCs: OpenSubsonic's isrc is a list, in both formats ---------------------------
@@ -1296,9 +1256,9 @@ fn library_actions_offer_what_is_enabled() {
     let off = LibraryActionSettings::default();
     assert_eq!(
         builder()
-            .create_library_actions_response(&off, Some("admin"), 1, true, "Soulseek", false, false, false)
+            .create_library_actions_response(&off, Some("admin"), 1, true, "Lidarr", false, false, false)
             .text(),
-        r#"{"subsonic-response":{"status":"ok","version":"1.16.1","type":"octo","openSubsonic":true,"libraryActions":{"enabled":false,"allowed":false,"dryRun":true,"actions":[],"admin":false,"keepDays":30,"parallel":1,"upgradeSource":"Soulseek"}}}"#
+        r#"{"subsonic-response":{"status":"ok","version":"1.16.1","type":"octo","openSubsonic":true,"libraryActions":{"enabled":false,"allowed":false,"dryRun":true,"actions":[],"admin":false,"keepDays":30,"parallel":1,"upgradeSource":"Lidarr"}}}"#
     );
     let mut on = LibraryActionSettings {
         enabled: true,
@@ -1353,9 +1313,8 @@ fn library_actions_offer_what_is_enabled() {
             "restore"
         ])
     );
-    let json = json_of(
-        &builder().create_library_actions_response(&off, None, 1, false, "Soulseek", true, true, true),
-    );
+    let json =
+        json_of(&builder().create_library_actions_response(&off, None, 1, false, "Lidarr", true, true, true));
     assert_eq!(
         json["subsonic-response"]["libraryActions"]["actions"],
         json!(["retag", "joinAlbum", "lookup", "undo", "restore", "cover"])
@@ -1391,7 +1350,7 @@ fn wrong_lyrics_and_wrong_cover_are_offered_only_when_switched_on() {
             Some("alice"),
             1,
             false,
-            "Soulseek",
+            "Lidarr",
             false,
             false,
             false,

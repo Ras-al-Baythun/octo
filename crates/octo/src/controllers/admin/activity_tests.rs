@@ -1,6 +1,6 @@
 //! The dashboard's progress toasts read every job through one shape. Each job's running, just
 //! finished and long finished states, and the gaps a page used to miss (a run accepted but not
-//! yet Running, a rescan slskd has not started yet). Then the views of Find songs, the Sharing
+//! yet Running). Then the views of Find songs, the Sharing
 //! card, the imports and Library health, and the endpoint itself.
 
 use axum::http::{Method, StatusCode};
@@ -252,7 +252,7 @@ fn a(
         artist: Some("Frank Ocean".into()),
         title: Some(title.into()),
         album: Some("Blonde".into()),
-        source: Some("Soulseek".into()),
+        source: Some("Lidarr".into()),
         state,
         progress,
         started_at: now() - TimeDelta::minutes(1),
@@ -334,60 +334,7 @@ fn downloads_one_item_while_moving_then_what_landed() {
     );
 }
 
-fn report(scanning: bool, failed: bool, progress: Option<f64>, files: Option<i64>) -> RescanReport {
-    RescanReport {
-        scanning,
-        scan_progress: progress,
-        scan_failed: failed,
-        files,
-    }
-}
-
-#[test]
-fn rescan_starting_then_scanning_then_done() {
-    let asked = now() - TimeDelta::seconds(3);
-    let starting = rescan(&report(false, false, None, None), asked, now());
-    assert_eq!(
-        (starting.state, starting.detail.as_deref()),
-        ("running", Some("Starting"))
-    );
-    let scanning = rescan(
-        &report(true, false, Some(0.4), None),
-        now() - TimeDelta::minutes(1),
-        now(),
-    );
-    assert_eq!((scanning.state, scanning.fraction), ("running", Some(0.4)));
-    let done = rescan(
-        &report(false, false, None, Some(12000)),
-        now() - TimeDelta::minutes(2),
-        now(),
-    );
-    assert_eq!(
-        (done.state, done.detail.as_deref()),
-        ("done", Some("12,000 files shared"))
-    );
-    assert_eq!(
-        rescan(
-            &report(false, true, None, None),
-            now() - TimeDelta::minutes(2),
-            now()
-        )
-        .state,
-        "failed"
-    );
-}
-
 // ---- The job views and the endpoint ------------------------------------------------------
-
-/// The rescan's id is the request's time in ticks, 100-nanosecond steps since 0001-01-01
-/// (`share-rescan:639270...`).
-#[test]
-fn rescan_id_is_the_request_in_ticks() {
-    let asked = Utc.with_ymd_and_hms(2026, 10, 8, 0, 35, 53).unwrap() + TimeDelta::nanoseconds(286_095_900);
-    let item = rescan(&report(false, false, None, None), asked, asked);
-    assert_eq!(item.id, "share-rescan:639270165532860959");
-    assert_eq!(item.started_utc, Some(asked));
-}
 
 fn look(state: &str, copies: usize, sources: &[(&str, &str)], updated: DateTime<Utc>) -> FindLook {
     FindLook {
@@ -401,7 +348,7 @@ fn look(state: &str, copies: usize, sources: &[(&str, &str)], updated: DateTime<
             .collect(),
         started_at: now() - TimeDelta::seconds(30),
         updated_at: updated,
-        error: (state == "failed").then(|| "Soulseek is not answering.".to_string()),
+        error: (state == "failed").then(|| "Lidarr is not answering.".to_string()),
     }
 }
 
@@ -412,9 +359,9 @@ fn find_running_then_found_then_gone() {
             "searching",
             0,
             &[
-                ("Soulseek", "searching"),
                 ("YouTube", "searching"),
-                ("Lidarr", "off"),
+                ("Lidarr", "searching"),
+                ("Deezer", "off"),
             ],
             now(),
         )],
@@ -425,13 +372,9 @@ fn find_running_then_found_then_gone() {
         (asking.id.as_str(), asking.title.as_str(), asking.state),
         ("find:f1", "Finding copies of Nights", "running")
     );
-    assert_eq!(asking.detail.as_deref(), Some("Asking Soulseek and YouTube"));
+    assert_eq!(asking.detail.as_deref(), Some("Asking YouTube and Lidarr"));
 
-    let some = find(
-        &[look("searching", 1, &[("Soulseek", "searching")], now())],
-        now(),
-    )
-    .expect("an item");
+    let some = find(&[look("searching", 1, &[("Lidarr", "searching")], now())], now()).expect("an item");
     assert_eq!(some.detail.as_deref(), Some("1 copy so far"));
 
     let done = find(&[look("done", 3, &[], now() - TimeDelta::seconds(5))], now()).expect("an item");
@@ -449,7 +392,7 @@ fn find_running_then_found_then_gone() {
     let failed = find(&[look("failed", 0, &[], now())], now()).expect("an item");
     assert_eq!(
         (failed.state, failed.error.as_deref()),
-        ("failed", Some("Soulseek is not answering."))
+        ("failed", Some("Lidarr is not answering."))
     );
 
     assert_eq!(
@@ -633,45 +576,4 @@ async fn the_endpoint_lists_jobs_for_a_signed_in_browser() {
     )
     .await;
     assert_eq!(signed.json()["signedIn"], true);
-}
-
-/// The rescan reads slskd's own scan fields off the Sharing card's report, and an slskd that does
-/// not answer reads as a rescan that has not started.
-#[test]
-fn a_sharing_report_is_read_as_the_rescan_saw_it() {
-    use octo_core::soulseek::soulseek_sharing::build;
-    use octo_core::soulseek::{PortCheckResult, PortState, ShareControl, ShareSwitchState};
-
-    let app = r#"{"server":{"state":"Connected, LoggedIn","isConnected":true,"isLoggedIn":true},
-        "shares":{"scanning":true,"scanPending":false,"faulted":false,"scanProgress":0.25,"directories":13,"files":2438}}"#;
-    let report = |app: Option<&str>| {
-        build(
-            app,
-            None,
-            None,
-            None,
-            PortCheckResult::new(PortState::Off, None, None, None),
-            ShareSwitchState {
-                on: true,
-                control: ShareControl::Octo,
-                problem: None,
-            },
-            false,
-            now(),
-        )
-    };
-    let scanning = RescanReport::from(&report(Some(app)));
-    assert_eq!(
-        scanning,
-        RescanReport {
-            scanning: true,
-            scan_progress: Some(0.25),
-            scan_failed: false,
-            files: Some(2438),
-        }
-    );
-    let away = RescanReport::from(&report(None));
-    assert_eq!(away, RescanReport::default());
-    let item = rescan(&away, now() - TimeDelta::minutes(1), now());
-    assert_eq!((item.state, item.detail), ("done", None));
 }

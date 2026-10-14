@@ -79,8 +79,8 @@ async fn next_queued(queue: &TrackAcquisitionQueue) -> Option<Arc<AcquisitionReq
 async fn lidarr_source_routes_track_and_album_without_calling_direct_downloader() {
     let lidarr = Arc::new(
         FakeLidarr::default()
-            .tracks(|p, id, notify| Ok(p == "soulseek" && id == "track-id" && notify))
-            .albums(|p, id, notify| Ok(p == "soulseek" && id == "album-id" && notify)),
+            .tracks(|p, id, notify| Ok(p == "outside" && id == "track-id" && notify))
+            .albums(|p, id, notify| Ok(p == "outside" && id == "album-id" && notify)),
     );
     let direct = Arc::new(FakeDownloads::default());
     let coordinator = coordinator(
@@ -91,34 +91,34 @@ async fn lidarr_source_routes_track_and_album_without_calling_direct_downloader(
     );
 
     coordinator
-        .acquire_track("soulseek", "track-id", None, None)
+        .acquire_track("outside", "track-id", None)
         .await
         .expect("ran");
     coordinator
-        .acquire_album("soulseek", "album-id", None, None)
+        .acquire_album("outside", "album-id", None)
         .await
         .expect("ran");
 
-    assert_eq!(lidarr.track_calls_for("soulseek", "track-id", true), 1);
-    assert_eq!(lidarr.album_calls_for("soulseek", "album-id", true), 1);
+    assert_eq!(lidarr.track_calls_for("outside", "track-id", true), 1);
+    assert_eq!(lidarr.album_calls_for("outside", "album-id", true), 1);
     assert_eq!(*direct.remaining_calls.lock(), 0);
 }
 
 #[tokio::test]
-async fn soulseek_source_keeps_album_on_existing_direct_path() {
+async fn youtube_source_keeps_album_on_existing_direct_path() {
     let lidarr = Arc::new(FakeLidarr::default());
     let direct = Arc::new(FakeDownloads::albums(|source, suppress| {
-        Ok(source == DownloadSource::Soulseek && !suppress)
+        Ok(source == DownloadSource::YouTube && !suppress)
     }));
     let coordinator = coordinator(
-        store(legacy(DownloadSource::Soulseek)),
+        store(legacy(DownloadSource::YouTube)),
         new_queue(),
         direct.clone(),
         lidarr.clone(),
     );
 
     coordinator
-        .acquire_album("soulseek", "album-id", None, None)
+        .acquire_album("outside", "album-id", None)
         .await
         .expect("ran");
 
@@ -126,7 +126,7 @@ async fn soulseek_source_keeps_album_on_existing_direct_path() {
     assert_eq!(calls.len(), 1);
     assert_eq!(
         (calls[0].0.as_str(), calls[0].1.as_str(), calls[0].2, calls[0].3),
-        ("soulseek", "album-id", DownloadSource::Soulseek, false)
+        ("outside", "album-id", DownloadSource::YouTube, false)
     );
     assert_eq!(lidarr.calls(), 0);
 }
@@ -135,13 +135,13 @@ async fn soulseek_source_keeps_album_on_existing_direct_path() {
 async fn download_source_change_takes_effect_without_rebuilding_coordinator() {
     let lidarr = Arc::new(FakeLidarr::default().albums(|_, id, notify| Ok(id == "second-album" && notify)));
     let direct = Arc::new(FakeDownloads::albums(|source, suppress| {
-        Ok(source == DownloadSource::Soulseek && !suppress)
+        Ok(source == DownloadSource::YouTube && !suppress)
     }));
-    let settings = store(legacy(DownloadSource::Soulseek));
+    let settings = store(legacy(DownloadSource::YouTube));
     let coordinator = coordinator(settings.clone(), new_queue(), direct.clone(), lidarr.clone());
 
     coordinator
-        .acquire_album("soulseek", "first-album", None, None)
+        .acquire_album("outside", "first-album", None)
         .await
         .expect("ran");
     settings.set(AppSettings {
@@ -149,31 +149,30 @@ async fn download_source_change_takes_effect_without_rebuilding_coordinator() {
         ..Default::default()
     });
     coordinator
-        .acquire_album("soulseek", "second-album", None, None)
+        .acquire_album("outside", "second-album", None)
         .await
         .expect("ran");
 
     let calls = direct.album_calls.lock().clone();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].1, "first-album");
-    assert_eq!(lidarr.album_calls_for("soulseek", "second-album", true), 1);
+    assert_eq!(lidarr.album_calls_for("outside", "second-album", true), 1);
 }
 
 #[tokio::test]
 async fn album_priority_stops_at_first_successful_source() {
     let lidarr = Arc::new(FakeLidarr::default());
     let direct = Arc::new(FakeDownloads::albums(|source, suppress| {
-        Ok(source == DownloadSource::Soulseek && suppress)
+        Ok(source == DownloadSource::YouTube && suppress)
     }));
     let settings = store(steps(&[
-        (HeartDownloadSource::YouTube, false),
-        (HeartDownloadSource::Soulseek, true),
+        (HeartDownloadSource::YouTube, true),
         (HeartDownloadSource::Lidarr, true),
     ]));
     let coordinator = coordinator(settings, new_queue(), direct, lidarr.clone());
 
     coordinator
-        .acquire_album("soulseek", "album-id", None, None)
+        .acquire_album("outside", "album-id", None)
         .await
         .expect("ran");
 
@@ -183,59 +182,32 @@ async fn album_priority_stops_at_first_successful_source() {
 #[tokio::test]
 async fn album_priority_falls_through_to_lidarr_after_direct_failure() {
     let lidarr = Arc::new(
-        FakeLidarr::default().albums(|p, id, notify| Ok(p == "soulseek" && id == "album-id" && notify)),
+        FakeLidarr::default().albums(|p, id, notify| Ok(p == "outside" && id == "album-id" && notify)),
     );
     let direct = Arc::new(FakeDownloads::albums(|_, _| Ok(false)));
     let settings = store(steps(&[
-        (HeartDownloadSource::Soulseek, true),
-        (HeartDownloadSource::YouTube, false),
-        (HeartDownloadSource::Lidarr, true),
-    ]));
-    let coordinator = coordinator(settings, new_queue(), direct.clone(), lidarr.clone());
-
-    coordinator
-        .acquire_album("soulseek", "album-id", None, None)
-        .await
-        .expect("ran");
-
-    assert_eq!(lidarr.album_calls_for("soulseek", "album-id", true), 1);
-    assert!(!direct.album_sources().contains(&DownloadSource::YouTube));
-}
-
-#[tokio::test]
-async fn album_priority_tries_direct_sources_in_order_and_stops_on_success() {
-    let direct = Arc::new(FakeDownloads::albums(|source, _| {
-        Ok(source == DownloadSource::YouTube)
-    }));
-    let lidarr = Arc::new(FakeLidarr::default());
-    let settings = store(steps(&[
-        (HeartDownloadSource::Soulseek, true),
         (HeartDownloadSource::YouTube, true),
         (HeartDownloadSource::Lidarr, true),
     ]));
     let coordinator = coordinator(settings, new_queue(), direct.clone(), lidarr.clone());
 
     coordinator
-        .acquire_album("soulseek", "album-id", None, None)
+        .acquire_album("outside", "album-id", None)
         .await
         .expect("ran");
 
-    assert_eq!(
-        direct.album_sources(),
-        [DownloadSource::Soulseek, DownloadSource::YouTube]
-    );
-    assert_eq!(lidarr.calls(), 0);
+    assert_eq!(lidarr.album_calls_for("outside", "album-id", true), 1);
+    assert_eq!(direct.album_sources(), [DownloadSource::YouTube]);
 }
 
 #[tokio::test]
-async fn track_priority_falls_through_from_soulseek_to_lidarr() {
+async fn track_priority_falls_through_from_youtube_to_lidarr() {
     let lidarr = Arc::new(
-        FakeLidarr::default().tracks(|p, id, notify| Ok(p == "soulseek" && id == "track-id" && notify)),
+        FakeLidarr::default().tracks(|p, id, notify| Ok(p == "outside" && id == "track-id" && notify)),
     );
     let queue = new_queue();
     let settings = store(steps(&[
-        (HeartDownloadSource::Soulseek, true),
-        (HeartDownloadSource::YouTube, false),
+        (HeartDownloadSource::YouTube, true),
         (HeartDownloadSource::Lidarr, true),
     ]));
     let coordinator = coordinator(
@@ -246,29 +218,27 @@ async fn track_priority_falls_through_from_soulseek_to_lidarr() {
     );
 
     let running = coordinator.clone();
-    let acquisition =
-        tokio::spawn(async move { running.acquire_track("soulseek", "track-id", None, None).await });
+    let acquisition = tokio::spawn(async move { running.acquire_track("outside", "track-id", None).await });
     let request = queue.dequeue(&CancellationToken::new()).await.expect("a request");
-    assert_eq!(request.source_override, Some(DownloadSource::Soulseek));
+    assert_eq!(request.source_override, Some(DownloadSource::YouTube));
     assert!(!request.notify_on_failure);
     queue.release(&request);
     request.completion.try_set_error(anyhow::anyhow!("no peer"));
     acquisition.await.expect("joined").expect("ran");
 
-    assert_eq!(lidarr.track_calls_for("soulseek", "track-id", true), 1);
+    assert_eq!(lidarr.track_calls_for("outside", "track-id", true), 1);
 }
 
 #[tokio::test]
 async fn song_and_album_hearts_use_their_own_per_source_switches() {
     let lidarr = Arc::new(
-        FakeLidarr::default().albums(|p, id, notify| Ok(p == "soulseek" && id == "album-id" && notify)),
+        FakeLidarr::default().albums(|p, id, notify| Ok(p == "outside" && id == "album-id" && notify)),
     );
     let queue = new_queue();
     let settings = store(SubsonicSettings {
         heart_download_sources: vec![
-            step(HeartDownloadSource::Soulseek, true, false),
+            step(HeartDownloadSource::YouTube, true, false),
             step(HeartDownloadSource::Lidarr, false, true),
-            step(HeartDownloadSource::YouTube, false, false),
         ],
         ..Default::default()
     });
@@ -280,19 +250,19 @@ async fn song_and_album_hearts_use_their_own_per_source_switches() {
     );
 
     let running = coordinator.clone();
-    let track = tokio::spawn(async move { running.acquire_track("soulseek", "track-id", None, None).await });
+    let track = tokio::spawn(async move { running.acquire_track("outside", "track-id", None).await });
     let request = queue.dequeue(&CancellationToken::new()).await.expect("a request");
-    assert_eq!(request.source_override, Some(DownloadSource::Soulseek));
+    assert_eq!(request.source_override, Some(DownloadSource::YouTube));
     request.completion.try_set_result("/music/track.flac");
     queue.release(&request);
     track.await.expect("joined").expect("ran");
     coordinator
-        .acquire_album("soulseek", "album-id", None, None)
+        .acquire_album("outside", "album-id", None)
         .await
         .expect("ran");
 
     assert!(lidarr.track_calls.lock().is_empty());
-    assert_eq!(lidarr.album_calls_for("soulseek", "album-id", true), 1);
+    assert_eq!(lidarr.album_calls_for("outside", "album-id", true), 1);
 }
 
 fn play_settings(
@@ -307,7 +277,6 @@ fn play_settings(
             vec![
                 step(HeartDownloadSource::Lidarr, true, true),
                 step(HeartDownloadSource::YouTube, true, true),
-                step(HeartDownloadSource::Soulseek, false, false),
             ]
         } else {
             list
@@ -345,7 +314,7 @@ async fn play_starts_nothing_by_default() {
         None,
     );
 
-    coordinator.queue_play("soulseek", "track-id", None, None, None);
+    coordinator.queue_play("outside", "track-id", None, None, None);
 
     assert!(next_queued(&queue).await.is_none());
     assert_eq!(lidarr.calls(), 0);
@@ -362,7 +331,7 @@ async fn download_on_play_queues_the_first_direct_song_source_and_skips_lidarr()
         None,
     );
 
-    coordinator.queue_play("soulseek", "track-id", Some("felix"), None, None);
+    coordinator.queue_play("outside", "track-id", Some("felix"), None, None);
 
     let request = next_queued(&queue).await.expect("queued");
     assert_eq!(request.external_id, "track-id");
@@ -376,7 +345,7 @@ async fn download_on_play_queues_the_first_direct_song_source_and_skips_lidarr()
 #[tokio::test]
 async fn lidarr_album_on_play_hands_each_track_to_lidarr_once() {
     let lidarr = Arc::new(
-        FakeLidarr::default().tracks(|p, id, notify| Ok(p == "soulseek" && id == "track-id" && !notify)),
+        FakeLidarr::default().tracks(|p, id, notify| Ok(p == "outside" && id == "track-id" && !notify)),
     );
     let queue = new_queue();
     let coordinator = with_tracker(
@@ -386,50 +355,11 @@ async fn lidarr_album_on_play_hands_each_track_to_lidarr_once() {
         None,
     );
 
-    coordinator.queue_play("soulseek", "track-id", None, None, None);
-    coordinator.queue_play("soulseek", "track-id", None, None, None);
+    coordinator.queue_play("outside", "track-id", None, None, None);
+    coordinator.queue_play("outside", "track-id", None, None, None);
 
     assert!(next_queued(&queue).await.is_none());
-    assert_eq!(lidarr.track_calls_for("soulseek", "track-id", false), 1);
-}
-
-#[tokio::test]
-async fn download_on_play_leaves_the_track_to_wait_for_lossless_on_play() {
-    let mut settings = play_settings(true, false, Vec::new());
-    settings.wait_for_lossless_on_play = true;
-    let queue = new_queue();
-    with_tracker(settings, queue.clone(), Arc::new(FakeLidarr::default()), None)
-        .queue_play("soulseek", "track-id", None, None, None);
-    assert_eq!(queue.waiting_plays(), 0);
-}
-
-#[tokio::test]
-async fn soulseek_first_plays_fall_back_to_you_tube_only_when_it_is_on() {
-    for (you_tube, expected) in [
-        (false, DownloadSource::Soulseek),
-        (true, DownloadSource::SoulseekThenYouTube),
-    ] {
-        let queue = new_queue();
-        with_tracker(
-            play_settings(
-                true,
-                false,
-                vec![
-                    step(HeartDownloadSource::Soulseek, true, false),
-                    step(HeartDownloadSource::YouTube, you_tube, false),
-                ],
-            ),
-            queue.clone(),
-            Arc::new(FakeLidarr::default()),
-            None,
-        )
-        .queue_play("soulseek", "track-id", None, None, None);
-        assert_eq!(
-            next_queued(&queue).await.expect("queued").source_override,
-            Some(expected),
-            "YouTube {you_tube}"
-        );
-    }
+    assert_eq!(lidarr.track_calls_for("outside", "track-id", false), 1);
 }
 
 /// The hand-off is a task, so each play waits for it to settle before the next.
@@ -452,11 +382,11 @@ async fn lidarr_album_on_play_tries_again_after_a_hand_off_that_did_not_take() {
         );
 
         for i in 0..3 {
-            coordinator.queue_play("soulseek", "track-id", None, None, None);
+            coordinator.queue_play("outside", "track-id", None, None, None);
             let settled = coordinator.clone();
             let lidarr = lidarr.clone();
             until(move || {
-                let calls = lidarr.track_calls_for("soulseek", "track-id", false);
+                let calls = lidarr.track_calls_for("outside", "track-id", false);
                 // The first hand-off did not take and lets go of the track; the second took.
                 match i {
                     0 => calls == 1 && settled.lidarr_plays.lock().is_empty(),
@@ -468,7 +398,7 @@ async fn lidarr_album_on_play_tries_again_after_a_hand_off_that_did_not_take() {
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         assert_eq!(
-            lidarr.track_calls_for("soulseek", "track-id", false),
+            lidarr.track_calls_for("outside", "track-id", false),
             2,
             "throws {throws}"
         );
@@ -484,12 +414,12 @@ async fn only_one_played_song_waits_and_a_skipped_one_can_be_asked_for_again() {
         Arc::new(FakeLidarr::default()),
         None,
     );
-    coordinator.queue_play("soulseek", "first", None, None, None);
-    coordinator.queue_play("soulseek", "second", None, None, None);
+    coordinator.queue_play("outside", "first", None, None, None);
+    coordinator.queue_play("outside", "second", None, None, None);
     assert_eq!(queue.waiting_plays(), 1);
     assert_eq!(next_queued(&queue).await.expect("queued").external_id, "first");
 
-    coordinator.queue_play("soulseek", "second", None, None, None);
+    coordinator.queue_play("outside", "second", None, None, None);
     assert_eq!(next_queued(&queue).await.expect("queued").external_id, "second");
 }
 
@@ -502,14 +432,14 @@ async fn a_heart_goes_before_a_waiting_play_and_upgrades_one_it_joins() {
         Arc::new(FakeLidarr::default()),
         None,
     )
-    .queue_play("soulseek", "played", None, None, None);
+    .queue_play("outside", "played", None, None, None);
     let _ = queue.enqueue(
-        "soulseek", "hearted", true, false, true, None, true, None, false, None,
+        "outside", "hearted", true, false, true, None, true, None, false, None,
     );
     assert_eq!(next_queued(&queue).await.expect("queued").external_id, "hearted");
 
     let _ = queue.enqueue(
-        "soulseek",
+        "outside",
         "played",
         true,
         false,
@@ -536,8 +466,8 @@ async fn a_played_download_has_a_row_that_fails_with_it() {
         Arc::new(FakeLidarr::default()),
         Some(tracker.clone()),
     );
-    coordinator.queue_play("soulseek", "track-id", None, Some("ext-1"), Some("felix"));
-    coordinator.queue_play("soulseek", "skipped", None, Some("ext-2"), Some("felix"));
+    coordinator.queue_play("outside", "track-id", None, Some("ext-1"), Some("felix"));
+    coordinator.queue_play("outside", "skipped", None, Some("ext-2"), Some("felix"));
     let rows = tracker.for_user("felix");
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].state, AcquisitionState::Queued);
@@ -558,18 +488,18 @@ async fn a_dropped_play_never_strands_a_heart() {
     queue.set_on_skipped_play(Arc::new(move || {
         if let Some(queue) = hearted.upgrade() {
             *slot.lock() =
-                Some(queue.enqueue("soulseek", "B", true, false, true, None, true, None, false, None));
+                Some(queue.enqueue("outside", "B", true, false, true, None, true, None, false, None));
         }
     }));
     assert!(
         queue
-            .try_enqueue_play("soulseek", "A", DownloadSource::YouTube, None, None)
+            .try_enqueue_play("outside", "A", DownloadSource::YouTube, None, None)
             .is_some()
     );
 
     assert!(
         queue
-            .try_enqueue_play("soulseek", "B", DownloadSource::YouTube, None, None)
+            .try_enqueue_play("outside", "B", DownloadSource::YouTube, None, None)
             .is_none()
     );
     let heart = heart.lock().clone().expect("the heart was queued");
@@ -586,62 +516,4 @@ async fn a_dropped_play_never_strands_a_heart() {
         .expect("downloaded");
     assert_eq!(path, "/music/b.flac");
     assert!(next.is_star);
-}
-
-fn soulseek_off(
-    settings: SubsonicSettings,
-    queue: Arc<TrackAcquisitionQueue>,
-    direct: Arc<FakeDownloads>,
-) -> Arc<HeartAcquisitionCoordinator> {
-    HeartAcquisitionCoordinator::new(
-        store(settings),
-        queue,
-        direct,
-        Arc::new(FakeLidarr::default()),
-        HeartCoordinatorExtras {
-            soulseek: Some(Arc::new(crate::services::common::test_fakes::OffLink)),
-            ..Default::default()
-        },
-    )
-}
-
-#[tokio::test]
-async fn with_soulseek_off_an_album_heart_goes_straight_to_the_next_source() {
-    let direct = Arc::new(FakeDownloads::albums(|source, _| {
-        Ok(source == DownloadSource::YouTube)
-    }));
-    let settings = steps(&[
-        (HeartDownloadSource::Soulseek, true),
-        (HeartDownloadSource::YouTube, true),
-    ]);
-
-    soulseek_off(settings, new_queue(), direct.clone())
-        .acquire_album("soulseek", "album-id", None, None)
-        .await
-        .expect("ran");
-
-    assert_eq!(direct.album_sources(), [DownloadSource::YouTube]);
-}
-
-#[tokio::test]
-async fn with_soulseek_off_a_soulseek_first_play_is_a_you_tube_play() {
-    let queue = new_queue();
-    soulseek_off(
-        play_settings(
-            true,
-            false,
-            vec![
-                step(HeartDownloadSource::Soulseek, true, false),
-                step(HeartDownloadSource::YouTube, true, false),
-            ],
-        ),
-        queue.clone(),
-        Arc::new(FakeDownloads::default()),
-    )
-    .queue_play("soulseek", "track-id", None, None, None);
-
-    assert_eq!(
-        next_queued(&queue).await.expect("queued").source_override,
-        Some(DownloadSource::YouTube)
-    );
 }

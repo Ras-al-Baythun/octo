@@ -44,10 +44,9 @@ use crate::services::family::family_playlists::{
     self, FAMILY_OWNER, NewEntry, PlaylistError, SHARED_SCOPE, Serve, personal_scope,
 };
 use crate::services::family::{FamilyCaller, FamilyPlaylist, FamilyPlaylistEntry, family_caller, kid_filter};
-use crate::services::library::library_action_playlist_provisioner::{
-    REMOVE_PLAYLIST, REQUEST_FLAC_PLAYLIST, REQUEST_PLAYLIST,
-};
+use crate::services::library::library_action_playlist_provisioner::{REMOVE_PLAYLIST, REQUEST_PLAYLIST};
 use crate::services::library::{GeneratedPlaylist, LibraryActionPlaylistProvisioner};
+use crate::services::soulseek::SoulseekMetadataService;
 use crate::services::subsonic::SubsonicResponseBuilderExt;
 use octo_core::family::abilities::RequestQuality;
 use tracing::info;
@@ -962,8 +961,6 @@ async fn family_action_playlist(
     let name = playlist.get("name").and_then(Value::as_str)?.trim().to_string();
     let action = if name.eq_ignore_ascii_case(REQUEST_PLAYLIST) {
         FamilyPlaylistAction::Request(RequestQuality::Best)
-    } else if name.eq_ignore_ascii_case(REQUEST_FLAC_PLAYLIST) {
-        FamilyPlaylistAction::Request(RequestQuality::Flac)
     } else if name.eq_ignore_ascii_case(REMOVE_PLAYLIST) {
         FamilyPlaylistAction::Remove
     } else {
@@ -1525,10 +1522,12 @@ async fn outside_id_of(state: &AppState, id: &str, path: Option<&str>) -> Option
         })
 }
 
-/// The song id an outside song plays by: a Soulseek song Octo knows by its short id, any other
-/// as `ext-<provider>-song-<id>`.
+/// The song id an outside song plays by: one Octo knows by its short id, any other as
+/// `ext-<provider>-song-<id>`.
 fn outside_song_id(state: &AppState, provider: &str, external_id: &str) -> String {
-    if eq_ignore_case(provider, "soulseek") && state.external_id_registry.lookup(external_id).is_some() {
+    if eq_ignore_case(provider, SoulseekMetadataService::PROVIDER_NAME)
+        && state.external_id_registry.lookup(external_id).is_some()
+    {
         return external_id.to_string();
     }
     format!("ext-{provider}-song-{external_id}")

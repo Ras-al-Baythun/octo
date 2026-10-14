@@ -13,8 +13,7 @@ use octo_core::lidarr::{LidarrRelease, LidarrReleasePick};
 use octo_core::lyrics::{LyricsResult, SongLyricsPlace};
 use octo_core::models::download::AcquisitionCandidate;
 use octo_core::models::download::acquisition_event::quality_text;
-use octo_core::settings::{DownloadSource, SoulseekSettings};
-use octo_core::soulseek::SoulseekFileHit;
+use octo_core::settings::DownloadSource;
 use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 
@@ -33,7 +32,6 @@ use crate::services::library::upgrade_queue::{UpgradeAsk, UpgradeQueue, UpgradeW
 use crate::services::lyrics::lyrics_sidecar_writer::{
     LyricsJob, LyricsSidecarWriter, LyricsWrite, LyricsWriteOutcome,
 };
-use crate::services::soulseek::soulseek_candidates::{self, Judged};
 
 /// A clock the test moves by hand.
 #[derive(Clone)]
@@ -66,14 +64,14 @@ fn kinds(tracker: &AcquisitionTracker, user: &str) -> Vec<String> {
 
 fn log(tracker: &AcquisitionTracker, user: &str) -> Vec<octo_core::models::download::AcquisitionEvent> {
     tracker
-        .detail("soulseek:abc", Some(user))
+        .detail("outside:abc", Some(user))
         .expect("the row")
         .events
         .expect("its log")
 }
 
 fn begin(tracker: &AcquisitionTracker, id: &str, user: &str) {
-    tracker.begin("soulseek", id, Some(id), Some(user), None, None, None);
+    tracker.begin("outside", id, Some(id), Some(user), None, None, None);
 }
 
 fn candidate(source: &str) -> AcquisitionCandidate {
@@ -91,7 +89,7 @@ fn candidate(source: &str) -> AcquisitionCandidate {
 fn a_download_logs_each_step_once_in_order() {
     let tracker = new_tracker();
     tracker.begin(
-        "soulseek",
+        "outside",
         "abc",
         Some("abc"),
         Some("alice"),
@@ -100,21 +98,21 @@ fn a_download_logs_each_step_once_in_order() {
         Some("Homework"),
     );
     tracker.stage(
-        "soulseek",
+        "outside",
         "abc",
         AcquisitionState::Searching,
-        Some("Soulseek"),
+        Some("Lidarr"),
         None,
     );
     tracker.stage(
-        "soulseek",
+        "outside",
         "abc",
         AcquisitionState::Searching,
-        Some("Soulseek"),
+        Some("Lidarr"),
         None,
     );
     tracker.found(
-        "soulseek",
+        "outside",
         "abc",
         "1 copy fits, best first",
         vec![AcquisitionCandidate {
@@ -122,12 +120,12 @@ fn a_download_logs_each_step_once_in_order() {
             file: Some("Da Funk.flac".into()),
             format: Some("flac".into()),
             rank: Some(1),
-            ..candidate("Soulseek")
+            ..candidate("Lidarr")
         }],
         None,
     );
     tracker.trying(
-        "soulseek",
+        "outside",
         "abc",
         AcquisitionCandidate {
             peer: Some("peer1".into()),
@@ -135,31 +133,24 @@ fn a_download_logs_each_step_once_in_order() {
             format: Some("flac".into()),
             bit_depth: Some(16),
             sample_rate: Some(44100),
-            ..candidate("Soulseek")
+            ..candidate("Lidarr")
         },
         "Trying the only copy that fits",
         Some("lossless"),
     );
+    tracker.transfer("outside", "abc", Some(10), Some(2_000_000), None, Some("Lidarr"));
     tracker.transfer(
-        "soulseek",
-        "abc",
-        Some(10),
-        Some(2_000_000),
-        None,
-        Some("Soulseek"),
-    );
-    tracker.transfer(
-        "soulseek",
+        "outside",
         "abc",
         Some(1_000_000),
         Some(2_000_000),
         None,
-        Some("Soulseek"),
+        Some("Lidarr"),
     );
-    tracker.stage("soulseek", "abc", AcquisitionState::Verifying, None, None);
-    tracker.stage("soulseek", "abc", AcquisitionState::Importing, None, None);
+    tracker.stage("outside", "abc", AcquisitionState::Verifying, None, None);
+    tracker.stage("outside", "abc", AcquisitionState::Importing, None, None);
     tracker.imported(
-        "soulseek",
+        "outside",
         "abc",
         Some("Daft Punk"),
         Some("Da Funk"),
@@ -173,9 +164,9 @@ fn a_download_logs_each_step_once_in_order() {
             "queued", "search", "found", "try", "transfer", "check", "tags", "library", "done"
         ]
     );
-    assert_eq!(lines[4].text, "Downloading from Soulseek (peer1)");
+    assert_eq!(lines[4].text, "Downloading from Lidarr (peer1)");
     assert_eq!(lines.last().expect("a line").text, "In your library");
-    let row = tracker.detail("soulseek:abc", Some("alice")).expect("the row");
+    let row = tracker.detail("outside:abc", Some("alice")).expect("the row");
     assert_eq!(row.quality.as_deref(), Some("FLAC 16-bit 44.1 kHz"));
     assert_eq!(row.peer.as_deref(), Some("peer1"));
 }
@@ -186,15 +177,15 @@ fn a_note_is_logged_only_when_it_changes_and_a_failure_says_why() {
     begin(&tracker, "abc", "alice");
     for _ in 0..2 {
         tracker.stage(
-            "soulseek",
+            "outside",
             "abc",
             AcquisitionState::Searching,
             Some("YouTube"),
-            Some("Soulseek couldn't get it, trying YouTube"),
+            Some("Lidarr couldn't get it, trying YouTube"),
         );
     }
     tracker.fail(
-        "soulseek",
+        "outside",
         "abc",
         Some("No YouTube match for that song. More words for the log at /music/x."),
     );
@@ -211,9 +202,9 @@ fn a_note_is_logged_only_when_it_changes_and_a_failure_says_why() {
 fn lines_may_follow_the_end_but_a_restart_starts_a_fresh_log() {
     let tracker = new_tracker();
     begin(&tracker, "abc", "alice");
-    tracker.complete("soulseek", "abc", Some("nd-1"));
+    tracker.complete("outside", "abc", Some("nd-1"));
     tracker.log(
-        "soulseek",
+        "outside",
         "abc",
         acquisition_event_kinds::LYRICS,
         "Synced lyrics from LRCLIB",
@@ -222,7 +213,7 @@ fn lines_may_follow_the_end_but_a_restart_starts_a_fresh_log() {
     assert_eq!(kinds(&tracker, "alice"), ["queued", "done", "lyrics"]);
 
     tracker.begin_kind(
-        "soulseek",
+        "outside",
         "abc",
         Some("abc"),
         Some("alice"),
@@ -231,7 +222,7 @@ fn lines_may_follow_the_end_but_a_restart_starts_a_fresh_log() {
         None,
         acquisition_kinds::PICK,
     );
-    let again = tracker.detail("soulseek:abc", Some("alice")).expect("the row");
+    let again = tracker.detail("outside:abc", Some("alice")).expect("the row");
     assert_eq!(again.kind, acquisition_kinds::PICK);
     let events = again.events.expect("a log");
     assert_eq!(events.len(), 1);
@@ -242,7 +233,7 @@ fn lines_may_follow_the_end_but_a_restart_starts_a_fresh_log() {
 fn a_heart_joining_a_pick_keeps_it_a_pick() {
     let tracker = new_tracker();
     tracker.begin_kind(
-        "soulseek",
+        "outside",
         "abc",
         Some("abc"),
         Some("alice"),
@@ -253,7 +244,7 @@ fn a_heart_joining_a_pick_keeps_it_a_pick() {
     );
     begin(&tracker, "abc", "bob");
     assert_eq!(
-        tracker.detail("soulseek:abc", None).expect("the row").kind,
+        tracker.detail("outside:abc", None).expect("the row").kind,
         acquisition_kinds::PICK
     );
     assert_eq!(log(&tracker, "alice").len(), 1);
@@ -265,7 +256,7 @@ fn a_long_log_keeps_its_first_line() {
     begin(&tracker, "abc", "alice");
     for i in 0..AcquisitionTracker::MAX_EVENTS + 20 {
         tracker.log(
-            "soulseek",
+            "outside",
             "abc",
             acquisition_event_kinds::NOTE,
             &format!("line {i}"),
@@ -286,9 +277,9 @@ fn a_long_log_keeps_its_first_line() {
 fn the_log_is_only_for_the_rows_owners() {
     let tracker = new_tracker();
     begin(&tracker, "abc", "alice");
-    assert!(tracker.detail("soulseek:abc", Some("ALICE")).is_some());
-    assert!(tracker.detail("soulseek:abc", Some("bob")).is_none());
-    assert!(tracker.detail("soulseek:nope", Some("alice")).is_none());
+    assert!(tracker.detail("outside:abc", Some("ALICE")).is_some());
+    assert!(tracker.detail("outside:abc", Some("bob")).is_none());
+    assert!(tracker.detail("outside:nope", Some("alice")).is_none());
 }
 
 #[test]
@@ -296,7 +287,7 @@ fn a_shared_rows_log_names_nobody() {
     let tracker = new_tracker();
     for user in ["alice", "bob"] {
         tracker.begin(
-            "soulseek",
+            "outside",
             "abc",
             Some("abc"),
             Some(user),
@@ -320,9 +311,9 @@ fn clearing_takes_finished_rows_off_one_persons_list() {
     let tracker = new_tracker();
     begin(&tracker, "shared", "alice");
     begin(&tracker, "shared", "bob");
-    tracker.complete("soulseek", "shared", None);
+    tracker.complete("outside", "shared", None);
     begin(&tracker, "mine", "alice");
-    tracker.fail("soulseek", "mine", Some("nope"));
+    tracker.fail("outside", "mine", Some("nope"));
     begin(&tracker, "running", "alice");
 
     let ids = |user: &str| -> Vec<String> {
@@ -330,7 +321,7 @@ fn clearing_takes_finished_rows_off_one_persons_list() {
         ids.sort();
         ids
     };
-    assert_eq!(tracker.clear("alice", Some("soulseek:mine")), 1);
+    assert_eq!(tracker.clear("alice", Some("outside:mine")), 1);
     assert_eq!(ids("alice"), ["running", "shared"]);
     assert_eq!(tracker.clear("alice", None), 1);
     assert_eq!(ids("alice"), ["running"]);
@@ -368,278 +359,11 @@ fn quality_reads_like_a_person() {
     }
 }
 
-// ---------------------------------------------------------------------------------------
-// Soulseek files in words
-// ---------------------------------------------------------------------------------------
-
-fn hit(file: &str, extension: &str, length: Option<i32>, size: i64) -> SoulseekFileHit {
-    SoulseekFileHit {
-        username: "peer1".into(),
-        filename: file.into(),
-        extension: extension.into(),
-        length,
-        size,
-        bit_depth: Some(16),
-        sample_rate: Some(44100),
-        queue_length: Some(2),
-        upload_speed: Some(1_500_000),
-        has_free_upload_slot: Some(false),
-        ..Default::default()
-    }
-}
-
-fn flac_hit(file: &str, length: i32) -> SoulseekFileHit {
-    hit(file, "flac", Some(length), 30_000_000)
-}
-
-fn judged<'a>(
-    title: &'a str,
-    album: Option<&'a str>,
-    duration: Option<i32>,
-    settings: &'a SoulseekSettings,
-    artist: Option<&'a str>,
-) -> Judged<'a> {
-    Judged {
-        title,
-        album,
-        duration,
-        settings,
-        rejected: None,
-        remembers_rejections: false,
-        artist,
-    }
-}
-
-#[test]
-fn a_file_shows_its_title_album_and_folder() {
-    let copy = soulseek_candidates::of(
-        &flac_hit(r"Music\Daft Punk\Homework\CD1\03 - Da Funk.flac", 245),
-        Some(2),
-        None,
-    );
-    assert_eq!(copy.file.as_deref(), Some("03 - Da Funk.flac"));
-    assert_eq!(copy.folder.as_deref(), Some("Homework/CD1"));
-    assert_eq!(copy.title.as_deref(), Some("Da Funk"));
-    assert_eq!(copy.album.as_deref(), Some("Homework"));
-    assert_eq!(copy.quality().as_deref(), Some("FLAC 16-bit 44.1 kHz"));
-    assert_eq!(copy.rank, Some(2));
-}
-
-#[test]
-fn why_a_copy_was_chosen_names_its_quality_and_how_soon_it_comes() {
-    assert_eq!(
-        soulseek_candidates::why_chosen(&flac_hit("Da Funk.flac", 245)),
-        "lossless (FLAC 16-bit 44.1 kHz), 2 ahead in the peer's queue, 1.4 MB/s, 28.6 MB"
-    );
-}
-
-#[test]
-fn why_a_copy_is_passed_over_names_the_first_test_it_fails() {
-    let settings = SoulseekSettings::default();
-    let why = |hit: SoulseekFileHit| {
-        soulseek_candidates::why_not(
-            &hit,
-            judged("Da Funk", Some("Homework"), Some(330), &settings, None),
-        )
-    };
-
-    assert_eq!(
-        why(flac_hit("Daft Punk - Da Funk.flac", 245)).as_deref(),
-        Some("4:05 long; the song is 5:30")
-    );
-    assert_eq!(
-        why(flac_hit("Daft Punk - Around the World.flac", 330)).as_deref(),
-        Some("The file name does not match the title")
-    );
-    assert_eq!(
-        why(flac_hit("Daft Punk - Da Funk (Remix).flac", 330)).as_deref(),
-        Some("Another version: a remix, an edit or a live take")
-    );
-    assert_eq!(
-        why(flac_hit(r"Alive 1997 (Live)\Daft Punk - Da Funk.flac", 330)).as_deref(),
-        Some("From a live album")
-    );
-    assert_eq!(
-        why(hit("Daft Punk - Da Funk.mp3", "mp3", Some(330), 30_000_000)).as_deref(),
-        Some("Not FLAC, which Octo looks for first")
-    );
-    assert_eq!(why(flac_hit("Daft Punk - Da Funk.flac", 330)), None);
-}
-
-#[test]
-fn why_a_copy_is_passed_over_follows_the_downloads_version_rules() {
-    let settings = SoulseekSettings::default();
-    let why = |hit: SoulseekFileHit, title: &str, album: Option<&str>, artist: &str| {
-        soulseek_candidates::why_not(&hit, judged(title, album, Some(245), &settings, Some(artist)))
-    };
-
-    // A guest credit or a version tag is not words the file name has to carry.
-    assert_eq!(
-        why(
-            flac_hit("04 - Take Care.flac", 245),
-            "Take Care (feat. Rihanna)",
-            Some("Take Care"),
-            "Drake"
-        ),
-        None
-    );
-    // A single's folder that says radio edit makes a plainly named file the edit.
-    assert_eq!(
-        why(
-            flac_hit(
-                r"music\Alex Clare\Too Close (Radio Edit) - Single\01 - Too Close.flac",
-                245
-            ),
-            "Too Close",
-            Some("The Lateness of the Hour"),
-            "Alex Clare"
-        )
-        .as_deref(),
-        Some("From a record of other versions: remixes, edits or a single's radio edit")
-    );
-    // Asking for a version never takes the plain song.
-    assert_eq!(
-        why(
-            flac_hit("01 - Too Close.flac", 245),
-            "Too Close (Acoustic)",
-            None,
-            "Alex Clare"
-        )
-        .as_deref(),
-        Some("Not the version asked for: the file is the plain song")
-    );
-}
-
 fn target(artist: &str, title: &str, album: Option<&str>, duration: Option<i32>) -> FindTarget {
     FindTarget {
         external_id: Some("id".into()),
         ..FindTarget::new(artist, title, album, duration, "id")
     }
-}
-
-#[test]
-fn soulseek_copies_put_the_downloads_choices_first_and_say_why_the_rest_were_not() {
-    let target = target("Daft Punk", "Da Funk", Some("Homework"), Some(330));
-    let best = flac_hit("Daft Punk - Da Funk.flac", 330);
-    let mp3 = hit("Daft Punk - Da Funk.mp3", "mp3", Some(330), 30_000_000);
-    let wrong = flac_hit("Daft Punk - Revolution 909.flac", 330);
-
-    let copies = SongFinder::soulseek_copies(
-        &[wrong, mp3, best.clone()],
-        &[best],
-        &target,
-        &SoulseekSettings::default(),
-        None,
-        false,
-    );
-
-    assert_eq!(
-        copies
-            .iter()
-            .map(|c| c.shown.file.as_deref().unwrap_or(""))
-            .collect::<Vec<_>>(),
-        [
-            "Daft Punk - Da Funk.flac",
-            "Daft Punk - Da Funk.mp3",
-            "Daft Punk - Revolution 909.flac"
-        ]
-    );
-    assert_eq!(copies[0].shown.rank, Some(1));
-    assert_eq!(copies[0].shown.note, None);
-    assert_eq!(
-        copies[1].shown.note.as_deref(),
-        Some("Not FLAC, which Octo looks for first")
-    );
-    assert_eq!(
-        copies[2].shown.note.as_deref(),
-        Some("The file name does not match the title")
-    );
-    assert_eq!(
-        copies[0].pick.to_hit().expect("a hit").filename,
-        "Daft Punk - Da Funk.flac"
-    );
-}
-
-#[test]
-fn a_popular_songs_list_keeps_a_few_of_each_reason_and_its_summary_counts_the_rows_that_fit() {
-    let target = target(
-        "Daft Punk",
-        "Get Lucky",
-        Some("Random Access Memories"),
-        Some(248),
-    );
-    let file = |peer: String, name: &str, extension: &str| SoulseekFileHit {
-        username: peer,
-        filename: format!(r"Music\Daft Punk\Random Access Memories\{name}.{extension}"),
-        size: 30_000_000,
-        length: Some(248),
-        extension: extension.into(),
-        ..Default::default()
-    };
-    let fitting: Vec<SoulseekFileHit> = (0..400)
-        .map(|i| file(format!("flac{i}"), "08 - Get Lucky", "flac"))
-        .collect();
-    let mp3s: Vec<SoulseekFileHit> = (0..10)
-        .map(|i| file(format!("mp3{i}"), "08 - Get Lucky", "mp3"))
-        .collect();
-    let others: Vec<SoulseekFileHit> = (0..10)
-        .map(|i| file(format!("other{i}"), "07 - Lose Yourself to Dance", "flac"))
-        .collect();
-    let hits: Vec<SoulseekFileHit> = fitting.iter().chain(&mp3s).chain(&others).cloned().collect();
-    let settings = SoulseekSettings::default();
-
-    let (copies, fit, listed) =
-        SongFinder::soulseek_found(&hits, &fitting[..5], &target, &settings, None, false);
-
-    assert_eq!(copies.len(), SongFinder::MAX_COPIES);
-    let with_note = |note: &str| {
-        copies
-            .iter()
-            .filter(|c| c.shown.note.as_deref() == Some(note))
-            .count()
-    };
-    assert_eq!(
-        with_note("Not FLAC, which Octo looks for first"),
-        SongFinder::SKIPPED_PER_REASON
-    );
-    assert_eq!(
-        with_note("The file name does not match the title"),
-        SongFinder::SKIPPED_PER_REASON
-    );
-    // Fitting copies first, then the reasons.
-    assert_eq!(copies.iter().take_while(|c| c.shown.rank.is_some()).count(), 5);
-    assert_eq!(fit, 400);
-    let song = judged(
-        &target.title,
-        target.album.as_deref(),
-        target.duration,
-        &settings,
-        Some(&target.artist),
-    );
-    assert_eq!(
-        hits.iter()
-            .filter(|hit| soulseek_candidates::judge(hit, song).1 == 0)
-            .count(),
-        400
-    );
-    // The list has room for 290 of the 400, beside 5 of each of the two reasons.
-    assert_eq!(listed, 290);
-    assert_eq!(
-        listed,
-        copies
-            .iter()
-            .filter(|c| c.shown.rank.is_some()
-                || c.shown.note.as_deref() == Some("Fits too; a download tries the first few"))
-            .count()
-    );
-    assert_eq!(
-        SongFinder::soulseek_summary(&hits, fit, listed),
-        "420 files from 420 peers; 400 fit the song; the best 290 are listed"
-    );
-    assert_eq!(
-        SongFinder::soulseek_summary(&hits[..12], 7, 7),
-        "12 files from 12 peers; 7 fit the song"
-    );
 }
 
 // ---------------------------------------------------------------------------------------
@@ -672,8 +396,9 @@ pub(crate) fn copy(source: &str, rank: Option<i32>, file: &str) -> FoundCopy {
         },
         PickedCopy {
             source: source.into(),
-            peer: Some("p".into()),
-            file: Some(file.into()),
+            release_guid: Some(file.into()),
+            indexer_id: Some(1),
+            release_title: Some(file.into()),
             ..Default::default()
         },
     )
@@ -704,17 +429,17 @@ fn files(found: &[FoundCopy]) -> Vec<String> {
 const TEN: Duration = Duration::from_secs(10);
 
 #[tokio::test]
-async fn a_look_searches_every_source_that_is_on_and_orders_the_copies() {
+async fn a_look_searches_the_source_that_is_on_and_orders_the_copies() {
     let finder = new_finder(Some(target("Air", "Sexy Boy", Some("Moon Safari"), Some(298))));
     finder.seams(|s| {
-        s.sources_for = sources(&["Soulseek", "Lidarr"]);
-        s.search_soulseek = searching(|| {
+        s.sources_for = sources(&["Lidarr"]);
+        s.search_lidarr = searching(|| {
             answer(vec![
-                copy("Soulseek", None, "other.flac"),
-                copy("Soulseek", Some(1), "best.flac"),
+                copy("Lidarr", None, "other.flac"),
+                copy("Lidarr", Some(2), "best.flac"),
+                copy("Lidarr", Some(1), "Lidarr's choice"),
             ])
         });
-        s.search_lidarr = searching(|| answer(vec![copy("Lidarr", Some(1), "Lidarr's choice")]));
     });
 
     let started = finder
@@ -726,20 +451,22 @@ async fn a_look_searches_every_source_that_is_on_and_orders_the_copies() {
     assert_eq!(done.state, find_states::DONE);
     assert_eq!(
         files(&done.copies),
-        ["best.flac", "Lidarr's choice", "other.flac"]
+        ["Lidarr's choice", "best.flac", "other.flac"]
     );
     assert!(done.sources.iter().all(|s| s.state == find_states::DONE));
     assert!(finder.get(&started.id, "bob").is_none());
 }
 
 #[tokio::test]
-async fn a_source_that_fails_says_so_and_the_other_still_answers() {
+async fn a_source_that_fails_says_so() {
     let finder = new_finder(Some(target("Air", "Sexy Boy", None, None)));
     finder.seams(|s| {
-        s.sources_for = sources(&["Soulseek", "Lidarr"]);
-        s.search_soulseek =
-            searching(|| Err(anyhow::anyhow!("slskd is not logged in to Soulseek. Try later.")));
-        s.search_lidarr = searching(|| answer(vec![copy("Lidarr", Some(1), "Lidarr's choice")]));
+        s.sources_for = sources(&["Lidarr"]);
+        s.search_lidarr = searching(|| {
+            Err(anyhow::anyhow!(
+                "Lidarr is not available on this server. Try later."
+            ))
+        });
     });
 
     let id = finder
@@ -749,16 +476,16 @@ async fn a_source_that_fails_says_so_and_the_other_still_answers() {
         .id;
     let done = finder.wait(&id, TEN).await.expect("the look");
 
-    assert_eq!(done.state, find_states::DONE);
-    let soulseek = done
-        .sources
-        .iter()
-        .find(|s| s.name == "Soulseek")
-        .expect("Soulseek");
-    assert_eq!(soulseek.state, find_states::FAILED);
+    assert_eq!(done.state, find_states::FAILED);
+    let lidarr = done.sources.iter().find(|s| s.name == "Lidarr").expect("Lidarr");
+    assert_eq!(lidarr.state, find_states::FAILED);
     assert_eq!(
-        soulseek.text.as_deref(),
-        Some("slskd is not logged in to Soulseek")
+        lidarr.text.as_deref(),
+        Some("Lidarr is not available on this server")
+    );
+    assert_eq!(
+        done.error.as_deref(),
+        Some("Lidarr is not available on this server")
     );
 }
 
@@ -767,16 +494,10 @@ async fn with_every_source_off_a_look_fails_at_once_and_says_why() {
     let finder = new_finder(Some(target("Air", "Sexy Boy", None, None)));
     finder.seams(|s| {
         s.sources_for = Arc::new(|_| {
-            vec![
-                (
-                    "Soulseek".to_string(),
-                    Some("Soulseek is not set up on this server".to_string()),
-                ),
-                (
-                    "Lidarr".to_string(),
-                    Some("Lidarr is not set up on this server".to_string()),
-                ),
-            ]
+            vec![(
+                "Lidarr".to_string(),
+                Some("Lidarr is not set up on this server".to_string()),
+            )]
         });
     });
 
@@ -805,11 +526,11 @@ async fn a_pick_goes_to_fetch_with_the_copy_at_that_place() {
     let finder = new_finder(Some(target("Air", "Sexy Boy", None, None)));
     let fetched = Arc::new(Mutex::new(None));
     finder.seams(|s| {
-        s.sources_for = sources(&["Soulseek"]);
-        s.search_soulseek = searching(|| {
+        s.sources_for = sources(&["Lidarr"]);
+        s.search_lidarr = searching(|| {
             answer(vec![
-                copy("Soulseek", Some(1), "one.flac"),
-                copy("Soulseek", Some(2), "two.flac"),
+                copy("Lidarr", Some(1), "one.flac"),
+                copy("Lidarr", Some(2), "two.flac"),
             ])
         });
         s.fetch = fetching(fetched.clone());
@@ -835,23 +556,21 @@ async fn a_pick_goes_to_fetch_with_the_copy_at_that_place() {
 }
 
 #[tokio::test]
-async fn a_pick_waits_for_the_search_to_end_and_a_copy_keeps_its_id_and_order_when_another_source_answers() {
+async fn a_pick_waits_for_the_search_to_end_and_copies_keep_their_ids() {
     let finder = new_finder(Some(target("Air", "Sexy Boy", None, None)));
     let fetched = Arc::new(Mutex::new(None));
     let (lidarr_done, lidarr_wait) = tokio::sync::watch::channel(false);
     finder.seams(|s| {
-        s.sources_for = sources(&["Soulseek", "Lidarr"]);
-        s.search_soulseek = searching(|| {
-            answer(vec![
-                copy("Soulseek", Some(2), "two.flac"),
-                copy("Soulseek", None, "other.flac"),
-            ])
-        });
+        s.sources_for = sources(&["Lidarr"]);
         s.search_lidarr = Arc::new(move |_, _| {
             let mut wait = lidarr_wait.clone();
             async move {
                 let _ = wait.wait_for(|done| *done).await;
-                answer(vec![copy("Lidarr", Some(1), "Lidarr's choice")])
+                answer(vec![
+                    copy("Lidarr", Some(2), "two.flac"),
+                    copy("Lidarr", None, "other.flac"),
+                    copy("Lidarr", Some(1), "Lidarr's choice"),
+                ])
             }
             .boxed()
         });
@@ -862,24 +581,17 @@ async fn a_pick_waits_for_the_search_to_end_and_a_copy_keeps_its_id_and_order_wh
         .await
         .expect("a look")
         .id;
-    let early = loop {
-        tokio::time::sleep(Duration::from_millis(10)).await;
-        let early = finder.get(&id, "alice").expect("the look");
-        if early.copies.len() >= 2 {
-            break early;
-        }
-    };
+    let early = finder.get(&id, "alice").expect("the look");
 
-    // Soulseek has answered and Lidarr has not: a pick now, by place or by id, waits.
+    // Lidarr has not answered: a pick now, by place or by id, waits.
     assert_eq!(early.state, find_states::SEARCHING);
-    assert_eq!(files(&early.copies), ["two.flac", "other.flac"]);
-    assert_ne!(early.copies[0].id, early.copies[1].id);
+    assert!(early.copies.is_empty());
     assert_eq!(
         finder.pick_at(&id, 0, "alice").await.detail,
         SongFinder::STILL_SEARCHING_TEXT
     );
     assert_eq!(
-        finder.pick_by_id(&id, &early.copies[1].id, "alice").await.detail,
+        finder.pick_by_id(&id, "c1", "alice").await.detail,
         SongFinder::STILL_SEARCHING_TEXT
     );
     assert!(fetched.lock().is_none());
@@ -887,14 +599,14 @@ async fn a_pick_waits_for_the_search_to_end_and_a_copy_keeps_its_id_and_order_wh
     lidarr_done.send(true).expect("sent");
     let done = finder.wait(&id, TEN).await.expect("the look");
 
-    // Lidarr's first choice goes in between; the copies already shown keep their ids and order.
+    // Lidarr's first choice leads; each copy has an id of its own.
     assert_eq!(files(&done.copies), ["Lidarr's choice", "two.flac", "other.flac"]);
     assert_eq!(
-        early.copies.iter().map(|c| c.id.clone()).collect::<Vec<_>>(),
-        done.copies[1..].iter().map(|c| c.id.clone()).collect::<Vec<_>>()
+        done.copies.iter().map(|c| c.id.clone()).collect::<Vec<_>>(),
+        ["c1", "c2", "c3"]
     );
     assert_eq!(
-        finder.pick_by_id(&id, &early.copies[1].id, "alice").await.state,
+        finder.pick_by_id(&id, &done.copies[2].id, "alice").await.state,
         "queued"
     );
     assert_eq!(
@@ -938,33 +650,12 @@ fn lidarr_copy(format: Option<&str>, release: bool) -> FoundCopy {
 fn only_a_lossless_copy_may_replace_a_lossy_library_song() {
     let mp3_owned = owned("mp3");
     let flac_owned = owned("flac");
-    let flac = FoundCopy::new(
-        copy("Soulseek", Some(1), "Air - Sexy Boy.flac").shown,
-        PickedCopy {
-            source: "Soulseek".into(),
-            peer: Some("p".into()),
-            file: Some("Air - Sexy Boy.flac".into()),
-            size: 30_000_000,
-            ..Default::default()
-        },
-    );
-    let mp3 = FoundCopy::new(
-        AcquisitionCandidate {
-            format: Some("mp3".into()),
-            ..candidate("Soulseek")
-        },
-        PickedCopy {
-            source: "Soulseek".into(),
-            ..Default::default()
-        },
-    );
-    let refusal =
-        |target: &FindTarget, copy: &FoundCopy| SongFinder::replace_refusal(target, copy, None, None, false);
+    let flac = lidarr_copy(Some("FLAC"), true);
+    let refusal = |target: &FindTarget, copy: &FoundCopy| SongFinder::replace_refusal(target, copy);
 
     assert_eq!(refusal(&mp3_owned, &flac), None);
     assert_eq!(refusal(&mp3_owned, &lidarr_copy(Some("FLAC 24bit"), true)), None);
     assert_eq!(refusal(&mp3_owned, &lidarr_copy(None, false)), None);
-    assert!(refusal(&mp3_owned, &mp3).is_some());
     assert!(refusal(&mp3_owned, &lidarr_copy(Some("MP3-320"), true)).is_some());
     assert_eq!(
         refusal(&flac_owned, &flac).as_deref(),
@@ -1054,7 +745,7 @@ fn a_pick_is_taken_once_and_only_by_its_own_source() {
         }),
     );
 
-    assert!(picks.take("abc", "Soulseek").is_none());
+    assert!(picks.take("abc", "YouTube").is_none());
     assert_eq!(
         picks
             .take("abc", "Lidarr")
@@ -1067,14 +758,14 @@ fn a_pick_is_taken_once_and_only_by_its_own_source() {
     picks.pin(
         "old",
         Arc::new(PickedCopy {
-            source: "Soulseek".into(),
-            peer: Some("p".into()),
-            file: Some("f.flac".into()),
+            source: "Lidarr".into(),
+            release_guid: Some("old".into()),
+            indexer_id: Some(1),
             ..Default::default()
         }),
     );
     clock.advance(DownloadPicks::KEEP);
-    assert!(picks.take("old", "Soulseek").is_none());
+    assert!(picks.take("old", "Lidarr").is_none());
 }
 
 #[test]
@@ -1096,10 +787,11 @@ fn a_pick_waiting_in_the_upgrade_queue_outlives_a_restart() {
         "alice",
         "find",
     );
+    // What is derived from the pick (the release) is never written.
     assert!(
         !std::fs::read_to_string(&path)
             .expect("written")
-            .contains("IsSoulseek")
+            .contains("\"Release\":")
     );
 
     let jobs = UpgradeQueue::with_path(Some(path)).snapshot();
@@ -1114,7 +806,6 @@ fn a_pick_waiting_in_the_upgrade_queue_outlives_a_restart() {
             size: None,
         })
     );
-    assert!(!pick.is_soulseek());
 }
 
 /// A worker whose Better quality is `apply`, with the tracker and the picks given.
@@ -1132,8 +823,7 @@ pub(crate) fn upgrade_worker(
         }),
         describe: Arc::new(|_| async { None }.boxed()),
         width: Arc::new(|| 1),
-        soulseek_offline: Arc::new(|| async { false }.boxed()),
-        source_name: Arc::new(|| "Soulseek".to_string()),
+        source_name: Arc::new(|| "Lidarr".to_string()),
     };
     Arc::new(UpgradeWorker::with_seams(queue.clone(), seams, tracker, None, None).with_picks(Some(picks)))
 }
@@ -1144,12 +834,10 @@ async fn an_upgrade_with_a_pick_fetches_only_that_copy_and_logs_the_verdict() {
     let picks = Arc::new(DownloadPicks::default());
     let tracker = new_tracker();
     let pick = PickedCopy {
-        source: "Soulseek".into(),
-        peer: Some("peer9".into()),
-        file: Some("x.flac".into()),
-        format: Some("flac".into()),
-        bit_depth: Some(16),
-        sample_rate: Some(44100),
+        source: "Lidarr".into(),
+        release_guid: Some("g9".into()),
+        indexer_id: Some(9),
+        release_title: Some("Air - Moon Safari [FLAC]".into()),
         ..Default::default()
     };
     queue.add(
@@ -1170,9 +858,9 @@ async fn an_upgrade_with_a_pick_fetches_only_that_copy_and_logs_the_verdict() {
         let (asked, taken, picks, tracker) = (asked.clone(), taken.clone(), picks.clone(), tracker.clone());
         upgrade_worker(&queue, Some(tracker.clone()), picks.clone(), move |request| {
             *asked.lock() = Some(request.only_source);
-            (request.on_replacement_queued.as_ref().expect("a follower"))("soulseek", "ext1");
-            *taken.lock() = picks.take("ext1", "Soulseek");
-            tracker.complete("soulseek", "ext1", None);
+            (request.on_replacement_queued.as_ref().expect("a follower"))("outside", "ext1");
+            *taken.lock() = picks.take("ext1", "Lidarr");
+            tracker.complete("outside", "ext1", None);
             LibraryActionOutcome {
                 code: Some(LibraryActionCodes::NO_REPLACEMENT.to_string()),
                 ..LibraryActionOutcome::new(LibraryActionState::Failed, Some("nothing".into()))
@@ -1183,19 +871,23 @@ async fn an_upgrade_with_a_pick_fetches_only_that_copy_and_logs_the_verdict() {
     worker.tick(&CancellationToken::new()).await;
     worker.drain().await;
 
-    assert_eq!(*asked.lock(), Some(Some(DownloadSource::Soulseek)));
+    assert_eq!(*asked.lock(), Some(Some(DownloadSource::Lidarr)));
     assert_eq!(
-        taken.lock().as_ref().and_then(|p| p.peer.clone()).as_deref(),
-        Some("peer9")
+        taken
+            .lock()
+            .as_ref()
+            .and_then(|p| p.release_guid.clone())
+            .as_deref(),
+        Some("g9")
     );
-    let row = tracker.detail("soulseek:ext1", Some("alice")).expect("the row");
+    let row = tracker.detail("outside:ext1", Some("alice")).expect("the row");
     assert_eq!(row.kind, acquisition_kinds::UPGRADE);
     assert_eq!(row.id, "nd-1");
     let events = row.events.expect("a log");
     assert!(
         events
             .iter()
-            .any(|line| line.text == "Getting FLAC 16-bit 44.1 kHz from peer9")
+            .any(|line| line.text == "Getting Lidarr release \"Air - Moon Safari [FLAC]\"")
     );
     assert_eq!(
         events.last().expect("a line").text,
@@ -1222,7 +914,7 @@ async fn an_upgrade_with_a_pick_fetches_only_that_copy_and_logs_the_verdict() {
 #[test]
 fn lyrics_say_what_was_found_from_where_and_where_they_went() {
     let job = LyricsJob::new("/music/a.flac", "Air", "Sexy Boy", None, Some(298))
-        .with_acquisition(Some("soulseek:abc".into()));
+        .with_acquisition(Some("outside:abc".into()));
     let found = LyricsResult::new("LRCLIB", Some("[00:01.00]Hi".into()), None, false);
     let text = |outcome: LyricsWriteOutcome, result: Option<LyricsResult>, place: SongLyricsPlace| {
         let (text, detail) =

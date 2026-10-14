@@ -113,7 +113,7 @@ fn credential(user: &str) -> SubsonicCredential {
 }
 
 fn begin(tracker: &AcquisitionTracker, id: &str, user: &str, artist: Option<&str>, title: Option<&str>) {
-    tracker.begin("soulseek", id, Some(id), Some(user), artist, title, None);
+    tracker.begin("outside", id, Some(id), Some(user), artist, title, None);
 }
 
 #[tokio::test]
@@ -122,10 +122,10 @@ async fn a_starred_song_is_favorited_for_the_starrer_when_it_arrives() {
     let tracker = f.tracker(true);
     let stars = f.stars(&tracker, Clock::system());
     begin(&tracker, "abc", "alice", Some("Massive Attack"), Some("Teardrop"));
-    stars.hold_song("soulseek", "abc", &credential("alice"), Some("alice"));
+    stars.hold_song("outside", "abc", &credential("alice"), Some("alice"));
 
     tracker.imported(
-        "soulseek",
+        "outside",
         "abc",
         Some("Massive Attack"),
         Some("Teardrop"),
@@ -151,11 +151,11 @@ async fn each_starrer_gets_their_own_favorite() {
     let tracker = f.tracker(true);
     let stars = f.stars(&tracker, Clock::system());
     begin(&tracker, "abc", "alice", Some("A"), Some("Song"));
-    stars.hold_song("soulseek", "abc", &credential("alice"), Some("alice"));
-    stars.hold_song("soulseek", "abc", &credential("bob"), Some("bob"));
+    stars.hold_song("outside", "abc", &credential("alice"), Some("alice"));
+    stars.hold_song("outside", "abc", &credential("bob"), Some("bob"));
 
     tracker.imported(
-        "soulseek",
+        "outside",
         "abc",
         Some("A"),
         Some("Song"),
@@ -175,9 +175,9 @@ async fn a_failed_download_drops_the_hold_without_a_call() {
     let tracker = f.tracker(true);
     let stars = f.stars(&tracker, Clock::system());
     begin(&tracker, "abc", "alice", None, None);
-    stars.hold_song("soulseek", "abc", &credential("alice"), Some("alice"));
+    stars.hold_song("outside", "abc", &credential("alice"), Some("alice"));
 
-    tracker.fail("soulseek", "abc", Some("No source had it"));
+    tracker.fail("outside", "abc", Some("No source had it"));
 
     assert_eq!(stars.held(), 0);
     assert!(f.calls.lock().is_empty());
@@ -189,10 +189,10 @@ async fn a_song_navidrome_never_shows_is_not_favorited() {
     let tracker = f.tracker(false);
     let stars = f.stars(&tracker, Clock::system());
     begin(&tracker, "abc", "alice", None, None);
-    stars.hold_song("soulseek", "abc", &credential("alice"), Some("alice"));
+    stars.hold_song("outside", "abc", &credential("alice"), Some("alice"));
 
     tracker.imported(
-        "soulseek",
+        "outside",
         "abc",
         Some("A"),
         Some("Song"),
@@ -205,10 +205,10 @@ async fn a_song_navidrome_never_shows_is_not_favorited() {
 }
 
 fn start_album(tracker: &AcquisitionTracker, stars: &StarOnArrival) {
-    tracker.begin_album("soulseek", "alb", Some("alice"));
-    stars.hold_album("soulseek", "alb", &credential("alice"), Some("alice"));
+    tracker.begin_album("outside", "alb", Some("alice"));
+    stars.hold_album("outside", "alb", &credential("alice"), Some("alice"));
     tracker.announce(
-        "soulseek",
+        "outside",
         Some("alb"),
         None,
         &[
@@ -235,8 +235,8 @@ async fn an_album_star_favorites_the_album_once() {
     let stars = f.stars(&tracker, Clock::system());
     start_album(&tracker, &stars);
 
-    tracker.imported("soulseek", "t1", Some("Air"), Some("T1"), Some("/music/t1.flac"));
-    tracker.imported("soulseek", "t2", Some("Air"), Some("T2"), Some("/music/t2.flac"));
+    tracker.imported("outside", "t1", Some("Air"), Some("T1"), Some("/music/t1.flac"));
+    tracker.imported("outside", "t2", Some("Air"), Some("T2"), Some("/music/t2.flac"));
 
     until(|| f.star_count() == 1).await;
     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -255,9 +255,9 @@ async fn an_album_hold_survives_a_failed_track() {
     let stars = f.stars(&tracker, Clock::system());
     start_album(&tracker, &stars);
 
-    tracker.fail("soulseek", "t1", Some("No source had it"));
+    tracker.fail("outside", "t1", Some("No source had it"));
     assert_eq!(stars.held(), 1);
-    tracker.imported("soulseek", "t2", Some("Air"), Some("T2"), Some("/music/t2.flac"));
+    tracker.imported("outside", "t2", Some("Air"), Some("T2"), Some("/music/t2.flac"));
 
     until(|| f.star_count() == 1).await;
     assert_eq!(f.calls_to("rest/star")[0]["albumId"], "al-1");
@@ -269,11 +269,11 @@ async fn setting_off_at_arrival_stars_nothing() {
     let tracker = f.tracker(true);
     let stars = f.stars(&tracker, Clock::system());
     begin(&tracker, "abc", "alice", None, None);
-    stars.hold_song("soulseek", "abc", &credential("alice"), Some("alice"));
+    stars.hold_song("outside", "abc", &credential("alice"), Some("alice"));
     f.set_starring(false);
 
     tracker.imported(
-        "soulseek",
+        "outside",
         "abc",
         Some("A"),
         Some("Song"),
@@ -293,10 +293,10 @@ async fn the_default_is_that_a_download_is_not_favorited() {
     f.settings.set(AppSettings::default());
     let stars = f.stars(&tracker, Clock::system());
     begin(&tracker, "abc", "alice", None, None);
-    stars.hold_song("soulseek", "abc", &credential("alice"), Some("alice"));
+    stars.hold_song("outside", "abc", &credential("alice"), Some("alice"));
 
     tracker.imported(
-        "soulseek",
+        "outside",
         "abc",
         Some("A"),
         Some("Song"),
@@ -315,10 +315,10 @@ async fn a_song_already_owned_is_favorited_with_the_setting_off() {
     f.set_starring(false);
     let stars = f.stars(&tracker, Clock::system());
     begin(&tracker, "abc", "alice", None, None);
-    stars.hold_song("soulseek", "abc", &credential("alice"), Some("alice"));
+    stars.hold_song("outside", "abc", &credential("alice"), Some("alice"));
 
     assert!(stars.favorite_owned(
-        "soulseek",
+        "outside",
         "abc",
         Some("nd-owned"),
         "A",
@@ -336,7 +336,7 @@ async fn an_owned_song_from_octos_own_apps_is_not_favorited() {
     let f = Fixture::new();
     let stars = f.stars(&f.tracker(true), Clock::system());
     assert!(!stars.favorite_owned(
-        "soulseek",
+        "outside",
         "abc",
         Some("nd-owned"),
         "A",
@@ -353,10 +353,10 @@ async fn already_a_favorite_is_left_alone() {
     let tracker = f.tracker(true);
     let stars = f.stars(&tracker, Clock::system());
     begin(&tracker, "abc", "alice", None, None);
-    stars.hold_song("soulseek", "abc", &credential("alice"), Some("alice"));
+    stars.hold_song("outside", "abc", &credential("alice"), Some("alice"));
 
     tracker.imported(
-        "soulseek",
+        "outside",
         "abc",
         Some("A"),
         Some("Song"),
@@ -374,10 +374,10 @@ async fn holds_expire_after_a_day() {
     let now = Arc::new(Mutex::new(Utc.with_ymd_and_hms(2026, 10, 2, 18, 0, 0).unwrap()));
     let read = now.clone();
     let stars = f.stars(&f.tracker(true), Clock::new(move || *read.lock()));
-    stars.hold_song("soulseek", "old", &credential("alice"), Some("alice"));
+    stars.hold_song("outside", "old", &credential("alice"), Some("alice"));
 
     *now.lock() += TimeDelta::hours(25);
-    stars.hold_song("soulseek", "new", &credential("alice"), Some("alice"));
+    stars.hold_song("outside", "new", &credential("alice"), Some("alice"));
 
     assert_eq!(stars.held(), 1);
 }
@@ -434,10 +434,10 @@ async fn a_password_is_never_held_only_a_token_made_from_it() {
             ("c".into(), "Symfonium".into()),
         ];
         let credential = SubsonicCredential::from(pairs.iter().map(|(k, v)| (k, v))).expect("a sign-in");
-        stars.hold_song("soulseek", "abc", &credential, Some("alice"));
+        stars.hold_song("outside", "abc", &credential, Some("alice"));
 
         tracker.imported(
-            "soulseek",
+            "outside",
             "abc",
             Some("A"),
             Some("Song"),
@@ -478,9 +478,9 @@ fn an_api_key_is_named_by_its_fingerprint_and_one_star_each() {
     let stars = f.stars(&f.tracker(true), Clock::system());
     let pairs: Vec<(String, String)> = vec![("apiKey".into(), "bob-key".into())];
     let key = SubsonicCredential::from(pairs.iter().map(|(k, v)| (k, v))).expect("a sign-in");
-    stars.hold_song("soulseek", "abc", &key, None);
-    stars.hold_song("soulseek", "abc", &credential("alice"), Some("alice"));
-    stars.hold_song("soulseek", "abc", &credential("ALICE"), Some("ALICE"));
+    stars.hold_song("outside", "abc", &key, None);
+    stars.hold_song("outside", "abc", &credential("alice"), Some("alice"));
+    stars.hold_song("outside", "abc", &credential("ALICE"), Some("ALICE"));
     assert_eq!(stars.held(), 2);
     let holds = stars.holds.lock();
     assert_eq!(holds.songs[0].who, format!("API key {}", &key.fingerprint()[..8]));
@@ -509,10 +509,10 @@ async fn dropping_it_stops_listening() {
     let tracker = f.tracker(true);
     let stars = f.stars(&tracker, Clock::system());
     begin(&tracker, "abc", "alice", None, None);
-    stars.hold_song("soulseek", "abc", &credential("alice"), Some("alice"));
+    stars.hold_song("outside", "abc", &credential("alice"), Some("alice"));
     drop(stars);
     tracker.imported(
-        "soulseek",
+        "outside",
         "abc",
         Some("A"),
         Some("Song"),

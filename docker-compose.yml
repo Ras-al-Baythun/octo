@@ -12,8 +12,7 @@ services:
   # install compiles it. The default tag is this release's own number (bumped with the
   # VERSION file; CI checks it); OCTO_IMAGE_TAG in .env picks another, such as latest.
   # To run Octo built from this folder instead (changes of your own, or no access to
-  # ghcr.io), build octo-source, at the end of this file. Octo is written in Rust; the
-  # environment below and the config folder are the ones the C# Octo read, unchanged.
+  # ghcr.io), build octo-source, at the end of this file.
   octo:
     image: ghcr.io/winters27/octo:${OCTO_IMAGE_TAG:-2026.10.13}
     container_name: octo
@@ -55,12 +54,10 @@ services:
       # Never download a song already in the library; a lossy copy is queued for a
       # higher quality one instead.
       Subsonic__SkipOwnedSongs: ${SKIP_OWNED_SONGS:-true}
-      Subsonic__WaitForLosslessOnPlay: ${WAIT_FOR_LOSSLESS_ON_PLAY:-false}
-      Subsonic__LosslessWaitTimeoutSeconds: ${LOSSLESS_WAIT_TIMEOUT_SECONDS:-0}
       Subsonic__DownloadOnPlay: ${DOWNLOAD_ON_PLAY:-false}
       Subsonic__LidarrAlbumOnPlay: ${LIDARR_ALBUM_ON_PLAY:-false}
       Subsonic__FolderStructure: ${FOLDER_STRUCTURE:-Flat}
-      Subsonic__DownloadSource: ${DOWNLOAD_SOURCE:-Soulseek}
+      Subsonic__DownloadSource: ${DOWNLOAD_SOURCE:-YouTube}
       Subsonic__UseLocalStaging: ${USE_LOCAL_STAGING:-false}
       Subsonic__ExplicitFilter: ${EXPLICIT_FILTER:-All}
       Subsonic__CacheDurationHours: ${CACHE_DURATION_HOURS:-1}
@@ -86,55 +83,28 @@ services:
       # ----- yt-dlp shim sidecar (internal stream-preview source) -----
       YouTube__ShimUrl: http://yt-dlp-shim:8080
 
-      # ----- slskd (Soulseek) sidecar -----
-      Soulseek__BaseUrl: http://slskd:5030
-      Soulseek__Username: ${SLSKD_USERNAME:-slskd}
-      Soulseek__Password: ${SLSKD_PASSWORD:-slskd}
-      # Where the dashboard's Open slskd button goes. Blank: this server's name
-      # on port 5030.
-      Soulseek__WebUrl: ${SLSKD_WEB_URL:-}
-      # Ask Soulseek's port test whether other people can reach slskd (sends the
-      # port number only, at most every 6 hours).
-      Soulseek__CheckListenPort: ${SLSKD_CHECK_PORT:-true}
-      # Share your library with the people you download from: where the
-      # dashboard's Share my library switch starts. The installer and
-      # .env.example turn it on; left unset it is off, so an update never
-      # starts sharing on an existing install by itself. The switch wins once
-      # flipped. SLSKD_SHARED_DIR is what is shared, as slskd sees it.
-      Soulseek__ShareLibrary: ${SLSKD_SHARE_LIBRARY:-false}
-      Soulseek__SharedFolders: ${SLSKD_SHARED_DIR:-[Music]/share}
-      Soulseek__SearchWaitSeconds: ${SLSKD_SEARCH_WAIT_SECONDS:-30}
-      Soulseek__UpgradeSearchWaitSeconds: ${SLSKD_UPGRADE_SEARCH_WAIT_SECONDS:-90}
-      Soulseek__MinFileSizeBytes: ${SLSKD_MIN_FILE_SIZE_BYTES:-5242880}
-      Soulseek__PreferredExtension: ${SLSKD_PREFERRED_EXTENSION:-flac}
-      Soulseek__DownloadTimeoutSeconds: ${SLSKD_DOWNLOAD_TIMEOUT_SECONDS:-180}
+      # ----- Downloads: verification, applied to every source -----
       # Fingerprint every finished download and identify it before it joins the
-      # library. A peer that sends a different recording gets that file remembered
-      # and never tried again. Needs the free AcoustID key; inert without one.
-      Soulseek__VerifyDownloads: ${SLSKD_VERIFY_DOWNLOADS:-false}
-      Soulseek__AcoustIdApiKey: ${ACOUSTID_API_KEY:-}
-      Soulseek__MinMatchScore: ${SLSKD_MIN_MATCH_SCORE:-85}
-      Soulseek__TagFromMusicBrainz: ${SLSKD_TAG_FROM_MUSICBRAINZ:-false}
+      # library. A file that turns out to be a different recording is never kept.
+      # Needs the free AcoustID key; inert without one.
+      Downloads__VerifyDownloads: ${VERIFY_DOWNLOADS:-false}
+      Downloads__AcoustIdApiKey: ${ACOUSTID_API_KEY:-}
+      Downloads__MinMatchScore: ${MIN_MATCH_SCORE:-85}
+      Downloads__TagFromMusicBrainz: ${TAG_FROM_MUSICBRAINZ:-false}
       # Name the file from the matched recording too (artist folder, title, album,
       # track). Off by default; only files Octo downloads and confirms are named this way.
-      Soulseek__NameFromMatch: ${NAME_FROM_MATCH:-false}
-      Soulseek__RejectedPeerTtlDays: ${SLSKD_REJECTED_PEER_DAYS:-30}
-      Soulseek__FingerprintSeconds: ${SLSKD_FINGERPRINT_SECONDS:-120}
-      Soulseek__FingerprintTimeoutSeconds: ${SLSKD_FINGERPRINT_TIMEOUT_SECONDS:-30}
-      Soulseek__AcoustIdTimeoutSeconds: ${SLSKD_ACOUSTID_TIMEOUT_SECONDS:-10}
-      # Hours a heart waits while slskd is up but not logged in to Soulseek (server
-      # maintenance), before it uses the next source. 0 means do not wait.
-      Soulseek__OutageHoldHours: ${SLSKD_OUTAGE_HOLD_HOURS:-6}
-      # Downloads that may transfer at once (1 to 6). Each lands in its own folder, and Octo
-      # keeps to one at a time until slskd has proven it. 1 is the old behaviour.
-      Soulseek__ParallelDownloads: ${SLSKD_PARALLEL_DOWNLOADS:-3}
-      # An album heart takes one peer's folder of the album in one batch, then searches song
-      # by song only for what it lacks. false is the old song by song walk.
-      Soulseek__AlbumFolders: ${SLSKD_ALBUM_FOLDERS:-true}
+      Downloads__NameFromMatch: ${NAME_FROM_MATCH:-false}
+      Downloads__FingerprintSeconds: ${FINGERPRINT_SECONDS:-120}
+      Downloads__FingerprintTimeoutSeconds: ${FINGERPRINT_TIMEOUT_SECONDS:-30}
+      Downloads__AcoustIdTimeoutSeconds: ${ACOUSTID_TIMEOUT_SECONDS:-10}
+      # Downloads that may transfer at once (1 to 6). Each lands in its own folder.
+      Downloads__ParallelDownloads: ${PARALLEL_DOWNLOADS:-3}
+      # Check that a lossless file is really lossless, not a converted MP3.
+      Downloads__DetectTranscodes: ${DETECT_TRANSCODES:-true}
       # Send AcoustID the fingerprints you confirmed with Keep, so the next person gets a
       # confident match. Needs your personal AcoustID key (acoustid.org, after signing in).
-      Soulseek__SubmitConfirmedFingerprints: ${ACOUSTID_SUBMIT:-false}
-      Soulseek__AcoustIdUserApiKey: ${ACOUSTID_USER_KEY:-}
+      Downloads__SubmitConfirmedFingerprints: ${ACOUSTID_SUBMIT:-false}
+      Downloads__AcoustIdUserApiKey: ${ACOUSTID_USER_KEY:-}
 
       # ----- existing Lidarr (optional heart-download source) -----
       Lidarr__BaseUrl: ${LIDARR_URL:-}
@@ -258,7 +228,7 @@ services:
       LibraryActions__DuplicatesEnabled: ${LIBRARY_ACTIONS_DUPLICATES:-false}
       LibraryActions__DuplicatesScanHours: ${LIBRARY_ACTIONS_DUPLICATES_SCAN_HOURS:-24}
       LibraryActions__UpgradePerWeek: ${LIBRARY_ACTIONS_UPGRADE_PER_WEEK:-0}
-      # Where Better quality looks: Auto (Soulseek, then Lidarr), Soulseek or Lidarr.
+      # Where Better quality looks: Auto or Lidarr (both Lidarr today).
       LibraryActions__UpgradeSource: ${LIBRARY_ACTIONS_UPGRADE_SOURCE:-Auto}
       LibraryActions__NoticeMaxTracks: ${LIBRARY_ACTIONS_NOTICE_MAX:-100}
       # Auto: stars only act on tracks in Octo's playlists while Review or Duplicates is on.
@@ -302,7 +272,6 @@ services:
       Notifications__DiscordWebhookUrl: ${DISCORD_WEBHOOK_URL:-}
       Notifications__NotifyDownloadStarted: ${NOTIFY_DOWNLOAD_STARTED:-false}
       Notifications__NotifyDownloadCompleted: ${NOTIFY_DOWNLOAD_COMPLETED:-true}
-      Notifications__NotifyLosslessFallback: ${NOTIFY_LOSSLESS_FALLBACK:-true}
       Notifications__NotifyDownloadFailed: ${NOTIFY_DOWNLOAD_FAILED:-true}
       Notifications__NotifyAlbumCompleted: ${NOTIFY_ALBUM_COMPLETED:-true}
       # ----- Updates -----
@@ -343,7 +312,6 @@ services:
     # Not octo-sonic: Octo runs without it, and waits for it on its own.
     depends_on:
       - yt-dlp-shim
-      - slskd
 
   # Wraps yt-dlp behind /search and /stream HTTP endpoints. Isolating the binary
   # in its own container keeps its process-management quirks from wedging
@@ -389,8 +357,8 @@ services:
       # Persistent duration cache DB (see META_DB_PATH above).
       - ytshim-cache:/var/lib/ytshim
       # Shared music root so YouTube-MP3 downloads (DownloadSource=YouTube) land
-      # where Navidrome scans; same host dir Octo and slskd mount, so dest paths
-      # line up across containers.
+      # where Navidrome scans; the same host dir Octo mounts, so dest paths line
+      # up across containers.
       - ${DOWNLOAD_PATH:-./downloads}:/music
       # Writable home for the yt-dlp binary. YouTube rotates its player on its
       # own schedule and YTDLP_VERSION=latest is resolved at BUILD time, so an
@@ -436,66 +404,6 @@ services:
       - no-new-privileges:true
     volumes:
       - ${DOWNLOAD_PATH:-./downloads}:/music:ro
-
-  # Soulseek client (slskd). Web UI on 5030, peer port 50300.
-  # State (config, db, downloads-in-progress) persisted to ./slskd-state so the
-  # account survives recreate. SLSKD_DOWNLOADS_DIR below sends finished files
-  # to the same /music mount Octo watches.
-  #
-  # Peer port 50300 is the one other Soulseek users connect to, to download what
-  # you share. Forward TCP 50300 on your router to this machine. Port 5030 is
-  # slskd's own web page: keep it on your network, never forward it.
-  slskd:
-    image: slskd/slskd:latest
-    container_name: slskd
-    restart: unless-stopped
-    logging: *logging
-    ports:
-      - "5030:5030"
-      - "50300:50300"
-    environment:
-      # Lets slskd's administrator (Octo signs in as it) change slskd.yml through
-      # slskd's API. The dashboard's Share my library switch needs it.
-      SLSKD_REMOTE_CONFIGURATION: "true"
-      # Completed downloads go to the shared /music mount so Octo can see and
-      # relocate them. Without this slskd defaults to <app>/downloads, which the
-      # slskd-state mount turns into ./slskd-state/downloads, a directory Octo
-      # does not mount (issue #17). Incomplete transfers stay at the default
-      # /app/incomplete (inside slskd-state) so partial files never enter the
-      # library Navidrome scans.
-      # NOTE: an explicit directories.downloads in ./slskd-state/slskd.yml
-      # outranks this env var (slskd precedence: env < yaml).
-      SLSKD_DOWNLOADS_DIR: /music
-      SLSKD_SLSK_USERNAME: ${SLSKD_SOULSEEK_USERNAME:-}
-      SLSKD_SLSK_PASSWORD: ${SLSKD_SOULSEEK_PASSWORD:-}
-      SLSKD_USERNAME: ${SLSKD_USERNAME:-slskd}
-      SLSKD_PASSWORD: ${SLSKD_PASSWORD:-slskd}
-      # ----- Sharing: give back to the people you download from -----
-      # Whether slskd shares your library is the Share my library switch on
-      # the dashboard's Soulseek page (SLSKD_SHARE_LIBRARY sets where it starts).
-      # Octo applies it by writing the share list into slskd.yml through slskd's
-      # API, which is what remote configuration above allows, so do not set
-      # SLSKD_SHARED_DIR here: slskd would share it whatever the switch says.
-      # Shares come from the read-only /share mount below, so an upload can
-      # never change a file. Octo's own working files are never shared:
-      # partial and temporary copies, and its hidden folders (.octo-incoming,
-      # .octo-trash), which
-      # slskd skips anyway because their names start with a dot.
-      SLSKD_SHARE_FILTER: '[\\/]\.octo-;\.octo-tmp$$;\.part$$;\.tmp$$'
-      # Look through the shared folders again this often, in minutes (60 or
-      # more), so songs added since are shared too. A library on a cloud drive
-      # may want 10080, once a week: every look reads each file's header.
-      SLSKD_SHARE_CACHE_RETENTION: ${SLSKD_SHARE_RESCAN_MINUTES:-1440}
-      # Uploads at once, and their total speed in KiB/s, so sharing never
-      # crowds out streaming from this server. Raise both if you have upload
-      # to spare.
-      SLSKD_UPLOAD_SLOTS: ${SLSKD_UPLOAD_SLOTS:-4}
-      SLSKD_UPLOAD_SPEED_LIMIT: ${SLSKD_UPLOAD_SPEED_LIMIT:-2048}
-    volumes:
-      - ${SLSKD_STATE_DIR:-./slskd-state}:/app
-      - ${DOWNLOAD_PATH:-./downloads}:/music
-      # The same library again, read-only, for sharing.
-      - ${DOWNLOAD_PATH:-./downloads}:/share:ro
 
   # The starter stack's music server, for anyone without a Navidrome of their own.
   # Off unless the navidrome profile is on: install.sh turns it on by writing

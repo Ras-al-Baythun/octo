@@ -30,11 +30,10 @@
     "14-settings-media": "14's saves write the whole settings file, so 90's settings patch answers with every section under persisted",
     "20-library-edits": "20's retags change the songs' file sizes, which getSong, getNowPlaying and the native playlist list report"}}},
  {"name": "acquisition",
-  "why": "96 rewrites what 95 filed and what 20 left; 20 runs here for what it leaves only (its answers are the library shard's), and 13's first search for Paper Moons' id.",
-  "files": ["95-acquisition", "96-covers-explicit-writes"],
-  "setup": ["13-downloads/setup-ext-song3", "20-library-edits"],
+  "why": "96 rewrites what 20 left; 20 runs here for what it leaves only (its answers are the library shard's).",
+  "files": ["96-covers-explicit-writes"],
+  "setup": ["20-library-edits"],
   "reads": {
    "96-covers-explicit-writes": {
-    "95-acquisition": "the album 95 files (Zephyr Echo, Glass Harbor) is in the explicit preview and the covers scan",
     "20-library-edits": "20's trash folder is in the covers scan, and its retags changed the file sizes in the explicit backfill state"}}}
 ]

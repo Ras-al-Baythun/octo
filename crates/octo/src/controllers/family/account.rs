@@ -461,7 +461,7 @@ pub async fn ask(State(state): State<AppState>, web: Web, body: Bytes) -> Respon
         None | Some("") => RequestQuality::Best,
         Some(text) => match RequestQuality::parse(text) {
             Some(quality) => quality,
-            None => return refusal(StatusCode::BAD_REQUEST, "Choose Best, Flac or Mp3."),
+            None => return refusal(StatusCode::BAD_REQUEST, "Choose Best or Mp3."),
         },
     };
     let hooks = state.family.hooks(&state);

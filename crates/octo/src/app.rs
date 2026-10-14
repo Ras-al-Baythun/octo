@@ -41,8 +41,7 @@ use crate::services::common::{
     AcquisitionActivity, AcquisitionTracker, AcquisitionWorker, CacheCleanupService, CatalogBlanks,
     DownloadArrivals, DownloadConcurrency, DownloadCore, DownloadLogKeeper, DownloadPicks, DownloadServices,
     ExternalSearchService, FamilyHooks, HeartAcquisitionCoordinator, HeartCoordinatorExtras, MeterPreview,
-    SongFinder, SongFinderServices, SoulseekHoldResumer, SoulseekHoldStore, StarNavidrome, StarOnArrival,
-    TrackAcquisitionQueue, TrackerServices,
+    SongFinder, SongFinderServices, StarNavidrome, StarOnArrival, TrackAcquisitionQueue, TrackerServices,
 };
 use crate::services::cover_art::{
     AlbumCoverFinder, CoverArtAggregator, CoverArtArchiveLookup, CoverUpgradeJournal, CoverUpgradeServices,
@@ -135,11 +134,7 @@ use crate::services::sonic::{
 };
 use crate::services::soulseek::soulseek_download_service::{SoulseekDownloadParts, SoulseekDownloadService};
 use crate::services::soulseek::soulseek_metadata_service::LastFmTrackLengths;
-use crate::services::soulseek::{
-    ExternalIdRegistry, ISlskdShares, ISoulseekLink, RadioQueueStore, RejectedPeerRegistry, SoulseekClient,
-    SoulseekLink, SoulseekMetadataService, SoulseekPortCheck, SoulseekShareSwitch, SoulseekSharing,
-    SoulseekStartupValidator,
-};
+use crate::services::soulseek::{ExternalIdRegistry, RadioQueueStore, SoulseekMetadataService};
 use crate::services::subsonic::{
     CredentialCheck, NavidromeIdentityService, RecentScrobbles, RequestIdentity, SearchSongOrderCache,
     SubsonicDiscoveryService, SubsonicProxyService, SyncCatalogService,
@@ -249,8 +244,8 @@ pub struct AppInner {
     pub library_snapshot: Arc<LibrarySnapshot>,
     /// `AlbumOwnership`: how much of an outside album the library holds.
     pub album_ownership: Arc<AlbumOwnership>,
-    /// `StartupValidationOrchestrator` over the `IStartupValidator`s (`SubsonicStartupValidator`,
-    /// then `SoulseekStartupValidator`). Run by
+    /// `StartupValidationOrchestrator` over the `IStartupValidator`s (`SubsonicStartupValidator`).
+    /// Run by
     /// [`crate::host::run`] before the listener binds.
     pub startup_validation: Arc<StartupValidationOrchestrator>,
 
@@ -288,8 +283,6 @@ pub struct AppInner {
     pub download_concurrency: Arc<DownloadConcurrency>,
     /// `DownloadPicks`: copies picked in Find songs, waiting for their download.
     pub download_picks: Arc<DownloadPicks>,
-    /// `SoulseekHoldStore`: hearts waiting out a Soulseek outage, `soulseek-holds.json`.
-    pub soulseek_holds: Arc<SoulseekHoldStore>,
     /// `YouTubeResolver`: the yt-dlp shim client (its address captured at startup).
     pub you_tube_resolver: Arc<YouTubeResolver>,
     /// `ExternalIdRegistry`: short external ids, `external-ids.json` (flushed by a worker).
@@ -316,9 +309,6 @@ pub struct AppInner {
     pub admin_role_check: Arc<AdminRoleCheck>,
     /// The signed-out `GET /api/admin/status` answer, kept ten seconds.
     pub anonymous_status: crate::controllers::admin::system::AnonymousStatusCache,
-    /// `RejectedPeerRegistry`: peer files that proved wrong, `rejected-peers.json` (flushed by
-    /// a worker), with `Soulseek:RejectedPeerTtlDays` read live.
-    pub rejected_peers: Arc<RejectedPeerRegistry>,
     /// `ReleaseCheck`: whether a newer release is out, `update/release.json`; also a worker.
     pub release_check: Arc<ReleaseCheck>,
     /// `LastFmService`, with its own HTTP client: the web service the radio and the search bar
@@ -335,29 +325,14 @@ pub struct AppInner {
     /// `RecentScrobbles`: completed plays reported lately, so one sent twice is learned from once.
     pub recent_scrobbles: Arc<RecentScrobbles>,
     /// `SubsonicResponseBuilder`: every Subsonic answer Octo writes itself, over the external id
-    /// registry, with `Subsonic:WaitForLosslessOnPlay` captured at startup. The app-type answers
-    /// come with `services::subsonic::SubsonicResponseBuilderExt`.
+    /// registry. The app-type answers come with `services::subsonic::SubsonicResponseBuilderExt`.
     pub subsonic_response_builder: Arc<SubsonicResponseBuilder>,
-    /// `SoulseekClient`: slskd's REST client (a cheap handle), its address and login captured
-    /// at startup.
-    pub soulseek_client: SoulseekClient,
-    /// `SoulseekLink`, also used as `ISoulseekLink`: slskd's Soulseek login, read live, for the
-    /// dashboard and for downloads that wait out an outage.
-    pub soulseek_link: Arc<SoulseekLink>,
-    /// `SoulseekPortCheck`: Soulseek's port test for the Sharing card, one answer kept six hours.
-    pub soulseek_port_check: Arc<SoulseekPortCheck>,
-    /// `SoulseekShareSwitch`, also a worker: the Share my library switch, which keeps
-    /// slskd.yml's share list to it and checks every 10 minutes.
-    pub soulseek_share_switch: Arc<SoulseekShareSwitch>,
-    /// `SoulseekSharing`: what this server shares back with Soulseek, and whether people can
-    /// connect to it, for the dashboard.
-    pub soulseek_sharing: Arc<SoulseekSharing>,
     /// `SoulseekMetadataService`, the music metadata service.
     pub music_metadata: Arc<SoulseekMetadataService>,
     /// `IMusicMetadataService` as the controllers use it: `music_metadata` in production,
     /// a test's fake in handler tests.
     pub metadata_service: Arc<dyn IMusicMetadataService>,
-    /// `SoulseekDownloadService`: the download base over the Soulseek backend, which hearts,
+    /// `SoulseekDownloadService`: the download base over the YouTube and Lidarr backend, which hearts,
     /// plays, upgrades, Lidarr and library actions all go through (a test's fake in handler
     /// tests that swap it).
     pub download_service: Arc<dyn IDownloadService>,
@@ -384,13 +359,13 @@ pub struct AppInner {
     pub star_on_arrival: Arc<StarOnArrival>,
     /// `UpgradeQueue`: songs asked to be found in higher quality, `upgrades.json`.
     pub upgrade_queue: Arc<UpgradeQueue>,
-    /// `UpgradeSources`: where Better quality looks, over the Soulseek link.
+    /// `UpgradeSources`: where Better quality looks.
     pub upgrade_sources: Arc<UpgradeSources>,
     /// `LibraryOwnership`: whether a song is already in the library.
     pub library_ownership: Arc<LibraryOwnership>,
     /// `HeartOwnership`: asked before a heart goes anywhere.
     pub heart_ownership: Arc<HeartOwnership>,
-    /// `HeartAcquisitionCoordinator`; `SoulseekHoldResumer` is its "SoulseekHoldResumer" worker.
+    /// `HeartAcquisitionCoordinator`.
     pub heart_acquisition_coordinator: Arc<HeartAcquisitionCoordinator>,
     /// `ExternalSearchService`: the discovery half of a search, once per query.
     pub external_search: Arc<ExternalSearchService>,
@@ -674,11 +649,10 @@ impl Tagging {
 }
 
 /// What the download service is built over beyond the acquisition pipeline's own services: the
-/// tagging and verification services, the lyrics writer and slskd's client.
+/// tagging and verification services and the lyrics writer.
 struct DownloadDeps<'a> {
     tagging: &'a Tagging,
     lyrics: &'a Arc<LyricsSidecarWriter>,
-    soulseek_client: &'a SoulseekClient,
 }
 
 /// The acquisition pipeline, over the services it routes to. Two links would close a cycle, so
@@ -715,7 +689,6 @@ impl Acquisition {
         integrations: &Integrations,
         clients: &MetadataClients,
         music_metadata: Arc<dyn IMusicMetadataService>,
-        soulseek_link: Arc<dyn ISoulseekLink>,
         downloads: DownloadDeps<'_>,
         download_service: Option<Arc<dyn IDownloadService>>,
     ) -> Acquisition {
@@ -749,7 +722,7 @@ impl Acquisition {
             Clock::system(),
         );
         let upgrade_queue = stores.upgrade_queue.clone();
-        let upgrade_sources = Arc::new(UpgradeSources::new(settings.clone(), Some(soulseek_link.clone())));
+        let upgrade_sources = Arc::new(UpgradeSources::new(settings.clone()));
         let library_ownership = Arc::new(LibraryOwnership::new(
             settings.clone(),
             Some(OwnershipNavidrome {
@@ -776,13 +749,12 @@ impl Acquisition {
         ));
         let lidarr_track_fetcher: Arc<dyn ILidarrTrackFetcher> = lidarr_fetcher.clone();
 
-        // The download service: the base is built over the services above, and the Soulseek
-        // backend's optional ones are the link and Lidarr's two. A handler test may swap in its
-        // own.
-        let (download_service, soulseek_backend): (Arc<dyn IDownloadService>, _) = match download_service {
-            Some(fake) => (fake, None),
+        // The download service: the base is built over the services above, and the backend's
+        // optional ones are Lidarr's two. A handler test may swap in its own.
+        let download_service: Arc<dyn IDownloadService> = match download_service {
+            Some(fake) => fake,
             None => {
-                let (download_base, backend) = SoulseekDownloadService::build(
+                let (download_base, _backend) = SoulseekDownloadService::build(
                     DownloadCore {
                         settings: settings.clone(),
                         local_library: navidrome.local_library.clone(),
@@ -814,17 +786,14 @@ impl Acquisition {
                         arrivals: Some(stores.download_arrivals.clone()),
                     },
                     SoulseekDownloadParts {
-                        slskd: downloads.soulseek_client.clone(),
-                        rejected_peers: stores.rejected_peers.clone(),
                         verification: downloads.tagging.download_verification.clone(),
                         youtube: stores.you_tube_resolver.clone(),
                         id_registry: stores.external_id_registry.clone(),
-                        soulseek_link: Some(soulseek_link.clone()),
                         lidarr_imports: Some(lidarr_import_handoff.clone()),
                         lidarr_fetcher: Some(lidarr_track_fetcher.clone()),
                     },
                 );
-                (download_base as Arc<dyn IDownloadService>, Some(backend))
+                download_base as Arc<dyn IDownloadService>
             }
         };
         acquisition_activity.set_downloads(&download_service);
@@ -865,8 +834,6 @@ impl Acquisition {
             HeartCoordinatorExtras {
                 tracker: Some(acquisition_tracker.clone()),
                 id_registry: Some(stores.external_id_registry.clone()),
-                soulseek: Some(soulseek_link.clone()),
-                holds: Some(stores.soulseek_holds.clone()),
                 owned: Some(heart_ownership.clone()),
                 stars: Some(star_on_arrival.clone()),
             },
@@ -887,8 +854,6 @@ impl Acquisition {
             local_library: Some(navidrome.local_library.clone()),
             id_registry: Some(stores.external_id_registry.clone()),
             resolver: Some(navidrome.navidrome_song_path_resolver.clone()),
-            soulseek: soulseek_backend,
-            soulseek_link: Some(soulseek_link.clone()),
             lidarr_fetcher: Some(lidarr_fetcher),
             lidarr_client: Some(lidarr_client.clone()),
             family: Default::default(),
@@ -921,7 +886,7 @@ impl Acquisition {
         }
     }
 
-    /// `AcquisitionWorker`, `SoulseekHoldResumer` and `CacheCleanupService`, as workers.
+    /// `AcquisitionWorker` and `CacheCleanupService`, as workers.
     fn register_workers(
         &self,
         workers: &WorkerSupervisor,
@@ -940,13 +905,6 @@ impl Acquisition {
             .with_family(self.family_pool_service.clone() as Arc<dyn FamilyPlacement>),
         );
         workers.register("AcquisitionWorker", move |stopping| worker.clone().run(stopping));
-        let resumer = Arc::new(SoulseekHoldResumer::new(
-            stores.soulseek_holds.clone(),
-            self.heart_acquisition_coordinator.clone(),
-        ));
-        workers.register("SoulseekHoldResumer", move |stopping| {
-            resumer.clone().run(stopping)
-        });
         let cleanup = Arc::new(CacheCleanupService::new(settings.clone()));
         workers.register("CacheCleanupService", move |stopping| {
             cleanup.clone().run(stopping)
@@ -1156,7 +1114,6 @@ struct Stores {
     download_arrivals: Arc<DownloadArrivals>,
     download_concurrency: Arc<DownloadConcurrency>,
     download_picks: Arc<DownloadPicks>,
-    soulseek_holds: Arc<SoulseekHoldStore>,
     you_tube_resolver: Arc<YouTubeResolver>,
     stream_size_warmer: Arc<StreamSizeWarmer>,
     local_cover_cache: Arc<LocalCoverCache>,
@@ -1164,7 +1121,6 @@ struct Stores {
     radio_queues: Arc<RadioQueueStore>,
     directory_browser: Arc<DirectoryBrowser>,
     browse_sessions: Arc<BrowseSessionStore>,
-    rejected_peers: Arc<RejectedPeerRegistry>,
     release_check: Arc<ReleaseCheck>,
     subsonic_response_builder: Arc<SubsonicResponseBuilder>,
     library_action_journal: Arc<LibraryActionJournal>,
@@ -1194,7 +1150,6 @@ impl Stores {
         config_dir: &Path,
         registry: Option<Arc<ExternalIdRegistry>>,
     ) -> Stores {
-        let ttl_settings = settings.clone();
         let external_id_registry = registry.unwrap_or_else(|| {
             Arc::new(ExternalIdRegistry::new(Some(
                 config_dir.join("external-ids.json"),
@@ -1225,14 +1180,8 @@ impl Stores {
             download_arrivals: Arc::new(DownloadArrivals::default()),
             download_concurrency: Arc::new(DownloadConcurrency::new(settings.clone())),
             download_picks: Arc::new(DownloadPicks::default()),
-            soulseek_holds: Arc::new(SoulseekHoldStore::new(Some(
-                config_dir.join("soulseek-holds.json"),
-            ))),
             you_tube_resolver,
-            subsonic_response_builder: Arc::new(SubsonicResponseBuilder::new(
-                stream_size_warmer.clone(),
-                &settings.current().subsonic,
-            )),
+            subsonic_response_builder: Arc::new(SubsonicResponseBuilder::new(stream_size_warmer.clone())),
             stream_size_warmer,
             local_cover_cache,
             external_id_registry,
@@ -1241,13 +1190,6 @@ impl Stores {
             browse_sessions: Arc::new(BrowseSessionStore::new(Some(
                 config_dir.join("browse-sessions.json"),
             ))),
-            rejected_peers: Arc::new(RejectedPeerRegistry::new(
-                Some(config_dir.join("rejected-peers.json")),
-                // Read at every use, so changing the TTL takes effect without a restart.
-                Some(Arc::new(move || {
-                    ttl_settings.current().soulseek.effective_rejected_peer_ttl_days()
-                })),
-            )),
             release_check: Arc::new(ReleaseCheck::new(
                 config_dir.join("update").join("release.json"),
                 settings.clone(),
@@ -1286,10 +1228,6 @@ impl Stores {
         });
         let warmer = self.stream_size_warmer.clone();
         workers.register("StreamSizeWarmer", move |token| warmer.clone().run(token));
-        let rejected = self.rejected_peers.clone();
-        workers.register("RejectedPeerRegistry", move |token| {
-            rejected.clone().run_flusher(token)
-        });
         let release_check = self.release_check.clone();
         workers.register("ReleaseCheck", move |token| release_check.clone().run(token));
         let journal = self.library_action_journal.clone();
@@ -1697,7 +1635,6 @@ impl Imports {
         stores: &Stores,
         navidrome: &NavidromeServices,
         acquisition: &Acquisition,
-        soulseek_link: Arc<dyn ISoulseekLink>,
     ) -> Imports {
         use crate::services::imports::{
             ImportMatcher, ImportParts, ImportPlaylists, ImportService, ImportStore, KeptPlaylists,
@@ -1715,7 +1652,6 @@ impl Imports {
                 hearts: acquisition.heart_acquisition_coordinator.clone(),
                 downloads: acquisition.track_acquisition_queue.clone(),
                 tracker: acquisition.acquisition_tracker.clone(),
-                soulseek: soulseek_link,
             },
         );
         let service = ImportService::new(ImportParts {
@@ -1756,50 +1692,19 @@ impl Imports {
     }
 }
 
-/// The Soulseek services, over the stores and clients they read.
-struct SoulseekServices {
-    client: SoulseekClient,
-    link: Arc<SoulseekLink>,
-    port_check: Arc<SoulseekPortCheck>,
-    share_switch: Arc<SoulseekShareSwitch>,
-    sharing: Arc<SoulseekSharing>,
-    metadata: Arc<SoulseekMetadataService>,
-    validator: Arc<dyn IStartupValidator>,
-}
-
-impl SoulseekServices {
-    fn build(
-        settings: &Arc<SettingsStore>,
-        stores: &Stores,
-        clients: &MetadataClients,
-        last_fm: &Arc<LastFmService>,
-    ) -> Self {
-        // The client deliberately keeps the address and login Octo started with.
-        let client = SoulseekClient::new(&settings.current().soulseek);
-        let slskd: Arc<dyn ISlskdShares> = Arc::new(client.clone());
-        let port_check = Arc::new(SoulseekPortCheck::new(Arc::clone(settings)));
-        let share_switch = Arc::new(SoulseekShareSwitch::new(slskd.clone(), Arc::clone(settings)));
-        SoulseekServices {
-            sharing: Arc::new(SoulseekSharing::new(
-                slskd,
-                port_check.clone(),
-                share_switch.clone(),
-                Arc::clone(settings),
-            )),
-            port_check,
-            share_switch,
-            link: Arc::new(SoulseekLink::new(client.clone(), Arc::clone(settings))),
-            metadata: Arc::new(SoulseekMetadataService::new(
-                Arc::clone(&stores.you_tube_resolver),
-                Arc::clone(&stores.external_id_registry),
-                Arc::clone(&clients.deezer_metadata),
-                Arc::clone(&clients.cover_art_aggregator),
-                Some(Arc::clone(last_fm) as Arc<dyn LastFmTrackLengths>),
-            )),
-            validator: Arc::new(SoulseekStartupValidator::new(settings, client.clone())),
-            client,
-        }
-    }
+/// The music metadata service, over the stores and clients it reads.
+fn build_music_metadata(
+    stores: &Stores,
+    clients: &MetadataClients,
+    last_fm: &Arc<LastFmService>,
+) -> Arc<SoulseekMetadataService> {
+    Arc::new(SoulseekMetadataService::new(
+        Arc::clone(&stores.you_tube_resolver),
+        Arc::clone(&stores.external_id_registry),
+        Arc::clone(&clients.deezer_metadata),
+        Arc::clone(&clients.cover_art_aggregator),
+        Some(Arc::clone(last_fm) as Arc<dyn LastFmTrackLengths>),
+    ))
 }
 
 /// Last.fm radio and the generated mixes.
@@ -2044,7 +1949,6 @@ impl LibraryActions {
         stores: &Stores,
         navidrome: &NavidromeServices,
         acquisition: &Acquisition,
-        soulseek_link: Arc<dyn ISoulseekLink>,
         spectrum: Arc<SpectrumAnalyzer>,
         answers: SongAnswers,
     ) -> Self {
@@ -2056,14 +1960,12 @@ impl LibraryActions {
             journal: stores.library_action_journal.clone(),
             library: navidrome.local_library.clone(),
             ids: stores.external_id_registry.clone(),
-            rejected_peers: stores.rejected_peers.clone(),
             acquisitions: acquisition.track_acquisition_queue.clone(),
             settings: settings.clone(),
             notices: Some(notice_queue.clone()),
             // The same spectrum analyzer the downloads use.
             spectrum: Some(spectrum),
             stars: Some(acquisition.star_on_arrival.clone()),
-            soulseek_link: Some(soulseek_link),
             sources: Some(acquisition.upgrade_sources.clone()),
             answers: Some(answers),
         }));
@@ -2226,7 +2128,6 @@ impl LibraryJobs {
         clients: &MetadataClients,
         acquisition: &Acquisition,
         executor: &Arc<LibraryActionExecutor>,
-        soulseek_link: Arc<dyn ISoulseekLink>,
     ) -> LibraryJobs {
         let upgrade_worker = Arc::new(UpgradeWorker::new(
             stores.upgrade_queue.clone(),
@@ -2234,7 +2135,6 @@ impl LibraryJobs {
                 executor: executor.clone(),
                 resolver: navidrome.navidrome_song_path_resolver.clone(),
                 concurrency: Some(stores.download_concurrency.clone()),
-                soulseek: Some(soulseek_link.clone()),
                 tracker: Some(acquisition.acquisition_tracker.clone()),
                 attempts: Some(stores.quality_upgrade_store.clone()),
                 settings: Some(settings.clone()),
@@ -2250,7 +2150,6 @@ impl LibraryJobs {
                 navidrome.navidrome_playlist_api.clone(),
                 navidrome.navidrome_identity.clone(),
                 settings.clone(),
-                Some(soulseek_link),
                 Some(stores.upgrade_queue.clone()),
                 Some(acquisition.upgrade_sources.clone()),
             )
@@ -2586,9 +2485,9 @@ impl AppState {
     ///
     /// Built in dependency order, each group over the ones before it: the stores and the
     /// metadata clients (every state file and outside lookup), the tagging and lyrics services,
-    /// the Last.fm, ListenBrainz and notification services, the Soulseek services (the metadata
+    /// the Last.fm, ListenBrainz and notification services, the metadata service (the metadata
     /// service everything searches through), Navidrome's services (whose startup validation
-    /// checks Subsonic, then Soulseek), the lyrics, genre and cover jobs (over the library
+    /// checks Subsonic), the lyrics, genre and cover jobs (over the library
     /// service), the acquisition pipeline (over all of those), library actions and the queues and
     /// sweeps (over its executor and queues), radio and the charts, and last the library
     /// snapshot, the sign-in, the Library health services and the import, which read from the
@@ -2632,15 +2531,9 @@ impl AppState {
             }
         });
         let integrations = Integrations::build(&settings, &settings_writer, &clients.deezer_metadata, None);
-        let soulseek = SoulseekServices::build(&settings, &stores, &clients, &integrations.last_fm);
-        let metadata_service: Arc<dyn IMusicMetadataService> = soulseek.metadata.clone();
-        // The Share my library switch: keeps slskd.yml's share list to it, and checks every 10
-        // minutes.
-        let share_switch = soulseek.share_switch.clone();
-        workers.register("SoulseekShareSwitch", move |stopping| {
-            share_switch.clone().run(stopping)
-        });
-        let navidrome = NavidromeServices::build(&settings, &stores, true, vec![soulseek.validator]);
+        let music_metadata = build_music_metadata(&stores, &clients, &integrations.last_fm);
+        let metadata_service: Arc<dyn IMusicMetadataService> = music_metadata.clone();
+        let navidrome = NavidromeServices::build(&settings, &stores, true, Vec::new());
         let family_navidrome = (
             navidrome.navidrome_admin.clone(),
             navidrome.library_index.clone(),
@@ -2681,11 +2574,9 @@ impl AppState {
             &integrations,
             &clients,
             metadata_service.clone(),
-            soulseek.link.clone(),
             DownloadDeps {
                 tagging: &tagging,
                 lyrics: &lyrics.sidecar_writer,
-                soulseek_client: &soulseek.client,
             },
             None,
         );
@@ -2695,7 +2586,6 @@ impl AppState {
             &stores,
             &navidrome,
             &acquisition,
-            soulseek.link.clone(),
             tagging.spectrum_analyzer.clone(),
             lyrics.song_answers(&genre_cover_jobs.cover_upgrade_worker),
         );
@@ -2707,7 +2597,6 @@ impl AppState {
             &clients,
             &acquisition,
             &library_actions.executor,
-            soulseek.link.clone(),
         );
         library_jobs.register_workers(&workers);
         let radio = Radio::build(
@@ -2786,14 +2675,7 @@ impl AppState {
                 }
             });
         }
-        let imports = Imports::build(
-            &settings,
-            Some(&config_dir),
-            &stores,
-            &navidrome,
-            &acquisition,
-            soulseek.link.clone(),
-        );
+        let imports = Imports::build(&settings, Some(&config_dir), &stores, &navidrome, &acquisition);
         imports.register_workers(&workers);
         let family_requests = FamilyRequests::build(
             &settings,
@@ -2835,7 +2717,6 @@ impl AppState {
             download_history: stores.download_history,
             download_concurrency: stores.download_concurrency,
             download_picks: stores.download_picks,
-            soulseek_holds: stores.soulseek_holds,
             you_tube_resolver: stores.you_tube_resolver,
             external_id_registry: stores.external_id_registry,
             stream_size_warmer: stores.stream_size_warmer,
@@ -2848,7 +2729,6 @@ impl AppState {
             admin_recovery_code: admin_sign_in.recovery_code,
             admin_role_check: admin_sign_in.role_check,
             anonymous_status: Default::default(),
-            rejected_peers: stores.rejected_peers,
             release_check: stores.release_check,
             http: navidrome.http,
             subsonic_proxy: navidrome.subsonic_proxy,
@@ -2880,12 +2760,7 @@ impl AppState {
             notifications: integrations.notifications,
             recent_scrobbles: integrations.recent_scrobbles,
             subsonic_response_builder: stores.subsonic_response_builder,
-            soulseek_client: soulseek.client,
-            soulseek_link: soulseek.link,
-            soulseek_port_check: soulseek.port_check,
-            soulseek_share_switch: soulseek.share_switch,
-            soulseek_sharing: soulseek.sharing,
-            music_metadata: soulseek.metadata,
+            music_metadata,
             metadata_service,
             download_service: acquisition.download_service,
             lidarr_client: acquisition.lidarr_client,
@@ -3025,12 +2900,12 @@ impl AppState {
             &clients.deezer_metadata,
             overrides.last_fm_base_url.as_deref(),
         );
-        let soulseek = SoulseekServices::build(&settings, &stores, &clients, &integrations.last_fm);
+        let music_metadata = build_music_metadata(&stores, &clients, &integrations.last_fm);
         let metadata_service: Arc<dyn IMusicMetadataService> = overrides
             .metadata
             .clone()
-            .unwrap_or_else(|| soulseek.metadata.clone());
-        let navidrome = NavidromeServices::build(&settings, &stores, false, vec![soulseek.validator]);
+            .unwrap_or_else(|| music_metadata.clone());
+        let navidrome = NavidromeServices::build(&settings, &stores, false, Vec::new());
         let family_navidrome = (
             navidrome.navidrome_admin.clone(),
             navidrome.library_index.clone(),
@@ -3067,11 +2942,9 @@ impl AppState {
             &integrations,
             &clients,
             metadata_service.clone(),
-            soulseek.link.clone(),
             DownloadDeps {
                 tagging: &tagging,
                 lyrics: &lyrics.sidecar_writer,
-                soulseek_client: &soulseek.client,
             },
             overrides.download_service.clone(),
         );
@@ -3081,7 +2954,6 @@ impl AppState {
             &stores,
             &navidrome,
             &acquisition,
-            soulseek.link.clone(),
             tagging.spectrum_analyzer.clone(),
             lyrics.song_answers(&genre_cover_jobs.cover_upgrade_worker),
         );
@@ -3094,7 +2966,6 @@ impl AppState {
             &clients,
             &acquisition,
             &library_actions.executor,
-            soulseek.link.clone(),
         );
         // The radio's state files sit in the test's config directory; its workers are not run.
         let radio = Radio::build(
@@ -3176,14 +3047,7 @@ impl AppState {
             &family_navidrome.2,
         );
         // The import's files stay in memory; no worker is run.
-        let imports = Imports::build(
-            &settings,
-            None,
-            &stores,
-            &navidrome,
-            &acquisition,
-            soulseek.link.clone(),
-        );
+        let imports = Imports::build(&settings, None, &stores, &navidrome, &acquisition);
         let family_requests = FamilyRequests::build(
             &settings,
             &stores,
@@ -3224,7 +3088,6 @@ impl AppState {
             download_history: stores.download_history,
             download_concurrency: stores.download_concurrency,
             download_picks: stores.download_picks,
-            soulseek_holds: stores.soulseek_holds,
             you_tube_resolver: stores.you_tube_resolver,
             external_id_registry: stores.external_id_registry,
             stream_size_warmer: stores.stream_size_warmer,
@@ -3237,7 +3100,6 @@ impl AppState {
             admin_recovery_code: admin_sign_in.recovery_code,
             admin_role_check: admin_sign_in.role_check,
             anonymous_status: Default::default(),
-            rejected_peers: stores.rejected_peers,
             release_check: stores.release_check,
             http: navidrome.http,
             subsonic_proxy: navidrome.subsonic_proxy,
@@ -3269,12 +3131,7 @@ impl AppState {
             notifications: integrations.notifications,
             recent_scrobbles: integrations.recent_scrobbles,
             subsonic_response_builder: stores.subsonic_response_builder,
-            soulseek_client: soulseek.client,
-            soulseek_link: soulseek.link,
-            soulseek_port_check: soulseek.port_check,
-            soulseek_share_switch: soulseek.share_switch,
-            soulseek_sharing: soulseek.sharing,
-            music_metadata: soulseek.metadata,
+            music_metadata,
             metadata_service,
             download_service: acquisition.download_service,
             lidarr_client: acquisition.lidarr_client,
@@ -3435,7 +3292,6 @@ mod tests {
         let names: Vec<String> = state.workers.status().into_iter().map(|s| s.name).collect();
         for name in [
             "ExternalIdRegistry",
-            "RejectedPeerRegistry",
             "ReleaseCheck",
             "LyricsSidecarWriter",
             "LyricsLibraryStore",
@@ -3457,7 +3313,7 @@ mod tests {
     async fn the_acquisition_pipeline_is_wired_with_its_workers() {
         let state = AppState::build(SettingsStore::from_env(Vec::new(), None));
         let names: Vec<String> = state.workers.status().into_iter().map(|s| s.name).collect();
-        for name in ["AcquisitionWorker", "SoulseekHoldResumer", "CacheCleanupService"] {
+        for name in ["AcquisitionWorker", "CacheCleanupService"] {
             assert!(names.iter().any(|n| n == name), "{name} in {names:?}");
         }
 
@@ -3466,28 +3322,18 @@ mod tests {
         assert!(!state.acquisition_activity.is_busy());
         state
             .acquisition_tracker
-            .begin("soulseek", "abc", None, Some("alice"), None, None, None);
+            .begin("outside", "abc", None, Some("alice"), None, None, None);
         assert_eq!(state.acquisition_tracker.for_user("alice").len(), 1);
         assert_eq!(state.star_on_arrival.held(), 0);
         assert!(state.local_library.parse_song_id("ext-deezer-1").0);
     }
 
-    /// SoulseekClient reads its settings once: the address it started with stays, and the
-    /// metadata service shares the registry the stores hold.
+    /// The metadata service shares the registry the stores hold.
     #[tokio::test]
-    async fn the_soulseek_client_keeps_the_address_it_started_with() {
+    async fn the_metadata_service_shares_the_stores_registry() {
         use crate::services::i_music_metadata_service::IMusicMetadataService;
-        use octo_core::settings::SoulseekSettings;
 
-        let state = AppState::for_tests(AppSettings {
-            soulseek: SoulseekSettings {
-                base_url: Some("http://slskd:5030/".into()),
-                ..Default::default()
-            },
-            ..Default::default()
-        });
-        state.settings.set(AppSettings::default());
-        assert_eq!(state.soulseek_client.base_url(), "http://slskd:5030");
+        let state = AppState::for_tests(AppSettings::default());
 
         let songs = state
             .music_metadata

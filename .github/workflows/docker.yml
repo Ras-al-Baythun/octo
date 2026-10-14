@@ -2,8 +2,8 @@ name: Docker Build & Push
 
 # Publishes Octo's three images (Octo, the yt-dlp shim, octo-sonic) for amd64 and arm64:
 # on every push to main (tagged main and the commit), and on every release tag (tagged with
-# the release, and latest for a dated release). Octo is the Rust server (Dockerfile; the C#
-# app in octo/ is in no image). Installs pull all three at their own release's tag, and the
+# the release, and latest for a dated release). Octo is the Rust server (Dockerfile). Installs
+# pull all three at their own release's tag, and the
 # update helper pulls them on Update now, so they must be on ghcr.io before anyone can see
 # the release.
 #
@@ -52,8 +52,8 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  # The release number is the VERSION file (the Rust build reads it; octo/octo.csproj names
-  # the last C# release and is not read once VERSION exists).
+  # The release number is the VERSION file (the Rust build reads it; octo/octo.csproj is
+  # build.rs's fallback and is not read once VERSION exists).
   versions:
     runs-on: ubuntu-latest
 
@@ -93,11 +93,9 @@ jobs:
           done
 
   # Every check in ci.yml (the Rust server, the shim, octo-sonic, the helper and the
-  # installer) before anything is published. The C# app's job is left out: no image holds it.
+  # installer) before anything is published.
   checks:
     uses: ./.github/workflows/ci.yml
-    with:
-      csharp: false
 
   # Each image for each platform, built on a runner of that platform: arm64 on GitHub's own
   # arm64 runners (free for public repositories) rather than under QEMU, where compiling

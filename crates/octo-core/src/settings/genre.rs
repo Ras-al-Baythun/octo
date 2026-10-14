@@ -140,7 +140,7 @@ const DEFAULT_BACKFILL_EXTENSIONS: [&str; 9] = [
 /// container words a downloader invents, and the format tags peers add. A user blocklist
 /// ADDS to this and cannot remove from it, because "Music" is not a genre in any
 /// configuration.
-pub const BUILT_IN_BLOCKLIST: [&str; 34] = [
+pub const BUILT_IN_BLOCKLIST: [&str; 33] = [
     "music",
     "people & blogs",
     "people and blogs",
@@ -167,7 +167,6 @@ pub const BUILT_IN_BLOCKLIST: [&str; 34] = [
     "audio",
     "soundtrack music",
     "youtube",
-    "soulseek",
     "lossless",
     "flac",
     "mp3",

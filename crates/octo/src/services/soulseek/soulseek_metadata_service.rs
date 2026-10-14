@@ -1,4 +1,4 @@
-//! The Soulseek metadata service. The routing model is
+//! The outside-song metadata service. The routing model is
 //! `octo_core::soulseek::soulseek_metadata_service`.
 
 use std::collections::{HashMap, HashSet};
@@ -45,12 +45,12 @@ pub trait LastFmTrackLengths: Send + Sync {
     async fn track_duration(&self, artist: &str, title: &str) -> Option<i32>;
 }
 
-/// Music metadata service for the YouTube-first / Soulseek-on-star architecture.
+/// Music metadata service for the YouTube-first / download-on-star architecture.
 ///
 /// Radio queue creation is YouTube-only and lightweight: one yt-dlp search per
-/// Last.fm similar track. We do NOT query Soulseek here: Soulseek is reserved
-/// for the explicit "user wants to keep this" action (star / permanent download)
-/// in SoulseekDownloadService.
+/// Last.fm similar track. Nothing is downloaded here: a permanent copy is the
+/// explicit "user wants to keep this" action (star / permanent download) in
+/// SoulseekDownloadService.
 ///
 /// External IDs are kept short (~30-80 chars) so Subsonic clients accept them.
 /// Format:  yt|{videoId}|{artist_b64}|{title_b64}|{durationSec}
@@ -234,7 +234,7 @@ async fn bounded_wait(gate: &Semaphore) -> Option<tokio::sync::SemaphorePermit<'
         .and_then(Result::ok)
 }
 
-/// `string.Equals(a, "soulseek", OrdinalIgnoreCase)`.
+/// `string.Equals(a, PROVIDER_NAME, OrdinalIgnoreCase)`.
 fn is_ours(external_provider: &str) -> bool {
     dotnet::eq_ignore_case(external_provider, SoulseekMetadataService::PROVIDER_NAME)
 }
@@ -327,7 +327,8 @@ fn parse_query(query: &str) -> (String, Option<String>) {
 }
 
 impl SoulseekMetadataService {
-    pub const PROVIDER_NAME: &'static str = "soulseek";
+    /// The provider name of every outside song Octo mints an id for.
+    pub const PROVIDER_NAME: &'static str = "outside";
 
     pub fn new(
         youtube: Arc<YouTubeResolver>,

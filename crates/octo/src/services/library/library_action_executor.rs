@@ -44,10 +44,7 @@ use crate::services::library::library_tag_edits::{self, song_tag_fields};
 use crate::services::library::replacement_handoff::ArrivedTags;
 use crate::services::local::ILocalLibraryService;
 use crate::services::lyrics::{LyricsChoiceService, LyricsService, LyricsSidecarWriter};
-use crate::services::soulseek::soulseek_link::{OFFLINE_TEXT, SoulseekLinkState};
-use crate::services::soulseek::{
-    ExternalIdRegistry, ISoulseekLink, RejectedPeerRegistry, SoulseekMetadataService,
-};
+use crate::services::soulseek::{ExternalIdRegistry, SoulseekMetadataService};
 
 /// Told the provider and external id of the replacement download the moment it is queued, so the
 /// upgrade queue can follow that download's progress.
@@ -100,8 +97,8 @@ impl LibraryActionRequest {
 
 /// What happened to one library action request.
 ///
-/// Code says WHY, for callers that act on the reason: the upgrade queue waits for Soulseek on
-/// one and reports "no FLAC found" on the other. Detail stays the words for people.
+/// Code says WHY, for callers that act on the reason: the upgrade queue reports "no FLAC found"
+/// on one. Detail stays the words for people.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct LibraryActionOutcome {
     pub state: LibraryActionState,
@@ -150,9 +147,6 @@ impl LibraryActionOutcome {
 pub struct LibraryActionCodes;
 
 impl LibraryActionCodes {
-    /// slskd is not logged in to Soulseek, so a replacement could only fail.
-    pub const SOULSEEK_OFFLINE: &'static str = "soulseekOffline";
-
     /// The search found no copy good enough to replace the song with.
     pub const NO_REPLACEMENT: &'static str = "noReplacement";
 }
@@ -202,14 +196,12 @@ pub struct LibraryActionExecutorParts {
     pub journal: Arc<LibraryActionJournal>,
     pub library: Arc<dyn ILocalLibraryService>,
     pub ids: Arc<ExternalIdRegistry>,
-    pub rejected_peers: Arc<RejectedPeerRegistry>,
     pub acquisitions: Arc<TrackAcquisitionQueue>,
-    /// The library action, Soulseek and Subsonic settings, read at use.
+    /// The library action, download and Subsonic settings, read at use.
     pub settings: Arc<SettingsStore>,
     pub notices: Option<Arc<NoticeQueue>>,
     pub spectrum: Option<Arc<SpectrumAnalyzer>>,
     pub stars: Option<Arc<StarOnArrival>>,
-    pub soulseek_link: Option<Arc<dyn ISoulseekLink>>,
     pub sources: Option<Arc<UpgradeSources>>,
     pub answers: Option<SongAnswers>,
 }
@@ -245,13 +237,11 @@ pub struct LibraryActionExecutor {
     journal: Arc<LibraryActionJournal>,
     library: Arc<dyn ILocalLibraryService>,
     ids: Arc<ExternalIdRegistry>,
-    rejected_peers: Arc<RejectedPeerRegistry>,
     acquisitions: Arc<TrackAcquisitionQueue>,
     settings: Arc<SettingsStore>,
     notices: Option<Arc<NoticeQueue>>,
     spectrum: Option<Arc<SpectrumAnalyzer>>,
     stars: Option<Arc<StarOnArrival>>,
-    soulseek_link: Option<Arc<dyn ISoulseekLink>>,
     sources: Option<Arc<UpgradeSources>>,
     answers: Option<SongAnswers>,
     reconciled: AtomicBool,
@@ -314,7 +304,7 @@ fn is_file_not_found(error: &anyhow::Error) -> bool {
         )
 }
 
-/// `InvalidOperationException`, as Lidarr's client and fetcher report it, and as the Soulseek
+/// `InvalidOperationException`, as Lidarr's client and fetcher report it, and as the
 /// download service does (no artist or title, no Lidarr, no download path).
 fn is_invalid_operation(error: &anyhow::Error) -> bool {
     matches!(
@@ -406,13 +396,11 @@ impl LibraryActionExecutor {
             journal: parts.journal,
             library: parts.library,
             ids: parts.ids,
-            rejected_peers: parts.rejected_peers,
             acquisitions: parts.acquisitions,
             settings: parts.settings,
             notices: parts.notices,
             spectrum: parts.spectrum,
             stars: parts.stars,
-            soulseek_link: parts.soulseek_link,
             sources: parts.sources,
             answers: parts.answers,
             reconciled: AtomicBool::new(false),
@@ -577,25 +565,16 @@ impl LibraryActionExecutor {
             return Ok(LibraryActionOutcome::said(LibraryActionState::Rehearsed, detail));
         }
 
-        // Better quality with every source out could only fail, and before this it was journaled
-        // as "no FLAC found" every sweep. Not consumed, so the request stays and runs once slskd
-        // is back. Nothing is written and no file is touched. With Lidarr also set up, a Soulseek
-        // outage just means Lidarr alone is asked.
-        if request.action == LibraryAction::BetterQuality {
-            let sources = self.sources_for(request.action, request.only_source).await;
-            if sources.is_empty() && self.waiting_for_soulseek().await {
-                return Ok(LibraryActionOutcome::coded(
-                    LibraryActionState::Failed,
-                    OFFLINE_TEXT,
-                    Some(LibraryActionCodes::SOULSEEK_OFFLINE),
-                ));
-            }
-            if sources.is_empty() {
-                return Ok(LibraryActionOutcome::said(
-                    LibraryActionState::Failed,
-                    "Better quality has no source set up: it needs slskd or Lidarr.",
-                ));
-            }
+        // Better quality with no source could only fail, and before this it was journaled as
+        // "no FLAC found" every sweep. Not consumed, so the request stays and runs once Lidarr
+        // is set up. Nothing is written and no file is touched.
+        if request.action == LibraryAction::BetterQuality
+            && self.sources_for(request.action, request.only_source).is_empty()
+        {
+            return Ok(LibraryActionOutcome::said(
+                LibraryActionState::Failed,
+                "Better quality has no source set up: it needs Lidarr.",
+            ));
         }
 
         // Taken before the Pending entry is written: a second action on the same file content
@@ -1012,10 +991,6 @@ impl LibraryActionExecutor {
         key: &str,
         music_root: &str,
     ) -> Replaced {
-        if request.action == LibraryAction::WrongSong {
-            self.blacklist_source(original, request).await;
-        }
-
         // Read while the original is in place: Navidrome built this song's ids from these tags.
         let identity = KeptIdentityTags::read(
             Path::new(&original.absolute_path),
@@ -1106,9 +1081,8 @@ impl LibraryActionExecutor {
                     .map_err(Arc::new)?;
             }
 
-            // In order, and on to the next when one finds nothing or its copy fails the checks:
-            // Soulseek first, then Lidarr, for Better quality with both set up.
-            let sources = self.sources_for(request.action, request.only_source).await;
+            // In order, and on to the next when one finds nothing or its copy fails the checks.
+            let sources = self.sources_for(request.action, request.only_source);
             let upgrade_search = request.action == LibraryAction::BetterQuality;
             let requested_by = self
                 .settings
@@ -1145,14 +1119,14 @@ impl LibraryActionExecutor {
                         let why = is_rejected(&e)
                             .map(|rejected| rejected.problem.clone())
                             .unwrap_or_else(|| e.to_string());
-                        let word = UpgradeSources::word(source.unwrap_or(DownloadSource::Soulseek));
+                        let word = UpgradeSources::word(source.unwrap_or(DownloadSource::YouTube));
                         misses.push(format!("{word}: {why}"));
                         info!(
                             "Library action {}: {word} had no copy of '{} - {}' ({why}); trying {}",
                             action_name(request.action),
                             original.artist,
                             original.title,
-                            UpgradeSources::word(sources[attempt + 1].unwrap_or(DownloadSource::Soulseek))
+                            UpgradeSources::word(sources[attempt + 1].unwrap_or(DownloadSource::YouTube))
                         );
                         attempt += 1;
                     }
@@ -1440,11 +1414,11 @@ impl LibraryActionExecutor {
     }
 
     /// Where a replacement may come from, in the order tried. Better quality uses the upgrade
-    /// sources that are set up and can search now (never YouTube, whose MP3 a lossless check
-    /// refuses anyway), and searches the slow way, because nobody is waiting (#70). Wrong song and
-    /// wrong version use the download source, except that Lidarr there means Lidarr too: before,
-    /// those replacements went to Soulseek whatever was configured. A None entry is the default.
-    pub async fn sources_for(
+    /// sources that are set up (never YouTube, whose MP3 a lossless check refuses anyway), and
+    /// searches the slow way, because nobody is waiting (#70). Wrong song and wrong version use
+    /// the download source, except that Lidarr there means Lidarr too. A None entry is the
+    /// default, YouTube.
+    pub fn sources_for(
         &self,
         action: LibraryAction,
         only: Option<DownloadSource>,
@@ -1452,22 +1426,15 @@ impl LibraryActionExecutor {
         if action == LibraryAction::BetterQuality
             && let Some(picked) = only
         {
-            return if picked == DownloadSource::Soulseek && self.soulseek_out().await {
-                Vec::new()
-            } else {
-                vec![Some(picked)]
-            };
+            return vec![Some(picked)];
         }
         if action == LibraryAction::BetterQuality {
-            // Without the plan (hosts that build the executor by hand): Soulseek, as it always was.
+            // Without the plan (hosts that build the executor by hand): Lidarr, the one lossless
+            // source.
             let Some(sources) = &self.sources else {
-                return if self.soulseek_out().await {
-                    Vec::new()
-                } else {
-                    vec![Some(DownloadSource::Soulseek)]
-                };
+                return vec![Some(DownloadSource::Lidarr)];
             };
-            return sources.available().await.into_iter().map(Some).collect();
+            return sources.plan().into_iter().map(Some).collect();
         }
         let lidarr_hearts = self.settings.current().subsonic.download_source == DownloadSource::Lidarr
             && self
@@ -1478,23 +1445,6 @@ impl LibraryActionExecutor {
             vec![Some(DownloadSource::Lidarr), None]
         } else {
             vec![None]
-        }
-    }
-
-    async fn waiting_for_soulseek(&self) -> bool {
-        match &self.sources {
-            Some(sources) => sources.waiting_for_soulseek().await,
-            None => self.soulseek_out().await,
-        }
-    }
-
-    async fn soulseek_out(&self) -> bool {
-        match &self.soulseek_link {
-            Some(link) => link
-                .read(false)
-                .await
-                .is_some_and(|reading| reading.link == SoulseekLinkState::NotLoggedIn),
-            None => false,
         }
     }
 
@@ -1561,7 +1511,7 @@ impl LibraryActionExecutor {
     }
 
     async fn spectrum_of(&self, path: &str) -> SpectrumReport {
-        let settings = self.settings.current().soulseek.clone();
+        let settings = self.settings.current().downloads.clone();
         match &self.spectrum {
             Some(spectrum) if settings.detect_transcodes => {
                 spectrum
@@ -1587,49 +1537,6 @@ impl LibraryActionExecutor {
                 ),
             )
         }
-    }
-
-    /// Remember the peer that delivered a wrong file, so the ranking never offers it again.
-    ///
-    /// Only possible when the download recorded who sent it, which Octo started doing alongside
-    /// this feature. For a file downloaded before that, or one Octo never downloaded, there is
-    /// nothing to blacklist and the re-acquire is an ordinary search.
-    async fn blacklist_source(&self, original: &ResolvedSongFile, request: &LibraryActionRequest) {
-        if !self.settings.current().soulseek.verify_downloads {
-            return;
-        }
-
-        let mapping = self
-            .library
-            .find_mapping_by_tags(
-                Some(&original.artist),
-                Some(&original.title),
-                Some(&original.album),
-            )
-            .await;
-
-        let peer = mapping
-            .as_ref()
-            .and_then(|m| m.source_peer.clone())
-            .filter(|p| !p.is_empty());
-        let file = mapping
-            .as_ref()
-            .and_then(|m| m.source_file.clone())
-            .filter(|f| !f.is_empty());
-        let (Some(peer), Some(file)) = (peer, file) else {
-            info!(
-                "Library action Wrong song: no record of who sent '{} - {}', so the search runs again without a blacklist",
-                original.artist, original.title
-            );
-            return;
-        };
-
-        self.rejected_peers.deny(
-            Some(&peer),
-            Some(&file),
-            &format!("reported as the wrong song by {}", request.username),
-            &format!("{} - {}", original.artist, original.title),
-        );
     }
 
     fn entry(

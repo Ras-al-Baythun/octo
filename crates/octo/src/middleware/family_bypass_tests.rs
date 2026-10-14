@@ -16,7 +16,6 @@ use http_body_util::BodyExt;
 use octo_core::family::abilities::Preset;
 use octo_core::family::device::{Device, NetworkPlace};
 use octo_core::family::quality::{DeviceQualityMode, QualityPreference, StreamQuality};
-use octo_core::models::domain::Song;
 use octo_core::settings::{AppSettings, FamilySettings, SubsonicSettings};
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -390,98 +389,6 @@ async fn transcode_decisions_stay_for_a_member_without_a_ceiling() {
     );
     let r = get(&f, &format!("/rest/getOpenSubsonicExtensions?{ALEX}"), HOME).await;
     assert!(r.body.contains("\"transcoding\""), "{}", r.body);
-}
-
-#[tokio::test]
-async fn local_file_shortcut_relays_the_library_copy_with_the_ceiling() {
-    let f = family(true, capped(), |s| s.subsonic.wait_for_lossless_on_play = true).await;
-    let file = f.index_song(false).await;
-    let song = Song {
-        title: "Song".into(),
-        artist: "Artist".into(),
-        external_provider: Some("deezer".into()),
-        external_id: Some("1".into()),
-        ..Default::default()
-    };
-    f.state
-        .local_library
-        .register_downloaded_song(&song, &file)
-        .await
-        .expect("mapped");
-    let r = get(
-        &f,
-        &format!("/rest/stream?{ALEX}&id=ext-deezer-song-1&format=raw"),
-        HOME,
-    )
-    .await;
-    assert_eq!(r.status, StatusCode::OK);
-    assert_eq!(r.body, LIBRARY_AUDIO, "the library copy, never the file");
-    let sent = f.streamed().await;
-    assert_eq!(value(&sent, "id"), Some("lib-9"));
-    assert_eq!(value(&sent, "maxBitRate"), Some("192"));
-    assert_eq!(value(&sent, "format"), Some("opus"));
-}
-
-#[tokio::test]
-async fn serve_acquired_relays_the_library_copy_with_the_ceiling() {
-    // Only a member who adds songs at once has a play keep a copy, so only their play joins
-    // the acquisition.
-    let direct = Alex::with(json!({ "addToLibrary": "Direct", "streamCap": 192 }));
-    let f = family(true, direct, |s| s.subsonic.wait_for_lossless_on_play = true).await;
-    let file = f.index_song(false).await;
-    // The acquisition this play joins has already landed the file.
-    let landed = f
-        .state
-        .track_acquisition_queue
-        .enqueue("deezer", "1", false, false, true, None, true, None, false, None);
-    assert!(landed.try_set_result(file));
-    let r = get(&f, &format!("/rest/stream?{ALEX}&id=ext-deezer-song-1"), HOME).await;
-    assert_eq!(r.body, LIBRARY_AUDIO, "the library copy, never the file");
-    let sent = f.streamed().await;
-    assert_eq!(value(&sent, "id"), Some("lib-9"));
-    assert_eq!(value(&sent, "maxBitRate"), Some("192"));
-}
-
-#[tokio::test]
-async fn a_capped_listener_plays_from_the_source_and_never_gets_the_file() {
-    let f = family(true, capped(), |s| s.subsonic.wait_for_lossless_on_play = true).await;
-    let file = f.index_song(false).await;
-    let landed = f
-        .state
-        .track_acquisition_queue
-        .enqueue("deezer", "1", false, false, true, None, true, None, false, None);
-    assert!(landed.try_set_result(file));
-    let r = get(&f, &format!("/rest/stream?{ALEX}&id=ext-deezer-song-1"), HOME).await;
-    assert!(!r.body.contains("the-original-flac-file"), "{}", r.body);
-}
-
-#[tokio::test]
-async fn a_file_in_another_members_library_is_never_served() {
-    // The owner has no ceiling, so only the library a file is in keeps it back.
-    let f = family(true, Alex::listener(), |s| {
-        s.subsonic.wait_for_lossless_on_play = true
-    })
-    .await;
-    let file = f.index_song(true).await;
-    let song = Song {
-        external_provider: Some("deezer".into()),
-        external_id: Some("1".into()),
-        ..Default::default()
-    };
-    f.state
-        .local_library
-        .register_downloaded_song(&song, &file)
-        .await
-        .expect("mapped");
-    let landed = f
-        .state
-        .track_acquisition_queue
-        .enqueue("deezer", "1", false, false, true, None, true, None, false, None);
-    assert!(landed.try_set_result(file));
-    for who in [OWNER, ALEX] {
-        let r = get(&f, &format!("/rest/stream?{who}&id=ext-deezer-song-1"), HOME).await;
-        assert!(!r.body.contains("the-original-flac-file"), "{who}: {}", r.body);
-    }
 }
 
 #[tokio::test]

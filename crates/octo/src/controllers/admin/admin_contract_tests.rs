@@ -35,12 +35,11 @@ fn factory() -> (AppState, App) {
     factory_at("http://127.0.0.1:1")
 }
 
-/// [`factory`] with Navidrome, slskd and the shim at `url`.
+/// [`factory`] with Navidrome and the shim at `url`.
 fn factory_at(url: &str) -> (AppState, App) {
     let mut settings = factory_settings();
     settings.subsonic.url = Some(url.into());
     let state = AppState::for_tests(settings);
-    state.settings.set_raw("Soulseek:BaseUrl", Some(url));
     state.settings.set_raw("YouTube:ShimUrl", Some(url));
     (state.clone(), app(state))
 }
@@ -210,14 +209,7 @@ async fn settings_report_restart_pending_as_a_list() {
 #[tokio::test]
 async fn admin_write_without_the_header_is_refused() {
     let (_, app) = factory();
-    let reply = send(
-        &app,
-        Method::POST,
-        "/api/admin/soulseek/rejected-peers/clear",
-        &[],
-        None,
-    )
-    .await;
+    let reply = send(&app, Method::POST, "/api/admin/clear-metadata-cache", &[], None).await;
     assert_eq!(reply.status, StatusCode::FORBIDDEN);
 }
 
@@ -728,30 +720,30 @@ async fn raw_config_put_refusals_read_as_recorded() {
 #[tokio::test]
 async fn config_sources_masks_secrets_and_lists_lists_as_empty() {
     let (state, app) = factory();
-    state
-        .settings
-        .set_raw("Soulseek:Password", Some("a-password-longer-than-sixteen"));
+    state.settings.set_raw(
+        "Downloads:AcoustIdApiKey",
+        Some("a-key-longer-than-sixteen-chars"),
+    );
     state.settings.set_raw("Lidarr:ApiKey", Some("abc"));
     let body = get(&app, "/api/admin/config-sources").await.json();
     let rows = body["keys"].as_array().expect("rows");
     let row = |key: &str| rows.iter().find(|r| r["Key"] == key).cloned().expect(key);
     // One mask for every secret, so the page never tells how long one is.
-    assert_eq!(row("Soulseek:Password")["Value"], "\u{2022}".repeat(8));
-    assert_eq!(row("Soulseek:Password")["IsSecret"], true);
+    assert_eq!(row("Downloads:AcoustIdApiKey")["Value"], "\u{2022}".repeat(8));
+    assert_eq!(row("Downloads:AcoustIdApiKey")["IsSecret"], true);
     assert_eq!(row("Lidarr:ApiKey")["Value"], "\u{2022}".repeat(8));
-    assert_eq!(row("Soulseek:BaseUrl")["Value"], "http://127.0.0.1:1");
-    assert_eq!(row("Soulseek:BaseUrl")["IsSecret"], false);
+    assert_eq!(row("Downloads:VerifyDownloads")["IsSecret"], false);
     assert_eq!(row("Genre:Mappings")["Value"], "");
     assert_eq!(row("ListenBrainz:Token")["IsSecret"], true);
     assert_eq!(row("Lidarr:WebhookSecret")["IsSecret"], true);
     // Every settings key, GeneratedPlaylists:Charts and :ChartCountry included, Liked Songs'
     // three: GeneratedPlaylists:LikedSongs, :LikedSongsName and :LikedSongsMax, the
     // country mixes' four: :CountryMixes, :Countries, :MaxCountryPlaylists and
-    // :CountryLookupsPerRefresh, Lidarr:WebhookSecret, Soulseek:Enabled,
+    // :CountryLookupsPerRefresh, Lidarr:WebhookSecret, the thirteen Downloads keys,
     // RadioSources:ListenBrainzRadioMode, Subsonic:StreamSizeWarmPerMinute,
     // Subsonic:SearchDurationWaitMs, Subsonic:SearchLastFmWaitMs, Subsonic:CoverCacheMb,
     // Subsonic:SizeFlagClients and Imports:KeepInNavidrome.
-    assert_eq!(rows.len(), 195);
+    assert_eq!(rows.len(), 176);
     assert_eq!(row("Imports:KeepInNavidrome")["IsSecret"], false);
     assert_eq!(row("Subsonic:SizeFlagClients")["IsSecret"], false);
     assert_eq!(row("Subsonic:StreamSizeWarmPerMinute")["IsSecret"], false);
@@ -854,14 +846,6 @@ async fn the_side_effect_posts_answer_as_recorded() {
     let (_, app) = factory();
     let reply = admin_write(&app, Method::POST, "/api/admin/clear-metadata-cache", None).await;
     assert_eq!(reply.text(), r#"{"cleared":true}"#);
-    let reply = admin_write(
-        &app,
-        Method::POST,
-        "/api/admin/soulseek/rejected-peers/clear",
-        None,
-    )
-    .await;
-    assert_eq!(reply.text(), r#"{"cleared":0}"#);
     let reply = admin_write(&app, Method::POST, "/api/admin/test-notification", None).await;
     assert_eq!(
         reply.text(),
@@ -887,20 +871,6 @@ async fn the_side_effect_posts_answer_as_recorded() {
     let reply = admin_write(&app, Method::POST, "/api/admin/restart", None).await;
     assert_eq!(reply.status, StatusCode::ACCEPTED);
     assert_eq!(reply.text(), r#"{"ok":true,"message":"restarting"}"#);
-}
-
-#[tokio::test]
-async fn status_says_a_switched_off_soulseek_is_off_and_optional() {
-    let mut settings = factory_settings();
-    settings.soulseek.enabled = false;
-    let app = app(AppState::for_tests(settings));
-
-    let body = get(&app, "/api/admin/status").await.json();
-
-    assert_eq!(body["services"]["slskd"]["detail"], "Off. Optional.");
-    assert_eq!(body["services"]["slskd"]["ok"], true);
-    assert_eq!(body["services"]["slskd"]["configured"], false);
-    assert_eq!(body["services"]["slskd"]["warning"], false);
 }
 
 #[tokio::test]

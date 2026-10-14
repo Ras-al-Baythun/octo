@@ -1,7 +1,6 @@
 //! `stream` and `getCoverArt` through the app: outside playback, the sign-in check in front of
 //! outside songs, plain covers for the Octo app, and a mix's cover.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -11,7 +10,6 @@ use indexmap::IndexMap;
 use octo_core::settings::{AppSettings, GeneratedPlaylistSettings, SubsonicSettings};
 use octo_core::soulseek::soulseek_metadata_service::{RoutingKind, SoulseekRouting};
 use octo_subsonic::xml::XElement;
-use tokio_util::sync::CancellationToken;
 use wiremock::matchers::any;
 use wiremock::{Mock, MockServer, Request as MockRequest, Respond, ResponseTemplate};
 
@@ -31,19 +29,12 @@ async fn ping_ok() -> MockServer {
     server
 }
 
-fn playback_settings(url: &str, wait_for_lossless: bool, download_on_play: bool) -> AppSettings {
+fn playback_settings(url: &str, download_on_play: bool) -> AppSettings {
     let mut settings = settings(url);
     settings.subsonic = SubsonicSettings {
-        wait_for_lossless_on_play: wait_for_lossless,
         download_on_play,
         ..settings.subsonic
     };
-    // A play first looks at slskd's login; nothing answers there, and it must say so at once
-    // (slskd's default, localhost:5030, can wait out a timeout instead; see refused_address).
-    settings.soulseek.base_url = Some(format!(
-        "http://{}",
-        crate::services::test_support::refused_address()
-    ));
     settings
 }
 
@@ -53,17 +44,17 @@ fn playback_settings(url: &str, wait_for_lossless: bool, download_on_play: bool)
 async fn external_playback_uses_you_tube_regardless_of_legacy_storage_mode() {
     let navidrome = ping_ok().await;
     let downloads = Arc::new(FakeStreams::streaming(
-        "soulseek",
+        "outside",
         "track-id",
         &[1, 2, 3],
         "audio/mp4",
     ));
     let library = Arc::new(FakeLibrary::with_external(
         "external-track",
-        "soulseek",
+        "outside",
         "track-id",
     ));
-    let state = state_with(playback_settings(&navidrome.uri(), false, false), |inner| {
+    let state = state_with(playback_settings(&navidrome.uri(), false), |inner| {
         inner.download_service = downloads.clone();
         inner.local_library = library.clone();
     });
@@ -79,7 +70,7 @@ async fn external_playback_uses_you_tube_regardless_of_legacy_storage_mode() {
     assert_eq!(response.body.as_ref(), [1, 2, 3]);
     assert_eq!(
         downloads.stream_calls(),
-        [("soulseek".to_string(), "track-id".to_string(), None)]
+        [("outside".to_string(), "track-id".to_string(), None)]
     );
     assert_eq!(*downloads.download_and_stream_calls.lock(), 0);
 }
@@ -88,17 +79,17 @@ async fn external_playback_uses_you_tube_regardless_of_legacy_storage_mode() {
 async fn an_outside_song_downloads_as_it_streams() {
     let navidrome = ping_ok().await;
     let downloads = Arc::new(FakeStreams::streaming(
-        "soulseek",
+        "outside",
         "track-id",
         &[1, 2, 3],
         "audio/mp4",
     ));
     let library = Arc::new(FakeLibrary::with_external(
         "external-track",
-        "soulseek",
+        "outside",
         "track-id",
     ));
-    let state = state_with(playback_settings(&navidrome.uri(), false, false), |inner| {
+    let state = state_with(playback_settings(&navidrome.uri(), false), |inner| {
         inner.download_service = downloads.clone();
         inner.local_library = library.clone();
     });
@@ -120,17 +111,17 @@ async fn an_outside_song_downloads_as_it_streams() {
 async fn an_outside_download_sent_as_a_form_is_the_song_too() {
     let navidrome = ping_ok().await;
     let downloads = Arc::new(FakeStreams::streaming(
-        "soulseek",
+        "outside",
         "track-id",
         &[4, 5],
         "audio/mp4",
     ));
     let library = Arc::new(FakeLibrary::with_external(
         "external-track",
-        "soulseek",
+        "outside",
         "track-id",
     ));
-    let state = state_with(playback_settings(&navidrome.uri(), false, false), |inner| {
+    let state = state_with(playback_settings(&navidrome.uri(), false), |inner| {
         inner.download_service = downloads.clone();
         inner.local_library = library.clone();
     });
@@ -160,7 +151,7 @@ async fn a_library_download_still_goes_to_navidromes_download() {
         .mount(&navidrome)
         .await;
     let downloads = Arc::new(FakeStreams::default());
-    let state = state_with(playback_settings(&navidrome.uri(), false, false), |inner| {
+    let state = state_with(playback_settings(&navidrome.uri(), false), |inner| {
         inner.download_service = downloads.clone();
         inner.local_library = Arc::new(FakeLibrary::default());
     });
@@ -185,67 +176,21 @@ async fn a_library_download_still_goes_to_navidromes_download() {
 }
 
 #[tokio::test]
-async fn wait_for_lossless_still_acquires_before_playback_when_enabled() {
-    let navidrome = ping_ok().await;
-    let downloads = Arc::new(FakeStreams::default());
-    let library = Arc::new(FakeLibrary::with_external(
-        "external-track",
-        "soulseek",
-        "track-id",
-    ));
-    let state = state_with(playback_settings(&navidrome.uri(), true, false), |inner| {
-        inner.download_service = downloads.clone();
-        inner.local_library = library.clone();
-    });
-    let app = app(&state);
-    let response = tokio::spawn(async move {
-        get(
-            &app,
-            "/rest/stream?id=external-track&f=json&u=alice&t=good&s=salt&v=1.16.1&c=test",
-        )
-        .await
-    });
-
-    let queue = state.track_acquisition_queue.clone();
-    let request = tokio::time::timeout(Duration::from_secs(30), queue.dequeue(&CancellationToken::new()))
-        .await
-        .expect("the stream queued an acquisition")
-        .expect("a request");
-    assert!(!request.is_star);
-    assert!(!request.trigger_album_download);
-    assert!(request.force_permanent);
-
-    let dir = tempfile::tempdir().expect("a temp dir");
-    let path = dir.path().join("octo-playback.flac");
-    std::fs::write(&path, [4, 5, 6]).expect("written");
-    request
-        .completion
-        .try_set_result(path.to_string_lossy().into_owned());
-    queue.release(&request);
-
-    let response = response.await.expect("the request ran");
-    assert_eq!(response.status, StatusCode::OK);
-    assert_eq!(response.body.as_ref(), [4, 5, 6]);
-    assert_eq!(response.header("content-type"), Some("audio/flac"));
-    assert!(downloads.stream_calls().is_empty());
-}
-
-#[tokio::test]
 async fn streaming_an_outside_song_queues_its_download_only_from_the_first_byte() {
     for (range, waiting) in [(None, 1), (Some("bytes=0-"), 1), (Some("bytes=4096-"), 0)] {
         let navidrome = ping_ok().await;
         let downloads = Arc::new(FakeStreams::streaming(
-            "soulseek",
+            "outside",
             "track-id",
             &[1, 2, 3],
             "audio/mp4",
         ));
         let library = Arc::new(FakeLibrary::with_external(
             "external-track",
-            "soulseek",
+            "outside",
             "track-id",
         ));
-        let state = state_with(playback_settings(&navidrome.uri(), false, true), |inner| {
+        let state = state_with(playback_settings(&navidrome.uri(), true), |inner| {
             inner.download_service = downloads.clone();
             inner.local_library = library.clone();
         });
@@ -261,7 +206,7 @@ async fn streaming_an_outside_song_queues_its_download_only_from_the_first_byte(
         .await;
 
         assert_eq!(response.status, StatusCode::OK, "{range:?}");
-        // The play is queued behind a look at slskd's login, which the request does not wait
+        // The play is queued, which the request does not wait
         // for, so give it a moment.
         for _ in 0..100 {
             if state.track_acquisition_queue.waiting_plays() == waiting && waiting > 0 {
@@ -338,14 +283,14 @@ impl SignIn {
             .mount(&navidrome)
             .await;
         let downloads = Arc::new(FakeStreams::streaming(
-            "soulseek",
+            "outside",
             "track-id",
             &[1, 2, 3],
             "audio/mp4",
         ));
         let library = Arc::new(FakeLibrary::with_external(
             "external-track",
-            "soulseek",
+            "outside",
             "track-id",
         ));
         let state = state_with(settings(&navidrome.uri()), |inner| {
@@ -698,56 +643,6 @@ async fn get_cover_art_answers_each_kind_of_id() {
     assert_eq!(unreachable.header("content-type"), Some("image/jpeg"));
 }
 
-/// A local file served for an outside id under WaitForLosslessOnPlay honors one byte range,
-/// and types the file by its extension.
-#[tokio::test]
-async fn a_lossless_copy_on_disk_is_served_with_ranges() {
-    let navidrome = ping_ok().await;
-    let dir = tempfile::tempdir().expect("a temp dir");
-    let path = dir.path().join("song.m4a");
-    std::fs::write(&path, (0u8..100).collect::<Vec<_>>()).expect("written");
-    let library = Arc::new(FakeLibrary::with_external(
-        "external-track",
-        "soulseek",
-        "track-id",
-    ));
-    library.local_paths.lock().insert(
-        ("soulseek".into(), "track-id".into()),
-        path.to_string_lossy().into_owned(),
-    );
-    let state = state_with(playback_settings(&navidrome.uri(), true, false), |inner| {
-        inner.local_library = library.clone();
-    });
-    let app = app(&state);
-    let url = "/rest/stream?id=external-track&u=alice&t=good&s=salt&v=1.16.1&c=test";
-
-    let whole = get(&app, url).await;
-    assert_eq!(whole.status, StatusCode::OK);
-    assert_eq!(whole.body.len(), 100);
-    assert_eq!(whole.header("content-type"), Some("audio/mp4"));
-    assert_eq!(whole.header("accept-ranges"), Some("bytes"));
-
-    let mut cases: HashMap<&str, (StatusCode, Option<&str>, usize)> = HashMap::new();
-    cases.insert(
-        "bytes=10-19",
-        (StatusCode::PARTIAL_CONTENT, Some("bytes 10-19/100"), 10),
-    );
-    cases.insert(
-        "bytes=-5",
-        (StatusCode::PARTIAL_CONTENT, Some("bytes 95-99/100"), 5),
-    );
-    cases.insert(
-        "bytes=200-",
-        (StatusCode::RANGE_NOT_SATISFIABLE, Some("bytes */100"), 0),
-    );
-    for (range, (status, content_range, length)) in cases {
-        let reply = send(&app, Method::GET, url, &[("Range", range)], Body::empty()).await;
-        assert_eq!(reply.status, status, "{range}");
-        assert_eq!(reply.header("content-range"), content_range, "{range}");
-        assert_eq!(reply.body.len(), length, "{range}");
-    }
-}
-
 /// One picture, the same every time it is asked.
 struct OnePicture;
 
@@ -869,10 +764,10 @@ async fn an_unplayable_outside_stream_is_a_404_with_the_subsonic_error() {
     let downloads = Arc::new(FakeStreams::default());
     let library = Arc::new(FakeLibrary::with_external(
         "external-track",
-        "soulseek",
+        "outside",
         "track-id",
     ));
-    let state = state_with(playback_settings(&navidrome.uri(), false, false), |inner| {
+    let state = state_with(playback_settings(&navidrome.uri(), false), |inner| {
         inner.download_service = downloads.clone();
         inner.local_library = library.clone();
     });
@@ -895,7 +790,7 @@ async fn a_size_no_play_has_confirmed_never_refuses_a_range() {
     let navidrome = ping_ok().await;
     let downloads = Arc::new(FakeStreams::default());
     let library = Arc::new(FakeLibrary::default());
-    let state = state_with(playback_settings(&navidrome.uri(), false, false), |inner| {
+    let state = state_with(playback_settings(&navidrome.uri(), false), |inner| {
         inner.download_service = downloads.clone();
         inner.local_library = library.clone();
     });
@@ -915,7 +810,7 @@ async fn a_size_no_play_has_confirmed_never_refuses_a_range() {
             ..Default::default()
         },
     );
-    library.add_external("external-track", "soulseek", &id);
+    library.add_external("external-track", "outside", &id);
     let app = app(&state);
 
     let past = send(
@@ -936,7 +831,7 @@ async fn a_range_past_the_end_of_a_known_stream_is_a_416_with_its_size() {
     let navidrome = ping_ok().await;
     let downloads = Arc::new(FakeStreams::default());
     let library = Arc::new(FakeLibrary::default());
-    let state = state_with(playback_settings(&navidrome.uri(), false, false), |inner| {
+    let state = state_with(playback_settings(&navidrome.uri(), false), |inner| {
         inner.download_service = downloads.clone();
         inner.local_library = library.clone();
     });
@@ -957,7 +852,7 @@ async fn a_range_past_the_end_of_a_known_stream_is_a_416_with_its_size() {
             ..Default::default()
         },
     );
-    library.add_external("external-track", "soulseek", &id);
+    library.add_external("external-track", "outside", &id);
     let app = app(&state);
 
     let past = send(

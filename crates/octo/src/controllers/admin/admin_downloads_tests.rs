@@ -11,8 +11,7 @@ use chrono::Utc;
 use futures::FutureExt;
 use octo_core::models::download::{AcquisitionCandidate, AcquisitionEvent, DownloadHistoryEntry};
 use octo_core::settings::{
-    AppSettings, LibraryAction, LibraryActionDefinition, LibraryActionSettings, SoulseekSettings,
-    SubsonicSettings,
+    AppSettings, LibraryAction, LibraryActionDefinition, LibraryActionSettings, SubsonicSettings,
 };
 use parking_lot::Mutex;
 use serde_json::{Value, json};
@@ -41,10 +40,6 @@ impl Dashboard {
                 auto_detect_download_path: false,
                 ..Default::default()
             },
-            soulseek: SoulseekSettings {
-                base_url: Some(closed.clone()),
-                ..Default::default()
-            },
             library_actions: LibraryActionSettings {
                 enabled: true,
                 dry_run: false,
@@ -64,7 +59,7 @@ impl Dashboard {
             TestServices {
                 sign_in: Some("required".into()),
                 config_dir: Some(directory.path().to_path_buf()),
-                raw_settings: vec![("Soulseek:BaseUrl".into(), closed)],
+                raw_settings: vec![("YouTube:ShimUrl".into(), closed)],
                 ..Default::default()
             },
         );
@@ -104,7 +99,7 @@ fn entry(title: &str, key: Option<&str>, at: chrono::DateTime<Utc>) -> DownloadH
         album: Some("Discovery".into()),
         path: format!("/music/{title}.flac"),
         format: "FLAC".into(),
-        source: "Soulseek".into(),
+        source: "Lidarr".into(),
         downloaded_at: format!(
             "{}.{:07}Z",
             at.format("%Y-%m-%dT%H:%M:%S"),
@@ -124,7 +119,7 @@ fn line(at: chrono::DateTime<Utc>, kind: &str, text: &str, copies: usize) -> Acq
         candidates: (copies > 0).then(|| {
             (1..=copies)
                 .map(|i| AcquisitionCandidate {
-                    source: "Soulseek".into(),
+                    source: "Lidarr".into(),
                     peer: Some(format!("peer{i}")),
                     file: Some(format!("/share/{i}.flac")),
                     format: Some("flac".into()),
@@ -140,7 +135,7 @@ fn line(at: chrono::DateTime<Utc>, kind: &str, text: &str, copies: usize) -> Acq
 }
 
 const READS: [&str; 4] = [
-    "/api/admin/downloads/log?key=soulseek:a",
+    "/api/admin/downloads/log?key=outside:a",
     "/api/admin/find/abc",
     "/api/admin/find/outside?q=daft",
     "/api/admin/find/cover?id=nd-1",
@@ -180,17 +175,17 @@ async fn the_list_leaves_logs_out_and_the_log_route_reads_the_saved_one_or_the_l
     history.record(entry("Old song", None, now - chrono::TimeDelta::days(3)));
     history.record(entry(
         "Digital Love",
-        Some("soulseek:saved"),
+        Some("outside:saved"),
         now - chrono::TimeDelta::minutes(1),
     ));
     assert!(history.attach_log(
-        "soulseek:saved",
+        "outside:saved",
         now - chrono::TimeDelta::minutes(2),
         &[line(now, acquisition_event_kinds::FOUND, "Found 3 copies", 3)],
     ));
     let tracker = &dash.state.acquisition_tracker;
     tracker.begin(
-        "soulseek",
+        "outside",
         "live",
         Some("live"),
         Some("alice"),
@@ -199,10 +194,10 @@ async fn the_list_leaves_logs_out_and_the_log_route_reads_the_saved_one_or_the_l
         None,
     );
     tracker.stage(
-        "soulseek",
+        "outside",
         "live",
         AcquisitionState::Searching,
-        Some("Soulseek"),
+        Some("Lidarr"),
         None,
     );
     let token = dash.token(Some("admin"));
@@ -212,7 +207,7 @@ async fn the_list_leaves_logs_out_and_the_log_route_reads_the_saved_one_or_the_l
     let rows = list["downloads"].as_array().expect("downloads").clone();
     assert!(rows[0].get("log").is_none());
     assert_eq!(rows[0]["hasLog"], true);
-    assert_eq!(rows[0]["key"], "soulseek:saved");
+    assert_eq!(rows[0]["key"], "outside:saved");
     assert_eq!(rows[1]["hasLog"], false);
 
     let saved_at = history.get_recent(1)[0].downloaded_at.clone();
@@ -220,7 +215,7 @@ async fn the_list_leaves_logs_out_and_the_log_route_reads_the_saved_one_or_the_l
         .get(
             token,
             &format!(
-                "/api/admin/downloads/log?key=soulseek:saved&at={}",
+                "/api/admin/downloads/log?key=outside:saved&at={}",
                 octo_core::common::dotnet::escape_data_string(&saved_at)
             ),
         )
@@ -233,7 +228,7 @@ async fn the_list_leaves_logs_out_and_the_log_route_reads_the_saved_one_or_the_l
     assert_eq!(lines[0]["candidate"][0]["peer"], "peer1");
 
     let live = dash
-        .get(token, "/api/admin/downloads/log?key=soulseek:live")
+        .get(token, "/api/admin/downloads/log?key=outside:live")
         .await
         .json();
     assert_eq!(live["kept"], "live");
@@ -243,13 +238,13 @@ async fn the_list_leaves_logs_out_and_the_log_route_reads_the_saved_one_or_the_l
             .as_array()
             .expect("lines")
             .iter()
-            .any(|e| e["text"] == "Looking on Soulseek")
+            .any(|e| e["text"] == "Looking on Lidarr")
     );
 
     let none = dash
         .get(
             token,
-            "/api/admin/downloads/log?key=soulseek:gone&at=2020-01-01T00:00:00Z",
+            "/api/admin/downloads/log?key=outside:gone&at=2020-01-01T00:00:00Z",
         )
         .await
         .json();
@@ -270,7 +265,7 @@ async fn find_songs_runs_as_the_signed_in_admin_and_only_they_can_follow_or_pick
                     owned_format: Some("mp3".into()),
                     ..FindTarget::new("Daft Punk", "Digital Love", Some("Discovery"), Some(301), "nd-1")
                 }),
-                "soulseek:ext-1" => Some(FindTarget {
+                "outside:ext-1" => Some(FindTarget {
                     external_id: Some("ext-1".into()),
                     ..FindTarget::new("Daft Punk", "Digital Love", Some("Discovery"), Some(301), "ext-1")
                 }),
@@ -278,13 +273,13 @@ async fn find_songs_runs_as_the_signed_in_admin_and_only_they_can_follow_or_pick
             };
             async move { target }.boxed()
         });
-        seams.sources_for = Arc::new(|_| vec![("Soulseek".to_string(), None)]);
-        seams.search_soulseek = Arc::new(|_, _| {
+        seams.sources_for = Arc::new(|_| vec![("Lidarr".to_string(), None)]);
+        seams.search_lidarr = Arc::new(|_, _| {
             async {
                 Ok((
                     vec![FoundCopy::new(
                         AcquisitionCandidate {
-                            source: "Soulseek".into(),
+                            source: "Lidarr".into(),
                             peer: Some("peer1".into()),
                             file: Some("/share/Digital Love.flac".into()),
                             format: Some("flac".into()),
@@ -294,14 +289,14 @@ async fn find_songs_runs_as_the_signed_in_admin_and_only_they_can_follow_or_pick
                             ..Default::default()
                         },
                         PickedCopy {
-                            peer: Some("peer1".into()),
-                            file: Some("/share/Digital Love.flac".into()),
-                            format: Some("flac".into()),
+                            release_guid: Some("peer1".into()),
+                            indexer_id: Some(1),
+                            release_title: Some("Digital Love [FLAC]".into()),
                             ..Default::default()
                         },
                     )],
                     vec!["Daft Punk Digital Love".to_string()],
-                    Some("1 file from 1 peer; 1 fits the song".to_string()),
+                    Some("1 release of Discovery".to_string()),
                 ))
             }
             .boxed()
@@ -309,7 +304,7 @@ async fn find_songs_runs_as_the_signed_in_admin_and_only_they_can_follow_or_pick
         seams.fetch = Arc::new(move |_, copy, user, _| {
             heard
                 .lock()
-                .push((user, copy.pick.peer.clone().unwrap_or_default()));
+                .push((user, copy.pick.release_guid.clone().unwrap_or_default()));
             async {
                 Ok(PickOutcome::new(
                     library_action_states::QUEUED,
@@ -343,7 +338,7 @@ async fn find_songs_runs_as_the_signed_in_admin_and_only_they_can_follow_or_pick
         "{library}"
     );
     let started = dash
-        .post(admin, "/api/admin/find", &json!({ "id": "soulseek:ext-1" }))
+        .post(admin, "/api/admin/find", &json!({ "id": "outside:ext-1" }))
         .await;
     assert_eq!(started.status, StatusCode::OK);
     let id = started.json()["id"].as_str().expect("an id").to_string();
@@ -410,22 +405,22 @@ async fn a_dashboard_pick_passes_anyway_through_and_relays_the_question() {
             };
             async move { Some(target) }.boxed()
         });
-        seams.sources_for = Arc::new(|_| vec![("Soulseek".to_string(), None)]);
-        seams.search_soulseek = Arc::new(|_, _| {
+        seams.sources_for = Arc::new(|_| vec![("Lidarr".to_string(), None)]);
+        seams.search_lidarr = Arc::new(|_, _| {
             async {
                 Ok((
                     vec![FoundCopy::new(
                         AcquisitionCandidate {
-                            source: "Soulseek".into(),
+                            source: "Lidarr".into(),
                             peer: Some("peer1".into()),
                             file: Some("Digital Love.flac".into()),
                             format: Some("flac".into()),
                             ..Default::default()
                         },
                         PickedCopy {
-                            peer: Some("peer1".into()),
-                            file: Some("/share/Digital Love.flac".into()),
-                            format: Some("flac".into()),
+                            release_guid: Some("peer1".into()),
+                            indexer_id: Some(1),
+                            release_title: Some("Digital Love [FLAC]".into()),
                             ..Default::default()
                         },
                     )],
@@ -484,8 +479,8 @@ async fn a_find_started_while_two_run_answers_why() {
             };
             async move { Some(target) }.boxed()
         });
-        seams.sources_for = Arc::new(|_| vec![("Soulseek".to_string(), None)]);
-        seams.search_soulseek = Arc::new(move |_, _| {
+        seams.sources_for = Arc::new(|_| vec![("Lidarr".to_string(), None)]);
+        seams.search_lidarr = Arc::new(move |_, _| {
             let mut released = released.clone();
             async move {
                 let _ = released.wait_for(|done| *done).await;

@@ -341,7 +341,7 @@ mod tests {
             candidates: (copies > 0).then(|| {
                 (1..=copies)
                     .map(|i| octo_core::models::download::AcquisitionCandidate {
-                        source: "Soulseek".into(),
+                        source: "Lidarr".into(),
                         peer: Some(format!("peer{i}")),
                         file: Some(format!("/share/{i}.flac")),
                         format: Some("flac".into()),
@@ -364,20 +364,20 @@ mod tests {
         let start = chrono::Utc::now();
         history.record(keyed(
             "Digital Love",
-            Some("soulseek:a"),
+            Some("outside:a"),
             start - TimeDelta::days(2),
         ));
         history.record(keyed("Old song", None, start - TimeDelta::days(1)));
         history.record(keyed(
             "Digital Love",
-            Some("soulseek:a"),
+            Some("outside:a"),
             start + TimeDelta::seconds(30),
         ));
         let asked = [line(start, acquisition_event_kinds::QUEUED, "Asked for", 0)];
 
-        assert!(history.attach_log("soulseek:a", start, &asked));
+        assert!(history.attach_log("outside:a", start, &asked));
         // A run that began after every entry for it has no entry yet.
-        assert!(!history.attach_log("soulseek:a", start + TimeDelta::minutes(5), &asked));
+        assert!(!history.attach_log("outside:a", start + TimeDelta::minutes(5), &asked));
 
         let reopened = DownloadHistoryService::new(&path);
         let entries = reopened.get_recent(200);
@@ -386,7 +386,7 @@ mod tests {
         assert!(entries[2].log.is_none());
         assert_eq!(
             reopened
-                .find("soulseek:a", Some(&entries[0].downloaded_at))
+                .find("outside:a", Some(&entries[0].downloaded_at))
                 .and_then(|e| e.log)
                 .map(|log| log[0].text.clone())
                 .as_deref(),
@@ -394,7 +394,7 @@ mod tests {
         );
         assert!(
             reopened
-                .find("soulseek:a", Some(&entries[2].downloaded_at))
+                .find("outside:a", Some(&entries[2].downloaded_at))
                 .is_some_and(|e| e.log.is_none())
         );
     }
@@ -443,7 +443,7 @@ mod tests {
         for i in 0..4 {
             history.record(keyed(
                 &format!("Song {i}"),
-                Some(&format!("soulseek:{i}")),
+                Some(&format!("outside:{i}")),
                 start + TimeDelta::minutes(i + 1),
             ));
             let steps: Vec<AcquisitionEvent> = (0..5)
@@ -456,7 +456,7 @@ mod tests {
                     )
                 })
                 .collect();
-            assert!(history.attach_log(&format!("soulseek:{i}"), start + TimeDelta::minutes(i), &steps));
+            assert!(history.attach_log(&format!("outside:{i}"), start + TimeDelta::minutes(i), &steps));
         }
 
         let entries = DownloadHistoryService::new(&path).get_recent(200);

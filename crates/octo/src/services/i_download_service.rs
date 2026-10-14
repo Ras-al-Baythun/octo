@@ -52,11 +52,11 @@ pub trait IDownloadService: Send + Sync {
 
     /// Run one queued acquisition to completion. Called only by the acquisition worker,
     /// which supplies a token unrelated to any HTTP request: that separation is the whole
-    /// point, since a client giving up must never cancel a transfer slskd will finish.
+    /// point, since a client giving up must never cancel a transfer the source will finish.
     ///
     /// `requested_by`: the users who asked for this track, for the history entry and the
     /// notification. Empty when Octo started the acquisition itself or when attribution is
-    /// switched off. `upgrade_search`: search Soulseek the slow, wide way (Better quality,
+    /// switched off. `upgrade_search`: a lossless-only search (Better quality,
     /// weekly upgrade). `replacement`: a library action's replacement, revealed in the
     /// original's place.
     #[allow(clippy::too_many_arguments)] // one argument per input an acquisition takes

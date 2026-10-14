@@ -107,10 +107,9 @@ pub enum NoticeKind {
 /// Where Better quality looks for a lossless copy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Deserialize, Serialize)]
 pub enum UpgradeSourceChoice {
-    /// Every source that is set up: Soulseek first, then Lidarr for what Soulseek cannot find.
+    /// Every source that is set up: Lidarr, when it is.
     #[default]
     Auto,
-    Soulseek,
     Lidarr,
 }
 
@@ -262,8 +261,7 @@ pub struct LibraryActionSettings {
     pub upgrade_per_week: i32,
 
     /// Where Better quality looks for a lossless copy (default: Auto). Auto uses every source that
-    /// is set up, Soulseek first and then Lidarr for what Soulseek cannot find; Soulseek or Lidarr
-    /// uses only that one.
+    /// is set up, which is Lidarr; Lidarr uses only that one.
     /// Environment variable: LIBRARY_ACTIONS_UPGRADE_SOURCE
     pub upgrade_source: UpgradeSourceChoice,
 }

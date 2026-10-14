@@ -12,7 +12,7 @@ use axum::extract::{RawQuery, State};
 use axum::http::{HeaderMap, Method, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use octo_core::common::Clock;
-use octo_core::settings::{AppSettings, RadioSourceSettings, SoulseekSettings, SubsonicSettings};
+use octo_core::settings::{AppSettings, RadioSourceSettings, SubsonicSettings};
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
@@ -220,10 +220,6 @@ impl SignInFactory {
                 auto_detect_download_path: false,
                 ..Default::default()
             },
-            soulseek: SoulseekSettings {
-                base_url: Some(closed.clone()),
-                ..Default::default()
-            },
             radio_sources: RadioSourceSettings {
                 sonic_url: format!("{url}/sonic"),
                 ..Default::default()
@@ -235,11 +231,7 @@ impl SignInFactory {
             TestServices {
                 sign_in: Some(sign_in.to_string()),
                 config_dir: Some(directory.path().to_path_buf()),
-                raw_settings: vec![
-                    ("YouTube:ShimUrl".into(), closed.clone()),
-                    ("Soulseek:BaseUrl".into(), closed),
-                    ("Subsonic:Url".into(), url),
-                ],
+                raw_settings: vec![("YouTube:ShimUrl".into(), closed), ("Subsonic:Url".into(), url)],
                 ..Default::default()
             },
         );

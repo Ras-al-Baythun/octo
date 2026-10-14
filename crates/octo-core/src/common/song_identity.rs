@@ -260,7 +260,7 @@ pub enum ArtistAgreement {
 }
 
 /// One reading of song titles and artist credits for every place Octo decides whether two
-/// songs are the same: lyrics, AcoustID and MusicBrainz, Soulseek candidates, the library and
+/// songs are the same: lyrics, AcoustID and MusicBrainz, download candidates, the library and
 /// radio matchers, search merging, and the Deezer and Last.fm lookups. Each of those used to
 /// carry its own normalizer, and they disagreed, so a song one of them recognized another did
 /// not.

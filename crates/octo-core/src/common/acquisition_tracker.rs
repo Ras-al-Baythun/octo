@@ -1,4 +1,4 @@
-//! The pure half of the acquisition tracker: a transfer's progress from slskd's figures, and the
+//! The pure half of the acquisition tracker: a transfer's progress from a source's figures, and the
 //! short, path-free error a phone is shown. The tracker itself (the live list behind the download
 //! ring) is `octo::services::common::acquisition_tracker`.
 
@@ -9,7 +9,7 @@ use super::dotnet;
 /// The longest error a row carries, in UTF-16 code units.
 pub const MAX_ERROR_LENGTH: usize = 160;
 
-/// Progress from 0 to 1. The bytes win when both are known, because slskd's percentage is
+/// Progress from 0 to 1. The bytes win when both are known, because a source's percentage is
 /// rounded; the percentage (0 to 100) is the fallback. `None` when neither says anything.
 pub fn fraction_of(
     bytes_done: Option<i64>,
@@ -27,7 +27,7 @@ pub fn fraction_of(
 
 /// The first sentence of an error, with server paths taken out and the length capped. The
 /// messages behind a failed download are written for the log, and the rest of them (which
-/// peer, which slskd setting) means nothing on a phone.
+/// indexer, which setting) means nothing on a phone.
 pub fn user_safe(message: Option<&str>) -> Option<String> {
     let message = message.filter(|m| !dotnet::is_blank(m))?;
     let first = message.split('\n').next().unwrap_or_default().trim();
@@ -166,8 +166,8 @@ mod tests {
     fn errors_are_short_and_keep_server_paths_home() {
         let cases = [
             (
-                "All 5 Soulseek peer attempts failed for 'The Killers - Mr. Brightside'. Last error: timed out. If slskd shows these transfers as Completed, slskd's downloads directory is not the directory Octo watches (/music); set SLSKD_DOWNLOADS_DIR=/music.",
-                "All 5 Soulseek peer attempts failed for 'The Killers - Mr. Brightside'",
+                "Lidarr found no lossless copy of 'The Killers - Mr. Brightside'. Last error: timed out. If Lidarr shows the album as imported, its root folder is not the directory Octo watches (/music); set LIDARR_ROOT_FOLDER=/music.",
+                "Lidarr found no lossless copy of 'The Killers - Mr. Brightside'",
             ),
             (
                 "Could not open /music/.octo-incoming/abc.mp3 for reading",
@@ -178,8 +178,8 @@ mod tests {
                 "Access to a path is denied",
             ),
             (
-                "No Soulseek FLAC found for 'AC/DC - Thunderstruck'",
-                "No Soulseek FLAC found for 'AC/DC - Thunderstruck'",
+                "No YouTube match for 'AC/DC - Thunderstruck'",
+                "No YouTube match for 'AC/DC - Thunderstruck'",
             ),
             ("Song not found", "Song not found"),
         ];

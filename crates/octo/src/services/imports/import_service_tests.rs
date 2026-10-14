@@ -501,7 +501,6 @@ async fn a_playlist_is_kept_and_a_fetched_song_takes_its_place() {
     rig.trickle.configure(|seams| {
         seams.owned = Arc::new(|_| Box::pin(async { Ok(Some(OwnedSong(Some("nd-angel".into())))) }));
         seams.people_downloading = Arc::new(|| false);
-        seams.soulseek_out = Arc::new(|| Box::pin(async { false }));
     });
     rig.trickle.tick().await;
     rig.trickle.drain().await;

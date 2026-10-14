@@ -91,7 +91,6 @@ impl RequestCatalog for Catalog {
 struct Fetcher {
     pool: Arc<FamilyPool>,
     in_flight: Mutex<HashSet<String>>,
-    no_flac: Mutex<bool>,
     asked: Mutex<Vec<(String, String, RequestQuality)>>,
     upgrades: Mutex<Vec<(String, String)>>,
     imports: Mutex<Vec<(String, String)>>,
@@ -106,7 +105,6 @@ impl Fetcher {
         Fetcher {
             pool,
             in_flight: Mutex::new(HashSet::new()),
-            no_flac: Mutex::new(false),
             asked: Mutex::new(Vec::new()),
             upgrades: Mutex::new(Vec::new()),
             imports: Mutex::new(Vec::new()),
@@ -138,9 +136,6 @@ impl RequestFetcher for Fetcher {
         let delay = *self.delay.lock();
         if !delay.is_zero() {
             tokio::time::sleep(delay).await;
-        }
-        if quality == RequestQuality::Flac && *self.no_flac.lock() {
-            return Fetched::Failed("No Soulseek FLAC found".into());
         }
         let extension = if quality == RequestQuality::Mp3 {
             "mp3"
@@ -710,71 +705,6 @@ async fn the_same_ask_twice_at_once_makes_one_request() {
 }
 
 #[tokio::test]
-async fn a_failed_flac_asked_again_as_mp3_takes_its_slot_and_its_approval() {
-    let world = World::new(None);
-    let navidrome = navidrome_knowing(&world, &[("sam-33", 4, "Artist/Album/33.mp3")]).await;
-    world.point_at(&navidrome.uri());
-    let setup = setup(world);
-    *setup.fetcher.no_flac.lock() = true;
-    let made = setup
-        .service
-        .create("sam", "ext-test-song-33", RequestQuality::Flac, None)
-        .await
-        .expect("made");
-    assert_eq!(made.state, RequestState::Pending, "a listener's request waits");
-    setup
-        .service
-        .approve(&made.id, "winters", None)
-        .expect("approved");
-    assert!(eventually(|| state_of(&setup, &made.id) == RequestState::Failed).await);
-
-    let again = setup
-        .service
-        .retry_as_mp3(&made.id, "sam")
-        .await
-        .expect("asked again");
-    assert_eq!(
-        again.state,
-        RequestState::Approved,
-        "no second wait for an approver"
-    );
-    assert_eq!(setup.service.quota_used("sam"), 1, "one slot, as the FLAC held");
-    assert!(eventually(|| state_of(&setup, &again.id) == RequestState::Done).await);
-}
-
-#[tokio::test]
-async fn a_failed_flac_asked_again_waits_when_its_slot_was_taken() {
-    let world = World::new(None);
-    let mut small = member("sam", Preset::Listener, 4);
-    small.edits.insert("WeeklyRequestLimit".into(), json!(1));
-    world.family.upsert_member(small);
-    let setup = setup(world);
-    *setup.fetcher.no_flac.lock() = true;
-    let made = setup
-        .service
-        .create("sam", "ext-test-song-34", RequestQuality::Flac, None)
-        .await
-        .expect("made");
-    setup
-        .service
-        .approve(&made.id, "winters", None)
-        .expect("approved");
-    assert!(eventually(|| state_of(&setup, &made.id) == RequestState::Failed).await);
-    // The freed slot went to another ask meanwhile.
-    setup
-        .service
-        .create("sam", "ext-test-song-35", RequestQuality::Best, None)
-        .await
-        .expect("made");
-    let refused = setup
-        .service
-        .retry_as_mp3(&made.id, "sam")
-        .await
-        .expect_err("no slot left");
-    assert_eq!(refused.message, "You have used all 1 of your requests this week.");
-}
-
-#[tokio::test]
 async fn a_member_never_reads_a_path_inside_the_server() {
     let setup = setup(World::new(None));
     let pooled = setup.world.pool_file("Artist/Album/36.flac", 10);
@@ -827,59 +757,6 @@ async fn a_song_shared_where_the_member_cannot_look_is_not_theirs_already() {
         .await
         .expect("made");
     assert_eq!(alexs.outcome, Some(RequestOutcome::AlreadyShared));
-}
-
-#[tokio::test]
-async fn flac_request_that_finds_no_real_flac_fails_and_can_be_asked_again_as_mp3() {
-    let world = World::new(None);
-    let navidrome = navidrome_knowing(&world, &[("alex-5", 3, "Artist/Album/5.mp3")]).await;
-    world.point_at(&navidrome.uri());
-    let setup = setup(world);
-    *setup.fetcher.no_flac.lock() = true;
-    let made = setup
-        .service
-        .create("alex", "ext-test-song-5", RequestQuality::Flac, None)
-        .await
-        .expect("made");
-    assert!(eventually(|| state_of(&setup, &made.id) == RequestState::Failed).await);
-    assert_eq!(
-        setup.service.get(&made.id).expect("kept").failure.as_deref(),
-        Some(NO_REAL_FLAC)
-    );
-    assert_eq!(setup.service.quota_used("alex"), 0, "a failure frees its slot");
-
-    let again = setup
-        .service
-        .retry_as_mp3(&made.id, "alex")
-        .await
-        .expect("asked again");
-    assert_eq!(again.quality, RequestQuality::Mp3);
-    assert!(eventually(|| state_of(&setup, &again.id) == RequestState::Done).await);
-    assert!(setup.service.retry_as_mp3(&again.id, "alex").await.is_err());
-}
-
-#[tokio::test]
-async fn a_flac_ask_for_a_lossy_shared_song_asks_for_a_better_copy() {
-    let setup = setup(World::new(None));
-    setup.catalog.lossy_shared.lock().insert("Song 6".into());
-    let made = setup
-        .service
-        .create("sam", "ext-test-song-6", RequestQuality::Flac, None)
-        .await
-        .expect("made");
-    assert_eq!(made.kind, RequestKind::Upgrade);
-    assert_eq!(made.target, "shared-Song 6");
-    assert_eq!(made.state, RequestState::Pending);
-    setup
-        .service
-        .approve(&made.id, "winters", None)
-        .expect("approved");
-    assert!(eventually(|| state_of(&setup, &made.id) == RequestState::Done).await);
-    assert_eq!(
-        setup.fetcher.upgrades.lock().as_slice(),
-        [("winters".to_string(), "shared-Song 6".to_string())],
-        "the better copy is asked for as the owner"
-    );
 }
 
 #[tokio::test]
@@ -1046,13 +923,13 @@ async fn import_lists_are_one_request_handed_to_the_trickle() {
 #[tokio::test]
 async fn refusals_say_why() {
     let setup = setup(World::new(None));
-    let kid_flac = setup
+    let kid_best = setup
         .service
-        .create("kim", "ext-test-song-12", RequestQuality::Flac, None)
+        .create("kim", "ext-test-song-12", RequestQuality::Best, None)
         .await
         .expect_err("refused");
-    assert_eq!(kid_flac.code, 50);
-    assert_eq!(kid_flac.message, "This account can ask for MP3 copies at most.");
+    assert_eq!(kid_best.code, 50);
+    assert_eq!(kid_best.message, "This account can ask for MP3 copies at most.");
 
     let mut save_only = member("pat", Preset::Listener, 6);
     save_only.edits.insert("AddToLibrary".into(), json!("SaveOnly"));

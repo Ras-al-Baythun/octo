@@ -31,7 +31,7 @@ impl AcoustIdClient {
         Self { http }
     }
 
-    /// Per-call rather than the client's own Timeout, so Soulseek:AcoustIdTimeoutSeconds
+    /// Per-call rather than the client's own Timeout, so Downloads:AcoustIdTimeoutSeconds
     /// takes effect without a restart. The client keeps a generous ceiling behind this.
     async fn post_within(
         &self,

@@ -5,7 +5,7 @@
 use std::sync::Arc;
 
 use axum::extract::Request;
-use axum::http::{HeaderMap, Method, StatusCode};
+use axum::http::{Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use base64::Engine;
 use octo_subsonic::SubsonicCredential;
@@ -75,10 +75,6 @@ impl SubsonicCall {
 
     pub fn method(&self) -> &Method {
         &self.incoming.method
-    }
-
-    pub fn headers(&self) -> &HeaderMap {
-        &self.incoming.headers
     }
 
     /// Every value of the header, comma-joined, or `None` when it was not sent.

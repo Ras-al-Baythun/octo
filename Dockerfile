@@ -1,14 +1,13 @@
 # Octo: the Rust server, published as ghcr.io/winters27/octo for amd64 and arm64 (docker.yml),
-# and built from this folder by docker-compose.yml's octo-source. The same contract as the C#
-# image it replaces: port 8080 (ASPNETCORE_URLS), /app/config for settings and state, /music for
-# the library, /app/downloads created, and the app itself as PID 1 so SIGTERM reaches it and it
-# drains requests and workers within its 10 s budget. The C# app stays in octo/ for now, with
-# its own Dockerfile.csharp; this image holds none of it.
+# and built from this folder by docker-compose.yml's octo-source. The contract: port 8080
+# (ASPNETCORE_URLS), /app/config for settings and state, /music for the library, /app/downloads
+# created, and the app itself as PID 1 so SIGTERM reaches it and it drains requests and workers
+# within its 10 s budget.
 #
-# It reads what the C# app already holds: the dashboard (octo/wwwroot), the logo and social
-# images (octo/Assets), the list cover design (octo/Services/CoverArt/Design, built into the
-# binary) and appsettings.json (built in). The release number is the VERSION file (else
-# octo/octo.csproj, octo-core's build.rs).
+# From octo/ it takes the dashboard (octo/wwwroot), the logo and social images (octo/Assets),
+# the list cover design (octo/Services/CoverArt/Design, built into the binary) and
+# appsettings.json (built in). The release number is the VERSION file (else octo/octo.csproj,
+# octo-core's build.rs).
 #
 #   docker build -t octo:dev .
 #   docker build --build-arg OCTO_VERSION=2026.11.01.1 -t octo:dev .
@@ -47,7 +46,7 @@ RUN cargo chef cook --release --locked --package octo --recipe-path recipe.json
 COPY Cargo.toml Cargo.lock ./
 COPY crates crates
 # The release (VERSION; octo-core's build.rs reads it unless OCTO_VERSION is set), and what the
-# binary compiles in from the C# tree: the list cover design (JSON, Inter fonts, painted
+# binary compiles in from octo/: the list cover design (JSON, Inter fonts, painted
 # backgrounds) and appsettings.json. octo.csproj is build.rs's fallback for a tree without
 # VERSION.
 COPY VERSION ./
@@ -68,15 +67,15 @@ WORKDIR /app
 # feature degrades to a no-op and logs once; it never fails a download.
 # Generated list covers set names in Inter (inside the app); Noto CJK and Symbola draw the
 # Chinese, Japanese, Korean and emoji names Inter has no letters for, DejaVu Arabic and Hebrew.
-# ca-certificates: the .NET base image carried a root store; slim Debian does not, and every
-# upstream (Deezer, MusicBrainz, Last.fm, GitHub, ...) is HTTPS.
+# ca-certificates: slim Debian carries no root store, and every upstream (Deezer, MusicBrainz,
+# Last.fm, GitHub, ...) is HTTPS.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates ffmpeg fonts-dejavu-core fonts-noto-cjk fonts-symbola libchromaprint-tools \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /app/downloads /app/config
 
 # The binary looks for wwwroot/ and Assets/ beside itself (StaticRoots::from_env, and the
-# cover service's logo lookup), as the C# app looked in its publish root.
+# cover service's logo lookup).
 COPY --from=build /out/octo /app/octo
 COPY octo/wwwroot /app/wwwroot
 COPY octo/Assets /app/Assets

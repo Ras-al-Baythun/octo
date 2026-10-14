@@ -5,7 +5,7 @@
     "Album": "Glass Harbor",
     "Path": "/music/Zephyr Echo/Glass Harbor (2019)/02 - Neon Tide.flac",
     "Format": "FLAC",
-    "Source": "Soulseek",
+    "Source": "Lidarr",
     "CoverArtUrl": "https://e-cdns-images.dzcdn.net/images/cover/glass/1000x1000-000000-80-0-0.jpg",
     "SizeBytes": 31457280,
     "DownloadedAt": "2021-06-03T12:00:00.0000000Z"
@@ -16,7 +16,7 @@
     "Album": "Glass Harbor",
     "Path": "/music/Zephyr Echo/Glass Harbor (2019)/01 - Glass Harbor.flac",
     "Format": "FLAC",
-    "Source": "Soulseek",
+    "Source": "Lidarr",
     "CoverArtUrl": "https://e-cdns-images.dzcdn.net/images/cover/glass/1000x1000-000000-80-0-0.jpg",
     "SizeBytes": 33554432,
     "DownloadedAt": "2021-06-03T11:58:00.0000000Z"
@@ -38,7 +38,7 @@
     "Album": "Static Bloom",
     "Path": "/music/Velvet Static/Static Bloom (2023)/01 - Static Bloom.flac",
     "Format": "FLAC",
-    "Source": "Soulseek",
+    "Source": "Lidarr",
     "SizeBytes": 20971520,
     "DownloadedAt": "2021-06-01T08:00:00.0000000Z"
   },
@@ -48,7 +48,7 @@
     "Album": "Low Hum",
     "Path": "/music/Velvet Static/Low Hum (2022)/02 - Glow Wire.flac",
     "Format": "FLAC",
-    "Source": "Soulseek",
+    "Source": "Lidarr",
     "CoverArtUrl": "not a web address",
     "SizeBytes": 18874368,
     "DownloadedAt": "2021-05-31T08:00:00.0000000Z"

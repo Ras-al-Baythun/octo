@@ -32,16 +32,16 @@ depends on have been merged into `rust-rewrite`. Status: ☐ not started · ◐ 
 | ☑ | 3-C lyrics sources and service | `Lyrics/{LrclibLyricsSource,KugouLyricsSource,NeteaseLyricsSource,LyricsOvhLyricsSource,LyricsService,LyricsChoices,LyricsSidecarWriter}` | Lyrics, LyricsSongSource, LyricsChoice |
 | ☑ | 3-D tags | `Common/TagWriterExtras`, the tag-writing parts of `Common/BaseDownloadService`, `Library/KeptIdentity` | TagWriterExtras, MergedFormat, KeptIdentity |
 | ☑ | 3-E Navidrome plumbing | `Subsonic/{SubsonicProxyService,NavidromeIdentityService,SubsonicDiscoveryService,CredentialCheck,RequestIdentity,SearchBudget,SearchSongOrder,SearchSongPagePlanner}`, `Library/{NavidromeSongPathResolver,NavidromePlaylistApi}`, `Validation/{SubsonicStartupValidator,StartupValidationOrchestrator}` | SubsonicProxyService, CredentialCheck, RequestIdentity, SearchBudget, SearchPaging, SearchSongPagePlanner, NavidromeSongPathResolver |
-| ☑ | 3-F stores and YouTube | `Soulseek/{ExternalIdRegistry,RejectedPeerRegistry,RadioQueueStore,SongLength,SearchProfile}`, `Common/{SoulseekHoldStore,DownloadConcurrency}`, `Local/DownloadHistoryService`, `Admin/{BrowseSessionStore,DirectoryBrowser}`, `YouTube/YouTubeResolver`, `Updates/ReleaseCheck` | ExternalIdRegistry, RejectedPeerRegistry, SongLength, SoulseekSearchProfile, BrowseSessionStore, DirectoryBrowser, YouTubeResolverBaseUrl, ReleaseCheck, plus state-file round trips |
+| ☑ | 3-F stores and YouTube | `{ExternalIdRegistry,RadioQueueStore,SongLength}`, `Common/DownloadConcurrency`, `Local/DownloadHistoryService`, `Admin/{BrowseSessionStore,DirectoryBrowser}`, `YouTube/YouTubeResolver`, `Updates/ReleaseCheck` | ExternalIdRegistry, SongLength, BrowseSessionStore, DirectoryBrowser, YouTubeResolverBaseUrl, ReleaseCheck, plus state-file round trips |
 
 ## Wave 4: acquisition pipeline (needs wave 3)
 
 | | Task | C# sources | Tests |
 |---|---|---|---|
-| ☑ | 4-A Soulseek client and metadata | `Soulseek/{SoulseekClient,SoulseekLink,SoulseekMetadataService,AlbumFolderPicker,SoulseekStartupValidator}`, `IMusicMetadataService` | SoulseekMetadataService, SoulseekCandidateMatching, SoulseekDenyList, SoulseekOutage, SoulseekResolveRetry, SoulseekTransferPoll |
+| ☑ | 4-A download client and metadata | (removed) | (removed) |
 | ☑ | 4-B download base and verification | `Common/BaseDownloadService`, `Fingerprint/DownloadVerificationService`, `CoverArt/DownloadCoverResolver`, `Common/AlbumFillIn`, `IDownloadService` | DownloadPlacement, DownloadTagging, DownloadAttribution, AlbumFolder, AlbumFillIn, DownloadVerificationDecision, FailedRelayDetection, RelayedRepeats, CoverChain |
-| ☑ | 4-C Soulseek download service | `Soulseek/SoulseekDownloadService` | ParallelDownload, ParallelLockSplit, SoulseekSlowTransfer, SoulseekIncompleteFolder |
-| ☑ | 4-D acquisition orchestration | `Common/{AcquisitionTracker,AcquisitionWorker,AcquisitionActivity,TrackAcquisitionQueue,HeartAcquisitionCoordinator,StarOnArrival,SoulseekHoldResumer,ExternalSearchService,CacheCleanupService}`, `Library/{HeartOwnership,LibraryOwnership,ReplacementHandoff}`, `Local/LocalLibraryService` | AcquisitionTracker, HeartAcquisitionCoordinator, HeartOwnership, StarOnArrival, LibraryOwnership, LocalLibraryService, ExternalSearchService, HonestOutsideSongs, OutsideSongSignIn |
+| ☑ | 4-C download service | (removed) | (removed) |
+| ☑ | 4-D acquisition orchestration | `Common/{AcquisitionTracker,AcquisitionWorker,AcquisitionActivity,TrackAcquisitionQueue,HeartAcquisitionCoordinator,StarOnArrival,ExternalSearchService,CacheCleanupService}`, `Library/{HeartOwnership,LibraryOwnership,ReplacementHandoff}`, `Local/LocalLibraryService` | AcquisitionTracker, HeartAcquisitionCoordinator, HeartOwnership, StarOnArrival, LibraryOwnership, LocalLibraryService, ExternalSearchService, HonestOutsideSongs, OutsideSongSignIn |
 | ☑ | 4-E Lidarr | `Lidarr/*` | LidarrClient, LidarrHeartProtection, LidarrTrackFetcher |
 
 ## Wave 5: library jobs, radio, background workers (needs wave 4)

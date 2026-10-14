@@ -158,13 +158,13 @@ Done 2026-10-07 (`parity/README.md` has the details):
 - [x] Corpus groups for every 2026.10.05 group: `12-imports`, `13-downloads`,
   `14-settings-media`, `15-radio`, `16-lists`, `17-covers-explicit`,
   `18-dashboard`, `19-health`, `20-library-edits`, `21-static`,
-  `95-acquisition` (two hearts and a pick end to end through the slskd stub,
+  `95-acquisition` (two hearts and a pick end to end through the download stub,
   with a real fixture FLAC and M4A), `96-covers-explicit-writes`. 1,836
   requests in 25 files (453 before).
 - [x] Stubs: Spotify accounts, API and embed pages, ListenBrainz labs, the
-  shim's YouTube Music answers, octo-sonic, Deezer and Last.fm charts, slskd
-  search results, transfers (the stub writes the file into Octo's job folder),
-  options, YAML, shares and uploads, the Soulseek port test. New stub features:
+  shim's YouTube Music answers, octo-sonic, Deezer and Last.fm charts, the
+  download client's search results, transfers (the stub writes the file into
+  Octo's job folder) and options (the client has since been removed). New stub features:
   `times`, `bodyRegex`, `searchText`, `writeFile`, `{{size:...}}`, dated
   templates.
 - [x] Determinism rule: timers off or waited for, random values captured,
@@ -222,7 +222,7 @@ porting the group alone makes them pass.
 | B Download matching | 19 | 18 | 22 | 9 |
 | C Tagging polish | 16 | 15 | 15 | 3 |
 | D Download log, Find songs | 144 | 133 | 131 | 64 |
-| E slskd sharing | 45 | 45 | 45 | 1 |
+| E (removed) | 45 | 45 | 45 | 1 |
 | F Library edits, trash | 157 | 140 | 145 | 110 |
 | G Top songs, charts | 57 | 55 | 56 | 37 |
 | H Spotify import | 208 | 208 | 207 | 96 |
@@ -298,7 +298,7 @@ C# 2026.10.05 behavior the corpus records as it is. **Decided 2026-10-07
   for the new address.". The other test routes send nothing saved to a typed
   address: `lastfm/check` (fixed Last.fm host), `listenbrainz/validate`
   (fixed ListenBrainz host), `test-notification` (the saved ntfy and
-  Discord addresses only), `soulseek/test-port` (no secret), the Spotify
+  Discord addresses only), the port test of a since removed group (no secret), the Spotify
   connect (a client id, not a secret).
 - **A Navidrome address saved with a trailing slash** passes the same-address
   rule, and the stream relay then calls `//rest/stream`
@@ -327,10 +327,10 @@ every later request in its corpus file onto the normalized address.
   `MakeShortId`): radio registers the Zephyr Echo songs from Last.fm without an
   album and replaces the search's entry, so later answers lose the album until
   a search registers them again (`95-acquisition` starts with that search).
-- **The Soulseek web address is saved with the spaces it was typed with.**
+- **A web address of a since removed group was saved with the spaces it was typed with.**
   **Fixed in G2 with E** (`port/g2-eg`): saved (settings and Raw config,
   `normalize_saved_addresses`) and read (`AppSettings::bind`) trimmed; the proposed
-  intentional diff is `slskd-web-url-trimmed` (`18-dashboard/settings-weburl-ok`, `-ok-read`).
+  intentional diff was `web-url-trimmed` (`18-dashboard/settings-weburl-ok`, `-ok-read`).
 
 ### G1 record: groups A, K and S (2026-10-07)
 
@@ -476,14 +476,14 @@ What was left in E, structural and bytes alike:
 
 - `18-dashboard/sharing-share-bad-body`: the C# answered `{"on": "maybe"}` with STJ's own
   words naming the record (`... converted to
-  Octo.Controllers.SoulseekSharingController+ShareRequest. Path: $.on | LineNumber: 0 |
+  (removed controller)+ShareRequest. Path: $.on | LineNumber: 0 |
   BytePositionInLine: 14.`, under `$.on`, after `request`). Fixed after the run (`2537f75`,
   the switch's body refuses a member that is not a bool in those words; read from the box's C#
   recording, with a Rust test); the final run below confirms it.
 - `18-dashboard/settings-weburl-ok` and `-ok-read`: the port fix, proposed as
-  `slskd-web-url-trimmed` (`reviewed` unset, so still counted).
+  `web-url-trimmed` (`reviewed` unset, so still counted).
 - `18-dashboard/activity-rescan-starting` and `-done` (tagged N and E): `/api/admin/activity`
-  is N's route (404 in Rust); E's half, `SoulseekSharing::last_rescan_utc`, is in place for it.
+  is N's route (404 in Rust); E's half (removed) was in place for it.
 
 So E's own count is 4 after the fix, 2 with the intentional diff reviewed, and 0 once N's
 activity view lands. The other groups' own counts in the subset (D 3, F 3, H 2, I 0, J 3 for the
@@ -502,7 +502,7 @@ ended).
 | Rust against Rust | 1,837 identical, 0 unexplained | the same |
 
 E is 4 own, as expected: `sharing-share-bad-body` now matches the C# byte for byte, and what is
-left is `settings-weburl-ok` and `-ok-read` (the proposed `slskd-web-url-trimmed`, which matched
+left is `settings-weburl-ok` and `-ok-read` (the proposed `web-url-trimmed`, which matched
 its 2 aspects in both modes and is waiting for review) and the two `activity-rescan-*` requests
 of N. No group got worse against the C, O and Q record: B 11, C 9, D 110, F 128, G 47, H 201,
 I 3, J 3, L 45, N 14, O 17, P 68, Q 5, R 96 (97), base 29; A, K and S 0.
@@ -765,7 +765,7 @@ light the page with the C# recording's colors exactly (the parity cover's palett
 Rust test), and the ten `activity-*` requests, `11-signin/in-get-activity` and `in-get-ambient`
 match, `activity-rescan-starting` and `-done` included (E's two, now that the Sharing card is
 in). Base went from 29 to 27: the genre run's `pending` (`09-admin`), which phase 1 put on N.
-E is 2, the proposed `slskd-web-url-trimmed`. No group got worse: B 11, C 9, D 110, F 128, G
+E is 2, the proposed `web-url-trimmed`. No group got worse: B 11, C 9, D 110, F 128, G
 47, H 201, I 3, J 3, L 45, O 17, P 68, Q 5, R 96; A, K and S 0. N has no proposed intentional
 diff.
 
@@ -885,7 +885,7 @@ reviewed, the diff is 0 in both modes. The three reviewed entries explain 39 mor
 
 | Cause | Requests | Handled |
 | --- | ---: | --- |
-| G's two settings (`GeneratedPlaylists.Charts`, `ChartCountry`) in every settings, Raw config and settings file answer, and two more keys in config-sources | 55 | Proposed `charts-settings-listed` (46). The 7 config-sources answers carry `config-sources-fixed-mask`'s change too, and one entry has to cover every line of an aspect, so that entry pins the moved keys; `slskd-web-url-trimmed` likewise pins the two settings on its 2 answers. |
+| G's two settings (`GeneratedPlaylists.Charts`, `ChartCountry`) in every settings, Raw config and settings file answer, and two more keys in config-sources | 55 | Proposed `charts-settings-listed` (46). The 7 config-sources answers carry `config-sources-fixed-mask`'s change too, and one entry has to cover every line of an aspect, so that entry pins the moved keys; `web-url-trimmed` likewise pins the two settings on its 2 answers. |
 | `octoTopSongs` version 2 on the extension lists outside `16-lists` (`01-system`, `13-downloads`, `15-radio`, `20-library-edits`) | 12 | Reviewed `charts-octo-top-songs-version-2` names them, with the bytes mode's lines for the same change. |
 | The dashboard files read by `10-static-cors` and the second Octo (`11-signin/alt-admin-index`) | 10 | Reviewed `dashboard-files-2026-10-08` names them, with a range's `Content-Range`. |
 | `getTopChart`'s added fields in bytes mode | 3 | Reviewed `charts-top-chart-says-which-chart` gains the bytes mode's lines. |
@@ -921,7 +921,7 @@ notice):
 | `update-card-pulls-octo` | T | 3 | The update card's hand command pulls Octo with its sidecars instead of building it, and an update helper too old for that is asked to be reinstalled. |
 | `recovery-refused-on-library-files` | J | 2 | Signed in with the recovery code, the explicit marking is refused like every other page that touches music files; only a Navidrome admin can run it. |
 | `isrc-clear-takes-the-tag-off` | F | 2 | Undoing an ISRC edit takes the code off the file, as the undo already said it did. |
-| `slskd-web-url-trimmed` | E | 2 | The Open slskd link's address is saved without the spaces it was typed with. |
+| `web-url-trimmed` | E | 2 | A web address of the removed group was saved without the spaces it was typed with. |
 | `lidarr-test-saved-key-stays-home` | I | 1 | Testing Lidarr at a new address asks for the key to be typed again instead of sending the saved key to that address. |
 | `plain-error-words` | base | 1 | A failed connection, timeout or error status reads in plain words ("Could not connect to stubs:9: the connection was refused.") instead of .NET's exception text. |
 | `cover-resume-counts-once` | P | 1 | A cover run resumed after a stop counts each album and song once ("3 of 3 albums", not "6 of 3"). |
@@ -947,7 +947,7 @@ Rust change.
 | B Download matching | 8 | 644 | 46 | 0.75 | 2 | done (G2, `port/g2-bd`) |
 | C Tagging polish | 4 | 465 | 24 | 1.0 | 9 | done |
 | D Download log, drawer, Find songs picks | 13 | 2,146 | 53 | 1.5 | 12 | done but `696cbff`'s import half (H) (G2, `port/g2-bd`) |
-| E slskd sharing, Share switch | 8 | 1,084 | 29 | 1.0 | 2 | done (G2, `port/g2-eg`; the 2 are the proposed `slskd-web-url-trimmed`) |
+| E (removed) | 8 | 1,084 | 29 | 1.0 | 2 | done (G2, `port/g2-eg`; the 2 are the proposed `web-url-trimmed`) |
 | F Library edits, delete, trash, put back | 10 | 1,345 | 35 | 1.25 | 24 | done (G3, `port/g3-fp`); what is left waits for R |
 | G Top songs, charts, Popular right now | 4 | 1,472 | 35 | 1.0 | 48 | done on `port/g-charts`, with the charts plan (parity pending) |
 | H Spotify import, trickle | 4 | 3,197 | 69 | 2.0 | 16 | done (G3) |
@@ -991,12 +991,12 @@ writer does. What the later groups find waiting for them:
 | Group | Already there |
 | --- | --- |
 | B, D | `DownloadHistoryEntry.key` and `log` (`octo_core::models::download::{AcquisitionEvent, AcquisitionCandidate}`, with `Quality`); `PickedCopy` (`services::common::download_picks`) and `UpgradeJob.pick`. `base_download_service` records `key: None` (STUB(D); G2 records the run's key). `GET /api/admin/downloads` already drops `log` and says `hasLog`. |
-| E | `Soulseek.WebUrl` (`safe_web_url`), `CheckListenPort`, `ShareLibrary`, `SharedFolders` (`shared_folder_list`); the save's WebUrl check and the slskd password rules (9f9502d's admin side). |
+| E | (removed: the download client's sharing settings and the save's checks for them) |
 | F | `services::library::library_tag_edits` (`TagEditEntry`, the file); `LibraryActionEntry.copy`, `download_allowed`, `blocks_downloads()` (the journal's never-requested check uses it); `LibraryActionState::Restored`; `QuarantineManifest.sidecars` and `mappings` (written null, STUB(F)). |
 | G, Q | `GeneratedPlaylists.PopularNow`, the Made for you switches and clamps (`any_for_you`); `UserMixes.for_you` and `for_you_covers` (filled by Q in G2). |
 | H | `Imports` settings; `services::imports` (`ImportList`, `ImportTrack`, `TrickleJob`, the three files' load and save). |
 | L | `RadioSources` settings (`effective_weight`); `services::radio::radio_outcome_store` and `services::sonic::sonic_store`; `LastFmRadioBan`; the status page's octo-sonic probe. |
-| P | `SoulseekRouting.explicit_content` and `version`, the clean id rule and the explicit mark kept across registrations; `services::library::explicit_backfill_store`. |
+| P | `ExternalRouting.explicit_content` and `version`, the clean id rule and the explicit mark kept across registrations; `services::library::explicit_backfill_store`. |
 | H, N, R, D | Their controllers call `BrowseSessionStore::navidrome_user_of` (never the recovery code) and read who called from the gate's `AdminCaller` extension (`middleware::admin_sign_in_gate::{Caller, caller_of}`), as `LibraryHealthController` and `AdminDownloadsController` did. |
 | Every group with a new route that reads or changes library files | Add it to `middleware::admin_sign_in_gate::LIBRARY_FILE_ROUTES` (with the words the C# endpoint answered), so the gate refuses the recovery code there as on the rest; the walk test lists the routes. |
 
@@ -1008,7 +1008,7 @@ writer does. What the later groups find waiting for them:
 
 ### B. Download matching (versions, mash-ups, wider star search, format rename, relay file name)
 
-- [x] `15087f6` fix(soulseek): a star searches as wide as Better quality, and wider again when the limit fills
+- [x] `15087f6` fix(downloads): a star searches as wide as Better quality, and wider again when the limit fills
 - [x] `ff46dde` fix(downloads): a song's version tag is not words its file must carry, and the song itself never takes an edit
 - [x] `39770ed` fix(downloads): a guest credit inside a version tag, "(Radio Edit - feat. X)", no longer makes the version words a file must carry
 - [x] `066ea88` fix(downloads): a drumless, piano, 8D or other performance edition is a version, while deluxe and anniversary editions stay the same recording
@@ -1052,32 +1052,11 @@ writer does. What the later groups find waiting for them:
   line; the import errors without server paths are group H's `ImportService` and trickle worker)
 - [x] `7602787` feat(downloads): keep each finished download's log with its fetched-songs entry
 
-### E. slskd sharing and the Share switch
+### E. (removed)
 
-- **Fix in port:** the Soulseek web address (`Soulseek.WebUrl`) is saved with
-  the spaces it was typed with (BACKLOG "Found while building the harness");
-  save it trimmed, with a Rust test and an intentional diff. Done in G2
-  (`fc00777`): saved and read trimmed, tests `slskds_web_address_is_saved_without_spaces`
-  and `slskds_web_address_is_read_without_spaces`, proposed intentional diff
-  `slskd-web-url-trimmed`.
-
-Done in G2 (`port/g2-eg`): `octo_core::soulseek::{soulseek_sharing, soulseek_share_switch}`
-(the card's records and slskd's answers, the slskd.yml block), `services::soulseek::{SoulseekSharing,
-SoulseekPortCheck, SoulseekShareSwitch}` (the switch runs as the `SoulseekShareSwitch` worker),
-the slskd client's reads, rescan, settings file, scan cancel and upload cancel, and
-`controllers::admin::soulseek_sharing` (`GET /api/admin/soulseek/sharing`, `test-port`,
-`rescan`, `share`). The four compose, installer and README commits change no Rust.
-
-- [x] `9f9502d` fix(admin): the slskd password never goes back to the browser (ported in G1 with group I)
-- [x] `9624b57` feat(soulseek): slskd shares the music library back, read-only, with polite upload limits
-  (compose, `.env.example`, install.sh: no Rust change; the settings came in G1)
-- [x] `0abab4f` feat(soulseek): a Sharing card and an Open slskd button on the Soulseek page
-- [x] `c785401` docs(readme): sharing back on Soulseek, the port to forward, and Open slskd (no Rust change)
-- [x] `e3a5063` feat(soulseek): sharing is a choice, on for new installs and never switched on by an update
-  (compose, `.env.example`, install.sh: no Rust change; `ShareLibrary` defaults off since G1)
-- [x] `416644b` feat(soulseek): a Share my library switch on the Sharing card, applied to slskd within seconds
-- [x] `e30b242` docs(readme): the Share my library switch, and how it reaches slskd (no Rust change)
-- [x] `d2114a6` test(soulseek): the stock slskd.yml sample has Linux line ends however it was checked out
+The download client's sharing group (its card, switch, port test, web address and password
+rules, and its nine commits). Done in G2 (`port/g2-eg`); the code left with the client, and
+its proposed intentional diff `web-url-trimmed` with it.
 
 ### F. Library edits from the apps, delete, trash, put back
 
@@ -1161,8 +1140,8 @@ Rust change beyond the settings they name.
 ### K. Lidarr stale guid, bare address 302 (#80)
 
 - [x] `e3aed24` fix(lidarr): a picked release Lidarr forgot is found again by its title, and a pick an album search already covers says it was not grabbed
-  (the Lidarr client and track fetcher; `PickedCopy.Size`, `SongFinder`'s size and the
-  Soulseek service's `Step` belong to D's picks and come with them)
+  (the Lidarr client and track fetcher; `PickedCopy.Size` and `SongFinder`'s size belong to
+  D's picks and come with them)
 - [x] `4a329aa` fix(proxy): the bare server address sends to the web app, as Navidrome does (#80)
 
 ### L. Multi-source radio (#78, sources, blend, learning, bans, Sounds alike client)
@@ -1237,7 +1216,7 @@ reads library files, so neither is in `LIBRARY_FILE_ROUTES` (the C# answered the
 on both). The activity view reads Library health (group R, not on `rust/main` yet) through a
 view of its own, `HealthActivity` (from `HealthRun`), with a `STUB` where it is read: a
 conversion and one call in `get_activity`; the word mapping and its tests are in already. The
-slskd rescan (E), the Spotify read and trickle (H, `ImportsActivity` from `ImportOverview`) and
+rescan (E, since removed), the Spotify read and trickle (H, `ImportsActivity` from `ImportOverview`) and
 Find songs (D, `FindLook` from `FindSnapshot`) are read.
 
 ### O. Search album ownership
@@ -1405,8 +1384,8 @@ placeholder for the real date.
   768m`, starter Navidrome, 10 songs, 12,000 requests at 16 threads, two runs in both orders):
   C# 2026.10.05 idle 265 to 281 MiB, peak 367 to 441, 29 to 31 CPU-s, 1,863 log bytes per
   request; Rust idle 67 MiB at 10 s and 90 to 94 at 2 min, peak 92 to 95, 6 CPU-s, 24 log bytes
-  per request (all of it the status probe's warning about the test's absent slskd; with slskd
-  up, 600 requests logged nothing). Process start to "Now listening on": C# 1.74 s median, Rust
+  per request (all of it the status probe's warning about the test's absent download client; with
+  it up, 600 requests logged nothing). Process start to "Now listening on": C# 1.74 s median, Rust
   0.89 s. Per path (2,000 requests each): Rust ahead on ping, getArtists, search3, status and
   admin.js, level on getAlbumList2 (both wait on Navidrome). Against the plan's targets (LXC 131,
   idle at most 60, peak at most 80, start at most 0.4 s) this box reads high for both builds

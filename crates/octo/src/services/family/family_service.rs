@@ -211,8 +211,6 @@ pub trait RequestService: Send + Sync {
         by: &str,
         note: &str,
     ) -> Result<FamilyRequest, FamilyError>;
-    /// The requester's own failed FLAC request, asked for again as an MP3.
-    async fn retry_as_mp3(&self, id: &str, by: &str) -> Result<FamilyRequest, FamilyError>;
 }
 
 /// How much a member's own library holds.

@@ -1,6 +1,6 @@
 //! Everything Octo is working on, in one shape, for the dashboard's progress toasts: a library
 //! re-tag, a covers or lyrics run, better copies, hearted downloads, a Spotify read, a duplicate
-//! scan, an slskd rescan and Navidrome's own scan. The dashboard asks often while something runs
+//! scan and Navidrome's own scan. The dashboard asks often while something runs
 //! and seldom while nothing does, so one cheap read replaces a poller per page.
 //!
 //! A job that needs the Navidrome sign-in on its own page is listed only for a signed-in
@@ -17,7 +17,6 @@ use chrono::{DateTime, TimeDelta, Utc};
 use octo_core::json::datetime;
 use octo_core::library::generated_playlist_service::dotnet_ticks;
 use octo_core::lyrics::{LyricsLibraryMode, LyricsLibraryRun, LyricsLibraryStatus};
-use octo_core::soulseek::soulseek_sharing::SharingReport;
 use serde::Serialize;
 
 use super::plumbing::{BROWSE_COOKIE_NAME, BROWSE_TOKEN_HEADER, header_value, request_cookie};
@@ -40,10 +39,6 @@ pub fn routes() -> RouteSet {
 
 /// How long a finished job stays listed.
 pub const RECENT_WINDOW: TimeDelta = TimeDelta::minutes(2);
-/// How long after a rescan from the dashboard slskd's share scan is watched.
-pub const RESCAN_WATCH: TimeDelta = TimeDelta::minutes(15);
-/// slskd starts a rescan a moment after it is asked, so the first seconds read as starting.
-pub const RESCAN_START: TimeDelta = TimeDelta::seconds(15);
 
 /// One job. `state` is running, done, stopped (canceled or interrupted) or failed. `done` of
 /// `total` counts `unit`; `fraction` is set when only a share is known. `page` is the dashboard
@@ -178,14 +173,6 @@ async fn get_activity(State(state): State<AppState>, request: Request) -> Respon
         },
         now,
     ));
-    if let Some(requested) = state.soulseek_sharing.last_rescan_utc()
-        && now - requested < RESCAN_WATCH
-    {
-        // slskd away is a report that says so (the report never fails): the Soulseek page tells
-        // the rest.
-        let report = state.soulseek_sharing.report(false, None).await;
-        items.push(rescan(&RescanReport::from(&report), requested, now));
-    }
     if let Some(scan) = state.local_library.get_scan_status().await
         && scan.scanning
     {
@@ -995,62 +982,6 @@ pub fn duplicates(worker: &DuplicateScan, now: DateTime<Utc>) -> Option<Activity
         }))
         .finished(Some(last.at_utc)),
     )
-}
-
-/// What the activity view reads of slskd's sharing report (`SharingReport`).
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct RescanReport {
-    pub scanning: bool,
-    pub scan_progress: Option<f64>,
-    pub scan_failed: bool,
-    pub files: Option<i64>,
-}
-
-impl From<&SharingReport> for RescanReport {
-    fn from(report: &SharingReport) -> Self {
-        RescanReport {
-            scanning: report.scanning,
-            scan_progress: report.scan_progress,
-            scan_failed: report.scan_failed,
-            files: report.files.map(i64::from),
-        }
-    }
-}
-
-/// An slskd rescan the dashboard asked for at `requested`.
-pub fn rescan(report: &RescanReport, requested: DateTime<Utc>, now: DateTime<Utc>) -> ActivityItem {
-    let id = format!("share-rescan:{}", dotnet_ticks(requested));
-    if report.scan_failed {
-        return ActivityItem::new(
-            id,
-            "share",
-            "soulseek",
-            "slskd could not rescan your share",
-            "failed",
-        )
-        .error(Some("slskd stopped the scan. Its log says why.".to_string()));
-    }
-    if report.scanning || now - requested < RESCAN_START {
-        let mut item = ActivityItem::new(
-            id,
-            "share",
-            "soulseek",
-            "slskd is rescanning your share",
-            "running",
-        )
-        .detail((!report.scanning).then(|| "Starting".to_string()))
-        .started(Some(requested));
-        item.fraction = if report.scanning {
-            report.scan_progress
-        } else {
-            None
-        };
-        return item;
-    }
-    // No finish time: slskd does not say when it ended, so only a browser that saw it running
-    // says done.
-    ActivityItem::new(id, "share", "soulseek", "slskd rescanned your share", "done")
-        .detail(report.files.map(|files| format!("{} files shared", n0(files))))
 }
 
 #[cfg(test)]

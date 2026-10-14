@@ -363,7 +363,6 @@ async fn the_state_file_is_written_and_a_bad_one_is_set_aside() {
 /// What a client is told about a mix and its songs, and that a library MP3 is an MP3.
 mod response {
     use chrono::TimeZone;
-    use octo_core::settings::SubsonicSettings;
     use octo_subsonic::subsonic_response_builder::{ReplyKind, SubsonicResponseBuilder};
     use serde_json::Value;
 
@@ -374,10 +373,7 @@ mod response {
     };
 
     fn builder() -> SubsonicResponseBuilder {
-        new_subsonic_response_builder(
-            Arc::new(ExternalIdRegistry::in_memory()),
-            &SubsonicSettings::default(),
-        )
+        new_subsonic_response_builder(Arc::new(ExternalIdRegistry::in_memory()))
     }
 
     fn mix() -> GeneratedPlaylist {

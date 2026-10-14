@@ -1,7 +1,6 @@
 //! No credential leaves the admin API in clear, not the Discord webhook address, the ntfy
 //! token, the Lidarr key or any other. The settings structs are walked as they serialize, so a
-//! credential added later fails here until it is masked too. Plus the slskd password's own
-//! tests.
+//! credential added later fails here until it is masked too.
 
 use std::collections::BTreeSet;
 
@@ -247,15 +246,6 @@ fn a_saved_credential_never_follows_a_new_address_it_was_not_typed_for() {
         ),
         None
     );
-    assert_eq!(
-        secret_sent_elsewhere(
-            &obj(&format!(
-                r#"{{ "Soulseek": {{ "BaseUrl": "http://slskd:5030", "Password": "{p}" }} }}"#
-            )),
-            current
-        ),
-        None
-    );
 }
 
 #[test]
@@ -284,37 +274,5 @@ fn raw_config_puts_back_every_credential_it_hid_and_echoes_none() {
         !Node::Object(redact_secrets(&stored))
             .to_json_string(false)
             .contains("stored")
-    );
-}
-
-// ---- The slskd password ------------------------------------------------------------------------
-
-/// slskd's web password signs in to slskd as its owner, so it never goes to a browser either.
-#[tokio::test]
-async fn slskd_password_is_never_returned() {
-    let mut settings = AppSettings::default();
-    settings.soulseek.password = Some("synthetic-slskd-password".into());
-    let app = app(AppState::for_tests(settings));
-    for url in ["/api/admin/settings", "/api/admin/raw-config"] {
-        let reply = get(&app, url).await;
-        assert!(!reply.text().contains("synthetic-slskd-password"), "{url}");
-        assert_eq!(reply.json()["Soulseek"]["Password"], SECRET_PLACEHOLDER, "{url}");
-    }
-}
-
-#[test]
-fn slskd_password_placeholder_is_restored_and_masked() {
-    let mut incoming = obj(&format!(
-        r#"{{ "Soulseek": {{ "Password": "{SECRET_PLACEHOLDER}" }} }}"#
-    ));
-    restore_secret_placeholders(&mut incoming, &obj(r#"{ "Soulseek": { "Password": "stored" } }"#));
-    assert_eq!(
-        incoming["Soulseek"].get("Password").and_then(Node::as_str),
-        Some("stored")
-    );
-    let echoed = redact_secrets(&obj(r#"{ "Soulseek": { "Password": "stored" } }"#));
-    assert_eq!(
-        echoed["Soulseek"].get("Password").and_then(Node::as_str),
-        Some(SECRET_PLACEHOLDER)
     );
 }

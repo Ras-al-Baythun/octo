@@ -314,9 +314,9 @@ each on a fresh stack of its own, and joined again before the diff.
 ```jsonc
 [
  {"name": "acquisition",                          // lower-case letters, digits and dashes
-  "files": ["95-acquisition", "96-covers-explicit-writes"],   // the files it owns, in corpus order
-  "setup": ["13-downloads/setup-ext-song3", "20-library-edits"],   // run first, not kept
-  "reads": {"96-covers-explicit-writes": {"95-acquisition": "why"}}}   // what a file depends on
+  "files": ["96-covers-explicit-writes"],         // the files it owns, in corpus order
+  "setup": ["20-library-edits"],                  // run first, not kept
+  "reads": {"96-covers-explicit-writes": {"20-library-edits": "why"}}}   // what a file depends on
 ]
 ```
 
@@ -364,12 +364,12 @@ Twenty files answered the same alone; the other six showed what they read:
 | `18-dashboard` | `14-settings-media` | 14's saves write the whole settings file, so 18's saves answer with every section under `persisted` |
 | `20-library-edits` | `19-health` | 19's fixes in the library actions history and the tag edits journal |
 | `90-mutations` | `05-playlists`, `14-settings-media`, `20-library-edits` | the admin's Deep Cuts list, made by 05's `getPlaylists` and kept for the day; the whole settings file; 20's retags in the file sizes |
-| `96-covers-explicit-writes` | `95-acquisition`, `20-library-edits` | the album 95 files, 20's trash folder and file sizes |
+| `96-covers-explicit-writes` | `20-library-edits` | 20's trash folder and file sizes |
 
 Each smallest set was then checked the same way (for example `05`, `14`, `20` and `90` alone give
-`90` its unsharded answers; `20` without `19` is enough for `96`). Two files also take a capture
-from another: `90-mutations` the browse token from `09-admin/browse-auth-admin`, `95-acquisition`
-Paper Moons' id from `13-downloads/setup-ext-song3` (the checker finds these by itself).
+`90` its unsharded answers; `20` without `19` is enough for `96`). One file also takes a capture
+from another: `90-mutations` the browse token from `09-admin/browse-auth-admin` (the checker
+finds this by itself).
 `99-signed-out-writes` ends with the restart, so it is last in its shard.
 
 Two files wait on timers, which set where they go:
@@ -388,7 +388,7 @@ Two files wait on timers, which set where they go:
 | `imports` | 12, 13, 21 | |
 | `dashboard` | 17, 18 | 14 |
 | `library` | 00 to 11, 19, 20, 90, 99 | 14 |
-| `acquisition` | 95, 96 | `13-downloads/setup-ext-song3`, 20 |
+| `acquisition` | 96 | 20 |
 
 Each shard's recording time on 2026-10-08 in WSL, two recordings of each (C# 2026.10.05, and
 the Rust build of `rust/main` `4ff2c86`, every group merged, with adaptive waits), not counting the
@@ -406,8 +406,8 @@ stack's start and removal (about 30 s) or waiting for the budget:
 The same commit unsharded, on one stack each: 683 s against C# and 663 s against Rust. `lists`
 sets the length: `16-lists` waits about 5 minutes for Made for you's second attempt wherever it
 runs. Against a Rust build that still lacked features (`19db112`), `library` and `acquisition`
-were the long ones (about 530 s each): `20` reads `19`, `90` reads `20`, and `96` needs what `95`
-files and what `20` leaves, so they cannot be split further.
+were the long ones (about 530 s each): `20` reads `19`, `90` reads `20`, and `96` needs what `20`
+leaves, so they cannot be split further.
 
 ## Adaptive waits
 
@@ -445,8 +445,8 @@ recording (2026-10-08, the Rust build of `3c4c593`):
 - A floor of 10 s was tried first, and it cut a correct wait short: `19-health/plant-wait`
   waits on Navidrome alone (C# met it at once), and on a busy WSL Navidrome took over 11 s. The
   floor is 20 s, the time `--until-patience` already gives a build that has the feature.
-- `max(20 s, 3 x C#)` alone cut one too, once `rust/main` had group D: `95-acquisition`'s heart
-  on Neon Tide took Rust 12 s in one recording and over 40 s in the other, run at the same time
+- `max(20 s, 3 x C#)` alone cut one too, once `rust/main` had group D: a heart's download
+  took Rust 12 s in one recording and over 40 s in the other, run at the same time
   (C# 12 s, limit 39 s). A job that ends in a Navidrome scan can wait for the scan before it,
   and Octo spaces its own scans 30 s apart, so a wait on background work gets a minute on top of
   C#'s time.
@@ -470,7 +470,7 @@ Rust diff lists the same requests as without them.
                          └────┬────┘     network "sandbox" (internal: no route out)
         ┌─────────────────────┼──────────────────────┐
    ┌────┴────┐          ┌─────┴─────┐          ┌─────┴─────┐
-   │  octo   │ ───────▶ │ navidrome │          │   stubs   │  slskd :5030, Lidarr :8686,
+   │  octo   │ ───────▶ │ navidrome │          │   stubs   │  Lidarr :8686,
    │ (image  │          │  0.64.2   │          │ (python)  │  yt-dlp shim :8090,
    │ under   │ ─────────────────────────────▶  │           │  HTTPS :443 for every
    │ test)   │                                 │           │  hard-coded upstream host
@@ -482,7 +482,7 @@ Rust diff lists the same requests as without them.
 | `octo` | The image under test (`OCTO_IMAGE`). Configured only through env vars in [`docker-compose.yml`](docker-compose.yml); `/app/config` is a fresh volume each run, seeded by `config-seed` with [`fixtures/config/`](fixtures/config/) (5 fetched songs). The library is a fresh writable copy of the fixtures per run (`parity/.run/<project>/music`), and `fixtures/planted/` is mounted read-only for `19-health` and `20-library-edits` to copy in. |
 | `octo-alt` | The same image with the sign-in off and the dashboard on its own port (see "The second Octo"). |
 | `navidrome` | `deluan/navidrome:0.64.2` over the fixture library (read-only). External agents, insights and the auth rate limiter are off. |
-| `stubs` | [`stubs/stub_server.py`](stubs/stub_server.py), one process answering slskd, Lidarr, the yt-dlp shim, octo-sonic, the Soulseek port test and every HTTPS upstream from the JSON mappings in [`stubs/mappings/`](stubs/mappings/). It has the run's library at `/music`, so the slskd stub can "download" a fixture file into the job folder Octo asked for. |
+| `stubs` | [`stubs/stub_server.py`](stubs/stub_server.py), one process answering Lidarr, the yt-dlp shim, octo-sonic and every HTTPS upstream from the JSON mappings in [`stubs/mappings/`](stubs/mappings/). |
 | `gateway` | [`stubs/gateway.py`](stubs/gateway.py), a TCP forwarder. Docker cannot publish ports from an internal-only network, so this is the one container on both networks. |
 
 ### Fixtures
@@ -501,7 +501,7 @@ Rust diff lists the same requests as without them.
 - **Navidrome users:** `admin` / `parity-admin` (created by `ND_DEVAUTOCREATEADMINPASSWORD`)
   and the non-admin `listener` / `listener-pass` (created by `parity.py up` through the
   native API).
-- **Octo config:** Navidrome URL and admin login, slskd/Lidarr/shim URLs pointing at the stubs,
+- **Octo config:** Navidrome URL and admin login, Lidarr and shim URLs pointing at the stubs,
   a Last.fm API key (so search discovery runs) with radio, stations and mixes off, lyrics
   fetching on with every source, update checks off, library actions off. See the comments in
   `docker-compose.yml`.
@@ -539,19 +539,17 @@ Keep the host list in three places in sync: `certs/make-certs.sh` (SANs), the `s
 ### Stub mappings
 
 `stubs/mappings/*.json` are tried in file-name order, then in list order; the first match wins.
-Each entry names a `service` (the Host header for HTTPS hosts, else `slskd`, `lidarr` or
+Each entry names a `service` (the Host header for HTTPS hosts, else `lidarr` or
 `shim`), an optional `method`, a `path` or `pathRegex` (matched against the raw,
 percent-encoded path), optional `query` regexes, and a `body` (JSON), `bodyText` or `bodyFile`
-(served with Range support). Rows can also match the request body (`bodyRegex`) or, for slskd,
-the words a search was started with (`searchText`); answer only their first N hits (`times`,
-which gives sequences); copy a file into the shared library on a hit (`writeFile`, with the
-destination taken from the request body); serve a fixture's byte size (`{{size:bodies/x}}`);
-and fill in dates relative to today (`"template": true`, `{{date:-N}}`). The stub server's
+(served with Range support). Rows can also match the request body (`bodyRegex`); answer only
+their first N hits (`times`, which gives sequences); serve a fixture's byte size
+(`{{size:bodies/x}}`); and fill in dates relative to today (`"template": true`, `{{date:-N}}`). The stub server's
 docstring has the details. Unmatched calls get `404 {"error":"no stub"}` and an `UNMATCHED`
 line in the stubs' log (`<out>/logs/stubs.log` after a `run`).
 
-The mapping files are numbered by who uses them: `05-downloads` and `06-acquisition` (13, 95),
-`05-slskd-sharing` (18), `35-covers-explicit` (17, 96), `35-radio` (15), `35-settings-media`
+The mapping files are numbered by who uses them: `05-downloads` and `06-acquisition` (13),
+`35-covers-explicit` (17, 96), `35-radio` (15), `35-settings-media`
 (14), `36-lists` (16), `50-health` (19), `50-spotify` (12), `51-library-edits` (20). Each keeps to
 its own Deezer ids and names, because a row in an earlier file answers any call it fits.
 
@@ -627,22 +625,21 @@ it). `--only GLOB` always keeps `00-setup`, whose captures the rest needs.
 | `08-catchall-native` | 34 | 3.9 and 2.2: `GET /`, Octo-owned 404s, external-id safety net and element naming, unknown endpoints, DELETE on a Subsonic route, POST bodies through the faithful relay, native `/api` with JWT (lists, Octo's external song/album/artist answers, discovery appends, radio playlist ids) |
 | `09-admin` | 97 | Section 4 and 2.9: `/admin` redirect, every safe admin GET, the guard (OPTIONS, preflight, writes without `X-Octo-Admin`, CORS stripping), every browse-session endpoint without and with a session (cookie, header, stale cookie hiding a header), browse auth failures and success, validation 400s, side-effect-free POSTs |
 | `10-static-cors` | 25 | Sections 5 and 7: static files plain, HEAD, `If-None-Match`, Range (also unsatisfiable), Brotli/gzip, upper-case path, `/Assets`; CORS on simple requests, preflights, errors and admin 403s; `X-Forwarded-Proto` |
-| `11-signin` | 132 | Group J: every `/api/admin` GET signed out and signed in, unknown admin paths, bogus sign-ins, the recovery session, the app's Subsonic sign-in on `[AdminAppCall]` routes, the second Octo (written by `tools/admin_routes.py`) |
+| `11-signin` | 130 | Group J: every `/api/admin` GET signed out and signed in, unknown admin paths, bogus sign-ins, the recovery session, the app's Subsonic sign-in on `[AdminAppCall]` routes, the second Octo (written by `tools/admin_routes.py`) |
 | `12-imports` | 206 | Group H: file, zip and link imports and their caps, Spotify connect, finish, callback and reads (stubbed accounts and API), lists, playlists, the trickle controls, `getImports`, `getImport`, `importAction` |
-| `13-downloads` | 111 | Groups D and B: the downloads list and log, acquisitions, `getAcquisition`, `clearAcquisitions`, Find songs from the dashboard and Subsonic (23 stubbed copies that hit each matching rule), picks and their refusals, the relayed download file name |
-| `14-settings-media` | 181 | Groups I, S, O, K, A, J: secret masking and the placeholder rules, transcode lengths, outside albums the library holds, the bare address 302, Last.fm search cleanup, the status cache, recovery, sign out, demoted and deleted admins |
+| `13-downloads` | 96 | Groups D and B: the downloads list and log, acquisitions, `getAcquisition`, `clearAcquisitions`, Find songs from the dashboard and Subsonic, picks and their refusals, the relayed download file name |
+| `14-settings-media` | 177 | Groups I, S, O, K, A, J: secret masking and the placeholder rules, transcode lengths, outside albums the library holds, the bare address 302, Last.fm search cleanup, the status cache, recovery, sign out, demoted and deleted admins |
 | `15-radio` | 86 | Group L: song, album, artist and outside-seed radio across Last.fm, YouTube Music, ListenBrainz and Sounds alike (stubbed octo-sonic), bans, learning, weights, `/api/admin/sonic`, `/api/admin/radio-outcomes` |
 | `16-lists` | 68 | Groups G and Q: `getTopSongs`, `getArtistTopSongs`, `getTopChart`, Popular right now, Made for you (New Releases, Rediscover, Deep Cuts), the explicit filter |
 | `17-covers-explicit` | 74 | Groups P and C: the covers upgrade run, explicit or clean outside songs and albums with their own ids, the explicit backfill preview and refusals, Try it with the advisory |
-| `18-dashboard` | 63 | Groups N and E: the activity view, the Afterglow palette, the Sharing card and Share switch against a stubbed slskd, the slskd password and web address rules |
+| `18-dashboard` | 18 | Group N: the activity view, the Afterglow palette, the Library actions history and Recently removed reads |
 | `19-health` | 115 | Group R: Library health over 8 planted songs: report, previews, fixes, lookups, stop, undo |
 | `20-library-edits` | 153 | Group F: `libraryAction` edits (retag, joinAlbum, cover, lookup, undo), remove to the trash with its `.lrc`, put back, a second copy, `getLibraryActions`, `getLibraryTrash`, the dashboard's trash and history |
 | `21-static` | 31 | The 2026.10.05 dashboard files with the admin security headers |
-| `90-mutations` | 57 | Run last: star/unstar/rating/scrobble/now playing/reportPlayback, a playlist create-update-delete round trip, a settings patch and re-read, the side-effect admin POSTs (caches, notifications, update check, Last.fm connect flow, job cancel/resume/undo, lyrics choices), sign-out (its heart moved to `95-acquisition`) |
-| `95-acquisition` | 43 | Groups D, B, C, P: two hearts and a pick end to end: slskd search, transfer of a fixture file, length, AcoustID and spectrum checks, tagging, filing, Navidrome scan, logs and state files |
+| `90-mutations` | 56 | Run last: star/unstar/rating/scrobble/now playing/reportPlayback, a playlist create-update-delete round trip, a settings patch and re-read, the side-effect admin POSTs (caches, notifications, update check, Last.fm connect flow, job cancel/resume/undo, lyrics choices), sign-out |
 | `96-covers-explicit-writes` | 47 | Group P: cover replace and explicit marks written into the library files, checked with `ffprobe` and Navidrome, and undone |
-| `99-signed-out-writes` | 77 | Group J: every admin write signed out (written by `tools/admin_routes.py`); runs last, the restart last of all |
-| **Total** | **1842** | |
+| `99-signed-out-writes` | 73 | Group J: every admin write signed out (written by `tools/admin_routes.py`); runs last, the restart last of all |
+| **Total** | **1728** | |
 
 ## Recordings
 
@@ -857,11 +854,9 @@ listed under "Determinism rule":
 - **The 55 shared library health cases** (`docs/library-health-cases.json`) are song rows fed
   straight to the checks; the Rust unit tests read them. `19-health` plants 8 songs that trip
   about 11 of them end to end.
-- **The share switch with slskd taking a new list,** Locked, outside shares and upload cancels:
-  the stub's answers do not change after a write.
 - **Spotify import:** the 250,000 songs per person cap, the 64 MB request limit, the refresh
   token path.
-- **Feature switches left at one value:** `WaitForLosslessOnPlay`, `DownloadOnPlay`,
+- **Feature switches left at one value:** `DownloadOnPlay`,
   `StorageMode=Cache`, `EnableExternalPlaylists`, notification sinks, Genre normalization.
 - **apiKey auth:** Navidrome 0.64.2 does not implement it, so only its failure paths.
 - **Images:** binary bodies are compared by SHA-256, so the Rust cover renderer differs from

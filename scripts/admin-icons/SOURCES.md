@@ -24,7 +24,6 @@ where noted. The marks belong to their owners and are used only to name their se
 | `listenbrainz.svg` | [metabrainz/listenbrainz-server](https://github.com/metabrainz/listenbrainz-server) `frontend/img/listenbrainz_logo_icon.svg` | viewBox squared |
 | `musicbrainz.svg` | metabrainz/listenbrainz-server `frontend/img/meb-icons/MusicBrainz.svg` | viewBox squared |
 | `lidarr.svg` | [Lidarr/Lidarr](https://github.com/Lidarr/Lidarr) `Logo/Lidarr.svg` | the two 2px grey honeycomb textures removed: invisible at icon size, and 98% of the file |
-| `slskd.svg` | [slskd/slskd](https://github.com/slskd/slskd) `etc/icon.svg` | editor markup removed |
 | `acoustid.svg` | [acoustid/acoustid-server](https://github.com/acoustid/acoustid-server) `misc/favicon.svg` | editor markup removed |
 | `navidrome.svg` | [navidrome/navidrome](https://github.com/navidrome/navidrome) `ui/public/safari-pinned-tab.svg` | that file is the outline only; the blue disc and white label of Navidrome's app icon (`ui/public/android-chrome-192x192.png`) are laid under it |
 

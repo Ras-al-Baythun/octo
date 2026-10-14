@@ -11,7 +11,7 @@ use http_body_util::BodyExt;
 use octo_core::common::Clock;
 use octo_core::lyrics::{LyricsLibraryMode, LyricsLibraryRow, LyricsLibraryRun, LyricsLibraryStatus};
 use octo_core::settings::{
-    AppSettings, LibraryAction, LibraryActionDefinition, LibraryActionSettings, SoulseekSettings,
+    AppSettings, LibraryAction, LibraryActionDefinition, LibraryActionSettings, LidarrSettings,
 };
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -156,7 +156,7 @@ async fn admin_read_from_another_origin_carries_no_cors_headers() {
 
 // ---- The Better quality page's endpoints -----------------------------------------------------
 
-/// The test state for `allowed` and `dryRun`: library actions on, Better quality on, Soulseek
+/// The test state for `allowed` and `dryRun`: library actions on, Better quality on, Lidarr
 /// set up.
 fn page(allowed: bool, dry_run: bool) -> AppState {
     AppState::for_tests(AppSettings {
@@ -171,10 +171,12 @@ fn page(allowed: bool, dry_run: bool) -> AppState {
             }],
             ..Default::default()
         },
-        soulseek: SoulseekSettings {
+        lidarr: LidarrSettings {
             base_url: Some("http://127.0.0.1:1".into()),
-            username: Some("slskd-user".into()),
-            password: Some("slskd-pass".into()),
+            api_key: Some("k".into()),
+            root_folder_path: Some("/music".into()),
+            quality_profile_id: 1,
+            metadata_profile_id: 1,
             ..Default::default()
         },
         ..Default::default()

@@ -212,7 +212,7 @@ impl SettingsStore {
         self.inner.tx.send_replace(settings);
     }
 
-    /// Sets one raw key (`Soulseek:Password`, say). The snapshot is not rebound.
+    /// Sets one raw key (`Lidarr:ApiKey`, say). The snapshot is not rebound.
     pub fn set_raw(&self, key: &str, value: Option<&str>) {
         let mut tree = (*self.inner.tree.load_full()).clone();
         tree.set(key, value.map(str::to_string));

@@ -24,7 +24,7 @@ Phase 0 task: "Confirm BouncyCastle is unused and list any other packages that a
 ### BouncyCastle.Cryptography 2.6.2: dead
 
 - `grep -rn "BouncyCastle\|Org\.Bouncy"` over `octo/` and `octo.Tests/` finds no matches in any `.cs` file. The only mention is the `PackageReference` in `octo/octo.csproj`.
-- Nothing needs it indirectly either. slskd auth is a bearer token from slskd's own `/session` endpoint (`Services/Soulseek/SoulseekClient.cs:64`). Hashing (`SHA256`, `SHA1`) and `RandomNumberGenerator` come from `System.Security.Cryptography`.
+- Nothing needs it indirectly either. The download client's auth was a bearer token from its own session endpoint. Hashing (`SHA256`, `SHA1`) and `RandomNumberGenerator` come from `System.Security.Cryptography`.
 - **Rust:** no replacement. Use `sha2` / `sha1` / `rand` (or `getrandom`) for the BCL crypto calls above.
 
 ### Microsoft.AspNetCore.OpenApi 9.0.4: dead
@@ -84,7 +84,7 @@ These come from `Microsoft.NET.Sdk.Web`, not from a `PackageReference`, but they
 
 ### Moq 4.20.72: used
 
-- `using Moq;` appears in 43 test files, for example `octo.Tests/SoulseekSlowTransferTests.cs:5`. Eleven of them also use `Moq.Protected` to fake `HttpMessageHandler.SendAsync`, for example `octo.Tests/ExternalSearchServiceTests.cs:5`.
+- `using Moq;` appears in 43 test files, for example `octo.Tests/ExternalSearchServiceTests.cs:5`. Eleven of them also use `Moq.Protected` to fake `HttpMessageHandler.SendAsync`, for example `octo.Tests/ExternalSearchServiceTests.cs:5`.
 - **Rust:** `wiremock` replaces the `HttpMessageHandler` fakes, since `reqwest` talks to a real local server. `mockall`, or plain hand-written fake structs, replace the interface mocks.
 
 ### xunit 2.9.2 and xunit.runner.visualstudio 2.8.2: used

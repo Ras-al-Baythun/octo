@@ -69,10 +69,6 @@
             <svg class="icon" aria-hidden="true"><use href="#i-playlist"/></svg>
             <span>Import</span>
           </button>
-          <button class="sidebar-nav-item" data-tab="soulseek">
-            <svg class="icon brand" aria-hidden="true"><use href="#b-slskd"/></svg>
-            <span>Soulseek</span>
-          </button>
           <button class="sidebar-nav-item" data-tab="lidarr">
             <svg class="icon brand" aria-hidden="true"><use href="#b-lidarr"/></svg>
             <span>Lidarr</span>
@@ -264,15 +260,6 @@
             <div class="status-card-body">Checking…</div>
             <div class="status-card-foot">Your music library</div>
           </article>
-          <article class="status-card" data-svc="slskd">
-            <div class="status-card-head">
-              <span class="status-card-mark"><svg class="icon brand" aria-hidden="true"><use href="#b-slskd"/></svg></span>
-              <span class="status-card-title">Soulseek</span>
-              <span class="status-dot pending"></span>
-            </div>
-            <div class="status-card-body">Checking…</div>
-            <div class="status-card-foot">slskd, downloads on heart</div>
-          </article>
           <article class="status-card" data-svc="lidarr">
             <div class="status-card-head">
               <span class="status-card-mark"><svg class="icon brand" aria-hidden="true"><use href="#b-lidarr"/></svg></span>
@@ -453,48 +440,17 @@
         <div class="set-section">
           <div class="set-head">
             <h3 class="set-title">Playing songs you don't own</h3>
-            <p class="set-desc">What plays when someone picks a song that is not in your library yet.</p>
+            <p class="set-desc">A song that is not in your library yet plays from YouTube, and can be kept.</p>
           </div>
           <form data-section="playback-source" class="set-card">
-            <div class="set-row playback-source-row">
-              <div class="set-info">
-                <div class="set-info-t">When a song is missing</div>
-                <div class="set-info-d">YouTube starts at once. Soulseek waits for a lossless copy, then plays.</div>
-              </div>
-              <div class="set-ctrl">
-                <div class="seg" data-seg-for="f-playback-source"><span class="seg-thumb"></span></div>
-                <select id="f-playback-source" class="seg-src" hidden aria-label="Primary missing-track playback source">
-                  <option value="YouTube">YouTube stream</option>
-                  <option value="Lossless">Soulseek download</option>
-                </select>
-              </div>
-              <input type="checkbox" id="f-wait-for-lossless-on-play" name="Subsonic.WaitForLosslessOnPlay" data-restart="true" hidden />
-            </div>
-            <div class="set-row stack" data-stream-source="YouTube">
+            <div class="set-row stack">
               <div class="set-info">
                 <div class="set-info-t"><svg class="icon brand" aria-hidden="true"><use href="#b-youtube"/></svg>YouTube shim URL</div>
                 <div class="set-info-d">The yt-dlp helper that finds and streams the song. The default works inside Docker's network.</div>
               </div>
               <input class="set-input" id="f-yt-url" name="YouTube.ShimUrl" data-restart="true" placeholder="http://yt-dlp-shim:8080" />
             </div>
-            <div class="set-row stack" data-stream-source="Lossless" hidden>
-              <div class="set-info">
-                <div class="set-info-t"><svg class="icon brand" aria-hidden="true"><use href="#b-slskd"/></svg>Soulseek connection</div>
-                <div class="set-info-d">The lossless copy comes through slskd, which is set up on its own page.</div>
-              </div>
-              <div>
-                <button type="button" class="btn btn-ghost" data-open-tab="soulseek"><svg class="icon brand" aria-hidden="true"><use href="#b-slskd"/></svg><span>Open Soulseek settings</span></button>
-              </div>
-            </div>
-            <div class="set-row" data-stream-source="Lossless" hidden>
-              <div class="set-info">
-                <div class="set-info-t">Lossless wait <span class="set-opt">seconds</span></div>
-                <div class="set-info-d">How long to wait before playing the YouTube preview instead. 0 waits as long as it takes.</div>
-                <div class="set-info-more">The lossless download carries on either way.</div>
-              </div>
-              <input class="set-input" id="f-lossless-wait-timeout" name="Subsonic.LosslessWaitTimeoutSeconds" type="number" min="0" />
-            </div>
-            <div class="set-row" data-stream-source="YouTube">
+            <div class="set-row">
               <div class="set-info">
                 <div class="set-info-t">Keep what is played</div>
                 <div class="set-info-d">Downloads each song played from outside your library, radio included, from the first source in Heart download priority that Octo fetches itself.</div>
@@ -530,7 +486,7 @@
               <div class="set-info">
                 <div class="set-info-t">Skip songs you already have</div>
                 <div class="set-info-d">A heart, an album or a play never downloads a second copy of a song in your library. On by default.</div>
-                <div class="set-info-more">An MP3 or other lossy copy is kept and queued for a higher quality one, when Soulseek or Lidarr can look for it and Better quality is on for you. This holds for hearts through Lidarr too: the album's songs you already have are taken back out of what Lidarr brought. The same song means the same artist and title in the same version, and a length within 8 seconds or the same album.</div>
+                <div class="set-info-more">An MP3 or other lossy copy is kept and queued for a higher quality one, when Lidarr can look for it and Better quality is on for you. This holds for hearts through Lidarr too: the album's songs you already have are taken back out of what Lidarr brought. The same song means the same artist and title in the same version, and a length within 8 seconds or the same album.</div>
               </div>
               <label class="switch"><input type="checkbox" id="f-skip-owned-songs" name="Subsonic.SkipOwnedSongs" /><span class="sw-track"></span><span class="sw-thumb"></span></label>
             </div>
@@ -554,7 +510,7 @@
               <div class="set-info">
                 <div class="set-info-t" id="heart-source-order-label">Heart download priority</div>
                 <div class="set-info-d">Octo tries each source that is on, top to bottom, and stops at the first that works.</div>
-                <div class="set-info-more">Drag a source, or use the arrow keys on its handle, to change the order. Only Soulseek is on to begin with.</div>
+                <div class="set-info-more">Drag a source, or use the arrow keys on its handle, to change the order. Only YouTube is on to begin with.</div>
               </div>
               <div class="source-priority-list" id="heart-source-order"
                    aria-labelledby="heart-source-order-label" aria-describedby="heart-source-order-help"></div>
@@ -566,6 +522,87 @@
           </form>
         </div>
 
+        <div class="set-section">
+          <div class="set-head">
+            <h3 class="set-title">Verify downloads</h3>
+            <p class="set-desc">Checks a finished download is the song you asked for before it joins your library, and how many download at once.</p>
+          </div>
+          <form data-section="downloads-verify" class="set-card">
+            <div class="set-row">
+              <div class="set-info">
+                <div class="set-info-t"><svg class="icon brand" aria-hidden="true"><use href="#b-acoustid"/></svg>Verify downloads</div>
+                <div class="set-info-d">Fingerprints each download and asks AcoustID what it really is. Off by default.</div>
+                <div class="set-info-more"><p>Catches covers, karaoke versions, live takes and mislabelled compilation tracks, which all pass the length check.</p><p>A song AcoustID has never heard of is always kept. YouTube downloads are identified too but never rejected, since there is no second copy to try.</p></div>
+              </div>
+              <label class="switch"><input type="checkbox" name="Downloads.VerifyDownloads" /><span class="sw-track"></span><span class="sw-thumb"></span></label>
+            </div>
+            <div class="set-row stack">
+              <div class="set-info">
+                <div class="set-info-t"><svg class="icon brand" aria-hidden="true"><use href="#b-acoustid"/></svg>AcoustID API key</div>
+                <div class="set-info-d">Free from <a href="https://acoustid.org/new-application" target="_blank" rel="noopener">acoustid.org/new-application</a>.</div>
+                <div class="set-info-more">Without a key the fingerprint lookup is skipped; the length check still works.</div>
+              </div>
+              <input class="set-input" type="password" name="Downloads.AcoustIdApiKey" autocomplete="new-password" />
+            </div>
+            <div class="set-row">
+              <div class="set-info">
+                <div class="set-info-t">Minimum match score <span class="set-opt">percent</span></div>
+                <div class="set-info-d">How sure AcoustID must be before its answer can reject a file. 85 to begin with.</div>
+                <div class="set-info-more"><strong>Raising this makes Octo more permissive</strong>, not less: weaker matches are ignored rather than acted on.</div>
+              </div>
+              <input class="set-input" name="Downloads.MinMatchScore" type="number" min="50" max="99" />
+            </div>
+            <div class="set-row">
+              <div class="set-info">
+                <div class="set-info-t"><svg class="icon brand" aria-hidden="true"><use href="#b-musicbrainz"/></svg>Tag from MusicBrainz</div>
+                <div class="set-info-d">On a confident match, write the recording's title, artist, album and year over the source's own tags.</div>
+              </div>
+              <label class="switch"><input type="checkbox" name="Downloads.TagFromMusicBrainz" /><span class="sw-track"></span><span class="sw-thumb"></span></label>
+            </div>
+            <div class="set-row">
+              <div class="set-info">
+                <div class="set-info-t">Name files from the match</div>
+                <div class="set-info-d">On a confident match, also name the file from the recording, so the path and the tags agree.</div>
+                <div class="set-info-more">Artist folder, title, album and track number. A canonical name is not always the one you file under, which is why this is off. Only files Octo downloads and confirms; nothing already in your library is renamed.</div>
+              </div>
+              <label class="switch"><input type="checkbox" name="Downloads.NameFromMatch" /><span class="sw-track"></span><span class="sw-thumb"></span></label>
+            </div>
+            <div class="set-row">
+              <div class="set-info">
+                <div class="set-info-t">Catch fake lossless files</div>
+                <div class="set-info-d">Spots an MP3 turned into a FLAC by the gap a lossy encoder leaves up high. On by default.</div>
+                <div class="set-info-more">Checks the spectrum of every download that claims to be lossless. A likely fake is kept and noted as transcoded. Works without verification or an AcoustID key. A recording that is simply quiet up high is never called fake.</div>
+              </div>
+              <label class="switch"><input type="checkbox" name="Downloads.DetectTranscodes" /><span class="sw-track"></span><span class="sw-thumb"></span></label>
+            </div>
+            <div class="set-row">
+              <div class="set-info">
+                <div class="set-info-t">Downloads at once</div>
+                <div class="set-info-d">How many songs may download side by side, 1 to 6. Each lands in its own folder, so they never mix up.</div>
+                <div class="set-info-more">Moving files into your library stays one at a time either way. 1 is how Octo always worked.</div>
+              </div>
+              <input class="set-input" id="f-parallel-downloads" name="Downloads.ParallelDownloads" type="number" min="1" max="6" aria-label="Downloads at once" />
+            </div>
+            <details class="set-more">
+              <summary>Share fingerprints with AcoustID</summary>
+              <div class="set-row">
+                <div class="set-info">
+                  <div class="set-info-t"><svg class="icon brand" aria-hidden="true"><use href="#b-acoustid"/></svg>Send confirmed fingerprints to AcoustID</div>
+                  <div class="set-info-d">When you Keep a song AcoustID was unsure of, send its fingerprint so the next person gets a sure answer.</div>
+                  <div class="set-info-more">Only the fingerprint, its length, the MusicBrainz recording id and the file format leave Octo; never a file name, a path or a username. Nothing is sent in rehearsal mode, for a song AcoustID named as something else, or when no single MusicBrainz recording fits.</div>
+                </div>
+                <label class="switch"><input type="checkbox" name="Downloads.SubmitConfirmedFingerprints" /><span class="sw-track"></span><span class="sw-thumb"></span></label>
+              </div>
+              <div class="set-row stack">
+                <div class="set-info">
+                  <div class="set-info-t"><svg class="icon brand" aria-hidden="true"><use href="#b-acoustid"/></svg>AcoustID user key</div>
+                  <div class="set-info-d">Your own key, from <a href="https://acoustid.org/api-key" target="_blank" rel="noopener">acoustid.org/api-key</a> once signed in. The API key above is not enough on its own.</div>
+                </div>
+                <input class="set-input" type="password" name="Downloads.AcoustIdUserApiKey" autocomplete="new-password" />
+              </div>
+            </details>
+          </form>
+        </div>
       </section>
 
       <!-- ─── SUBSONIC ───────────────────────────────────────── -->
@@ -825,7 +862,7 @@
           </div>
           <form data-section="lastfm-publication" class="set-card">
             <div class="set-row">
-              <div class="set-info"><div class="set-info-t">Playlist method</div><div class="set-info-d">Shows each station in the client's Playlists section. This provides full track controls and preserves normal local-song quality; heart a discovery track to fetch a permanent lossless copy.</div></div>
+              <div class="set-info"><div class="set-info-t">Playlist method</div><div class="set-info-d">Shows each station in the client's Playlists section. This provides full track controls and preserves normal local-song quality; heart a discovery track to fetch a permanent copy.</div></div>
               <label class="switch"><input type="checkbox" name="LastFm.ExposeRadioAsPlaylists" /><span class="sw-track"></span><span class="sw-thumb"></span></label>
             </div>
             <div class="set-row">
@@ -1036,14 +1073,6 @@
                 <div class="set-info-d">A song arrived, with its format, source, size and cover.</div>
               </div>
               <label class="switch"><input type="checkbox" id="f-notify-completed" name="Notifications.NotifyDownloadCompleted" /><span class="sw-track"></span><span class="sw-thumb"></span></label>
-            </div>
-            <div class="set-row">
-              <div class="set-info">
-                <div class="set-info-t">Lossless fallback</div>
-                <div class="set-info-d">Soulseek found nothing for a song someone was playing, so YouTube played instead.</div>
-                <div class="set-info-more">Only while Streams &amp; hearts waits for lossless on play. Hearts report through Download completed or Download failed.</div>
-              </div>
-              <label class="switch"><input type="checkbox" id="f-notify-fallback" name="Notifications.NotifyLosslessFallback" /><span class="sw-track"></span><span class="sw-thumb"></span></label>
             </div>
             <div class="set-row">
               <div class="set-info">
@@ -1595,227 +1624,6 @@
         </div>
       </section>
 
-      <!-- ─── SOULSEEK ───────────────────────────────────────── -->
-      <section data-pane="soulseek">
-        <header class="page-header">
-          <div>
-            <h1>Soulseek</h1>
-            <p>Downloads lossless copies through slskd when you heart a song, and shares your music back with the people you download from.</p>
-          </div>
-          <a class="btn btn-ghost" id="slskd-open" target="_blank" rel="noopener noreferrer" title="slskd's own page, in a new tab. slskd asks for its own sign-in."><svg class="icon" aria-hidden="true"><use href="#i-arrow-square-out"/></svg><span>Open slskd</span></a>
-        </header>
-
-        <div class="set-section">
-          <div class="set-head">
-            <h3 class="set-title">Sharing</h3>
-            <p class="set-desc">Soulseek works because people share. slskd shares your music folder, read-only, so the people you download from can download from you too.</p>
-          </div>
-          <div class="set-card share-card" id="share-card">
-            <div class="set-row">
-              <div class="set-info">
-                <label class="set-info-t" for="share-switch">Share my library on Soulseek</label>
-                <div class="set-info-d">The people you download from can download from you too, read-only, a few songs at a time. Takes effect in seconds.</div>
-                <div class="set-info-more">Off shares nothing at all: slskd forgets your folders and uploads still waiting or under way are cancelled. Octo sets this in slskd's own settings file, slskd.yml, in a part marked as Octo's. Shares you set in slskd.yml yourself are left alone, and this switch stands aside.</div>
-              </div>
-              <label class="switch"><input type="checkbox" id="share-switch" /><span class="sw-track"></span><span class="sw-thumb"></span></label>
-            </div>
-            <div class="set-row stack">
-              <p class="share-line" id="share-line" aria-live="polite">Asking slskd…</p>
-              <dl class="share-facts" id="share-facts" hidden></dl>
-              <div class="share-actions">
-                <button type="button" class="btn btn-ghost" id="share-rescan"><svg class="icon" aria-hidden="true"><use href="#i-arrows-clockwise"/></svg><span>Rescan shared folders</span></button>
-                <button type="button" class="btn btn-ghost" id="share-test-port"><svg class="icon" aria-hidden="true"><use href="#i-plugs-connected"/></svg><span>Test the port</span></button>
-                <button type="button" class="btn btn-ghost btn-icon" id="share-refresh" aria-label="Check sharing again" title="Check again"><svg class="icon" aria-hidden="true"><use href="#i-arrow-clockwise"/></svg></button>
-              </div>
-            </div>
-            <div id="share-warnings" hidden></div>
-          </div>
-        </div>
-
-        <div class="set-section">
-          <form data-section="soulseek-sharing" class="set-card">
-            <div class="set-row">
-              <div class="set-info">
-                <div class="set-info-t">Test the listening port</div>
-                <div class="set-info-d">Asks Soulseek's own port test whether other people can connect to slskd. On by default.</div>
-                <div class="set-info-more">Octo sends the port number to tools.slsknet.org and nothing else, at most every 6 hours unless you press Test the port. The test checks this server's internet address, so it is only right when slskd reaches the internet the same way as Octo, not through a VPN of its own.</div>
-              </div>
-              <label class="switch"><input type="checkbox" name="Soulseek.CheckListenPort" /><span class="sw-track"></span><span class="sw-thumb"></span></label>
-            </div>
-          </form>
-        </div>
-
-        <div class="set-section">
-          <div class="set-head">
-            <h3 class="set-title">Connection</h3>
-            <p class="set-desc">How Octo reaches slskd.</p>
-          </div>
-          <form data-section="soulseek-conn" class="set-card">
-            <div class="set-row stack">
-              <div class="set-info">
-                <div class="set-info-t">Base URL</div>
-                <div class="set-info-d">The slskd address. The default works inside Docker's network.</div>
-              </div>
-              <input class="set-input" id="f-slskd-url" name="Soulseek.BaseUrl" data-restart="true" placeholder="http://slskd:5030" />
-            </div>
-            <div class="set-row stack">
-              <div class="set-info">
-                <div class="set-info-t">slskd sign-in</div>
-                <div class="set-info-d">The slskd web account Octo signs in with.</div>
-                <div class="set-info-more">This is not your Soulseek network account: that one is <code>SLSKD_SOULSEEK_USERNAME</code> and <code>SLSKD_SOULSEEK_PASSWORD</code> in <code>.env</code>.</div>
-              </div>
-              <div class="set-grid2">
-                <input class="set-input" id="f-slskd-user" name="Soulseek.Username" data-restart="true" data-restart-label="Soulseek account" placeholder="Username" autocomplete="off" aria-label="slskd web admin username" />
-                <input class="set-input" id="f-slskd-pass" name="Soulseek.Password" type="password" data-restart="true" data-restart-label="Soulseek account" placeholder="Password" autocomplete="new-password" aria-label="slskd web admin password" />
-              </div>
-            </div>
-            <div class="set-row stack">
-              <div class="set-info">
-                <div class="set-info-t">slskd's page <span class="set-opt">optional</span></div>
-                <div class="set-info-d">The address Open slskd goes to in your browser. Blank uses this server's name on port 5030.</div>
-                <div class="set-info-more">Set it when you reach slskd some other way, such as through a reverse proxy. Only the address goes to your browser; slskd asks for its own sign-in.</div>
-              </div>
-              <input class="set-input" id="f-slskd-web" name="Soulseek.WebUrl" type="url" placeholder="http://this-server:5030" autocomplete="off" />
-            </div>
-          </form>
-        </div>
-
-        <div class="set-section">
-          <div class="set-head">
-            <h3 class="set-title">Searching</h3>
-            <p class="set-desc">How long to look, and which files count.</p>
-          </div>
-          <form data-section="soulseek-search" class="set-card">
-            <div class="set-row stack">
-              <div class="set-info">
-                <div class="set-info-t">Search wait / per-peer timeout <span class="set-opt">seconds</span></div>
-                <div class="set-info-d">How long to wait for peers to answer, and how long a download may send nothing before the next of up to 5 peers is tried. A slow download that keeps going is waited for.</div>
-              </div>
-              <div class="set-grid2">
-                <input class="set-input" id="f-slskd-wait" name="Soulseek.SearchWaitSeconds" type="number" min="2" max="30" data-restart="true" data-restart-label="Soulseek search wait" aria-label="Search wait in seconds" />
-                <input class="set-input" id="f-slskd-timeout" name="Soulseek.DownloadTimeoutSeconds" type="number" min="30" data-restart="true" data-restart-label="Soulseek per-peer timeout" aria-label="Seconds a download may send nothing before the next peer" />
-              </div>
-            </div>
-            <div class="set-row">
-              <div class="set-info">
-                <div class="set-info-t">Wait for Soulseek <span class="set-opt">hours</span></div>
-                <div class="set-info-d">When slskd is up but not logged in to Soulseek, hearts wait this long for it before using the next source. 0 means don't wait.</div>
-                <div class="set-info-more">Soulseek's own server goes down for maintenance now and then, for two to four hours. Without a wait, everything hearted in that time lands as a YouTube MP3. Waiting hearts are kept across a restart.</div>
-              </div>
-              <input class="set-input" id="f-slskd-outage-hold" name="Soulseek.OutageHoldHours" type="number" min="0" max="48" aria-label="Hours to wait for Soulseek" />
-            </div>
-            <div class="set-row">
-              <div class="set-info">
-                <div class="set-info-t">Downloads at once</div>
-                <div class="set-info-d">How many songs may download side by side, 1 to 6. Each lands in its own folder, so they never mix up.</div>
-                <div class="set-info-more">Octo keeps to one at a time until slskd has put a download in its own folder, and goes back to one if slskd ever does not. Moving files into your library stays one at a time either way. 1 is how Octo always worked.</div>
-              </div>
-              <input class="set-input" id="f-slskd-parallel" name="Soulseek.ParallelDownloads" type="number" min="1" max="6" aria-label="Downloads at once" />
-            </div>
-            <div class="set-row">
-              <div class="set-info">
-                <div class="set-info-t">Albums from one folder</div>
-                <div class="set-info-d">A hearted album is searched once, and one person's folder of it is taken in one go. On by default.</div>
-                <div class="set-info-more">Songs that folder lacks, or whose file fails a check, are searched one by one as before. Off searches every song on its own.</div>
-              </div>
-              <label class="switch"><input type="checkbox" name="Soulseek.AlbumFolders" /><span class="sw-track"></span><span class="sw-thumb"></span></label>
-            </div>
-            <div class="set-row stack">
-              <div class="set-info">
-                <div class="set-info-t">Smallest file <span class="set-opt">bytes</span> / file type</div>
-                <div class="set-info-d">Skips clip-sized fakes, and prefers one kind of file.</div>
-              </div>
-              <div class="set-grid2">
-                <input class="set-input" id="f-slskd-minsize" name="Soulseek.MinFileSizeBytes" type="number" min="0" data-restart="true" data-restart-label="Soulseek minimum file size" aria-label="Minimum file size in bytes" />
-                <input class="set-input" id="f-slskd-ext" name="Soulseek.PreferredExtension" placeholder="flac" data-restart="true" data-restart-label="Soulseek preferred extension" aria-label="Preferred file extension" />
-              </div>
-            </div>
-          </form>
-        </div>
-
-        <div class="set-section">
-          <div class="set-head">
-            <h3 class="set-title">Verify downloads</h3>
-            <p class="set-desc">Checks a finished download is the song you asked for before it joins your library.</p>
-          </div>
-          <form data-section="soulseek-verify" class="set-card">
-            <div class="set-row">
-              <div class="set-info">
-                <div class="set-info-t"><svg class="icon brand" aria-hidden="true"><use href="#b-acoustid"/></svg>Verify downloads</div>
-                <div class="set-info-d">Fingerprints each Soulseek and YouTube download and asks AcoustID what it really is. Off by default.</div>
-                <div class="set-info-more"><p>Catches covers, karaoke versions, live takes and mislabelled compilation tracks, which all pass the length check. A peer that sends a different recording has that file remembered and never tried again.</p><p>A song AcoustID has never heard of is always kept. YouTube downloads are identified too but never rejected, since there is no second copy to try.</p></div>
-              </div>
-              <label class="switch"><input type="checkbox" name="Soulseek.VerifyDownloads" /><span class="sw-track"></span><span class="sw-thumb"></span></label>
-            </div>
-            <div class="set-row stack">
-              <div class="set-info">
-                <div class="set-info-t"><svg class="icon brand" aria-hidden="true"><use href="#b-acoustid"/></svg>AcoustID API key</div>
-                <div class="set-info-d">Free from <a href="https://acoustid.org/new-application" target="_blank" rel="noopener">acoustid.org/new-application</a>.</div>
-                <div class="set-info-more">Without a key the fingerprint lookup is skipped; the length check and its memory of rejected files still work.</div>
-              </div>
-              <input class="set-input" type="password" name="Soulseek.AcoustIdApiKey" autocomplete="new-password" />
-            </div>
-            <div class="set-row">
-              <div class="set-info">
-                <div class="set-info-t">Minimum match score <span class="set-opt">percent</span></div>
-                <div class="set-info-d">How sure AcoustID must be before its answer can reject a file. 85 to begin with.</div>
-                <div class="set-info-more"><strong>Raising this makes Octo more permissive</strong>, not less: weaker matches are ignored rather than acted on.</div>
-              </div>
-              <input class="set-input" name="Soulseek.MinMatchScore" type="number" min="50" max="99" />
-            </div>
-            <div class="set-row">
-              <div class="set-info">
-                <div class="set-info-t"><svg class="icon brand" aria-hidden="true"><use href="#b-musicbrainz"/></svg>Tag from MusicBrainz</div>
-                <div class="set-info-d">On a confident match, write the recording's title, artist, album and year over the source's own tags.</div>
-              </div>
-              <label class="switch"><input type="checkbox" name="Soulseek.TagFromMusicBrainz" /><span class="sw-track"></span><span class="sw-thumb"></span></label>
-            </div>
-            <div class="set-row">
-              <div class="set-info">
-                <div class="set-info-t">Name files from the match</div>
-                <div class="set-info-d">On a confident match, also name the file from the recording, so the path and the tags agree.</div>
-                <div class="set-info-more">Artist folder, title, album and track number. A canonical name is not always the one you file under, which is why this is off. Only files Octo downloads and confirms; nothing already in your library is renamed.</div>
-              </div>
-              <label class="switch"><input type="checkbox" name="Soulseek.NameFromMatch" /><span class="sw-track"></span><span class="sw-thumb"></span></label>
-            </div>
-            <div class="set-row">
-              <div class="set-info">
-                <div class="set-info-t">Catch fake lossless files</div>
-                <div class="set-info-d">Spots an MP3 turned into a FLAC by the gap a lossy encoder leaves up high. On by default.</div>
-                <div class="set-info-more">Checks the spectrum of every download that claims to be lossless. A likely fake is passed over for another lossless copy when a peer has one, and kept, noted as transcoded, when none does. Works without verification or an AcoustID key. A recording that is simply quiet up high is never called fake.</div>
-              </div>
-              <label class="switch"><input type="checkbox" name="Soulseek.DetectTranscodes" /><span class="sw-track"></span><span class="sw-thumb"></span></label>
-            </div>
-            <div class="set-row">
-              <div class="set-info">
-                <div class="set-info-t">Rejected peers</div>
-                <div class="set-info-d">Files a download proved were the wrong song. Each is forgotten after 30 days.</div>
-                <div class="set-info-more">Clear them if a song has stopped downloading and you think this list is why.</div>
-              </div>
-              <button class="btn btn-ghost btn-danger" id="rejected-peers-clear" type="button">Forget rejected peers</button>
-            </div>
-            <details class="set-more">
-              <summary>Share fingerprints with AcoustID</summary>
-              <div class="set-row">
-                <div class="set-info">
-                  <div class="set-info-t"><svg class="icon brand" aria-hidden="true"><use href="#b-acoustid"/></svg>Send confirmed fingerprints to AcoustID</div>
-                  <div class="set-info-d">When you Keep a song AcoustID was unsure of, send its fingerprint so the next person gets a sure answer.</div>
-                  <div class="set-info-more">Only the fingerprint, its length, the MusicBrainz recording id and the file format leave Octo; never a file name, a path or a username. Nothing is sent in rehearsal mode, for a song AcoustID named as something else, or when no single MusicBrainz recording fits.</div>
-                </div>
-                <label class="switch"><input type="checkbox" name="Soulseek.SubmitConfirmedFingerprints" /><span class="sw-track"></span><span class="sw-thumb"></span></label>
-              </div>
-              <div class="set-row stack">
-                <div class="set-info">
-                  <div class="set-info-t"><svg class="icon brand" aria-hidden="true"><use href="#b-acoustid"/></svg>AcoustID user key</div>
-                  <div class="set-info-d">Your own key, from <a href="https://acoustid.org/api-key" target="_blank" rel="noopener">acoustid.org/api-key</a> once signed in. The API key above is not enough on its own.</div>
-                </div>
-                <input class="set-input" type="password" name="Soulseek.AcoustIdUserApiKey" autocomplete="new-password" />
-              </div>
-            </details>
-          </form>
-        </div>
-      </section>
-
       <!-- ─── LIBRARY ACTIONS ────────────────────────────────── -->
       <section data-pane="covers">
         <header class="page-header">
@@ -2214,7 +2022,7 @@
               <div class="set-info">
                 <div class="set-info-t">Songs an hour</div>
                 <div class="set-info-d">How many missing songs Octo starts fetching in an hour, at most. 0 stops it.</div>
-                <div class="set-info-more">It waits while anyone's own downloads run, and while Soulseek is out, so a heart never waits behind it.</div>
+                <div class="set-info-more">It waits while anyone's own downloads run, so a heart never waits behind it.</div>
               </div>
               <input class="set-input imp-num" name="Imports.SongsPerHour" type="number" min="0" max="600" step="1" />
             </div>
@@ -2322,7 +2130,7 @@
             </div>
             <details class="cover-how">
               <summary>How it works</summary>
-              <p>Each song goes through Better quality, exactly as the action playlist does it: a lossless copy is looked for, checked to be the same recording and really lossless, and put in the original's place, so the song keeps its plays, favorites and playlist places. The original waits in quarantine until its replacement passes. A song with no lossless copy on any of them stays as it is and is not looked for again by the weekly upgrade for 4 weeks. Copies come from the sources named above, Soulseek first and then Lidarr; while every one of them is out, songs wait.</p>
+              <p>Each song goes through Better quality, exactly as the action playlist does it: a lossless copy is looked for, checked to be the same recording and really lossless, and put in the original's place, so the song keeps its plays, favorites and playlist places. The original waits in quarantine until its replacement passes. A song with no lossless copy there stays as it is and is not looked for again by the weekly upgrade for 4 weeks. Copies come from Lidarr; while it is out, songs wait.</p>
             </details>
           </div>
         </div>
@@ -2535,10 +2343,9 @@
               <input class="set-input" name="LibraryActions.UpgradePerWeek" type="number" min="0" max="500" data-number="true" aria-label="Songs to upgrade a week" />
             </div>
             <div class="set-row stack">
-              <div class="set-info"><div class="set-info-t">Where to look for a higher quality copy</div><div class="set-info-d"><strong>Automatic</strong> asks Soulseek first, then Lidarr for what Soulseek cannot find, using whichever of the two is set up.</div><div class="set-info-more">Lidarr fetches whole albums, so Octo borrows the album: it copies out the one song, deletes the other files that search brought in, and puts the album's monitoring back as it was. A song Lidarr already manages is left to Lidarr. While Soulseek is offline, Lidarr is asked alone.</div></div>
+              <div class="set-info"><div class="set-info-t">Where to look for a higher quality copy</div><div class="set-info-d"><strong>Automatic</strong> asks Lidarr when it is set up, and does nothing until it is.</div><div class="set-info-more">Lidarr fetches whole albums, so Octo borrows the album: it copies out the one song, deletes the other files that search brought in, and puts the album's monitoring back as it was. A song Lidarr already manages is left to Lidarr.</div></div>
               <select class="set-input" name="LibraryActions.UpgradeSource">
                 <option value="Auto">Automatic</option>
-                <option value="Soulseek">Soulseek only</option>
                 <option value="Lidarr">Lidarr only</option>
               </select>
             </div>
@@ -2715,7 +2522,7 @@
             <textarea id="raw-editor" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" placeholder="{}"></textarea>
             <div class="field-help">
               <p>Leave <code>"(saved, not shown)"</code> as it is to keep what is stored: the admin password, the Last.fm shared secret and each Last.fm session key. Anything set here wins over the matching environment variable until it is removed.</p>
-              <p>Top-level keys: <code>Subsonic</code>, <code>Library</code>, <code>Server</code>, <code>Soulseek</code>, <code>Lidarr</code>, <code>YouTube</code>, <code>LastFm</code>, <code>Metadata</code>, <code>Genre</code>, <code>LibraryActions</code>, <code>Notifications</code>, <code>ListenBrainz</code>. Radio lives in <code>LastFm</code>; pinned stations are the ordered <code>LastFm.DiscoveryStations</code> array, each a whole object with a stable <code>Id</code>, <code>Name</code>, <code>Enabled</code> and <code>Tags</code>.</p>
+              <p>Top-level keys: <code>Subsonic</code>, <code>Library</code>, <code>Server</code>, <code>Downloads</code>, <code>Lidarr</code>, <code>YouTube</code>, <code>LastFm</code>, <code>Metadata</code>, <code>Genre</code>, <code>LibraryActions</code>, <code>Notifications</code>, <code>ListenBrainz</code>. Radio lives in <code>LastFm</code>; pinned stations are the ordered <code>LastFm.DiscoveryStations</code> array, each a whole object with a stable <code>Id</code>, <code>Name</code>, <code>Enabled</code> and <code>Tags</code>.</p>
             </div>
           </div>
           <div id="raw-error" class="raw-error" hidden></div>
@@ -2767,7 +2574,7 @@
         </header>
 
         <div class="info-card">
-          <p>Octo sits in front of your Navidrome library and adds discovery and downloads to it. Search shows songs you don't own beside your own. Radio on any song finds more through Last.fm and plays previews from YouTube. Heart a song you don't own and Octo fetches it through Soulseek, YouTube or your own Lidarr.</p>
+          <p>Octo sits in front of your Navidrome library and adds discovery and downloads to it. Search shows songs you don't own beside your own. Radio on any song finds more through Last.fm and plays previews from YouTube. Heart a song you don't own and Octo fetches it from YouTube or through your own Lidarr.</p>
         </div>
 
         <div class="info-card" id="update-card">

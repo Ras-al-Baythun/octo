@@ -768,7 +768,7 @@ impl LibraryReviewSweepWorker {
     }
 
     /// Every audio file under `root`, library-relative with `/`, in ordinal order. A leading dot
-    /// is the quarantine and anything else kept out of Navidrome's scan; slskd's incomplete
+    /// is the quarantine and anything else kept out of Navidrome's scan; Octo's staging
     /// folder holds half-written downloads when it sits in the library. A folder that cannot be
     /// read is skipped, and hidden entries, whose names start with a dot, are not walked. The
     /// trash folder is left out by its configured name too, which may have no dot.
@@ -810,8 +810,8 @@ impl LibraryReviewSweepWorker {
                     continue;
                 };
                 let relative = relative.to_string_lossy().replace('\\', "/");
-                // slskd's default incomplete folder and Octo's own staging.
-                let incomplete_folders = excluded_folder_names(None);
+                // Octo's own staging.
+                let incomplete_folders = excluded_folder_names();
                 let kept_out = relative.split('/').any(|segment| {
                     segment.starts_with('.')
                         || incomplete_folders

@@ -58,7 +58,7 @@ normalization on, a Last.fm secret, and a stub answering `auth.getToken`/`auth.g
    image) and answers `ping` 1.0 s later. Its log shows every store loading and the queues
    resuming: `external id registry restored 14 entries`, `library action journal restored 4
    entries`, `Library actions reconciled 1 interrupted entr(ies)`, and the in-flight upgrade
-   job restarts (`Soulseek search-for-star: 'Bjørn Ålund Hjarta'`). **No warning or error about
+   job restarts (`search-for-star: 'Bjørn Ålund Hjarta'`). **No warning or error about
    any state file**; the only `WARN` line is lofty's `MPEG: Using bitrate to estimate duration`.
 3. **Dashboard settings:** `GET /api/admin/settings` and `GET /api/admin/raw-config` from Rust
    are identical to C#'s answers on the same file (Last.fm session, genre mapping and the
@@ -95,7 +95,7 @@ into a fresh config, cache and music mount, once per build, on the parity stack.
   playlists, internet radio, starred) answer **identically** from the two builds (timestamps
   made at run time aside). No load warnings in either log.
 - **Write-back after a flush (graceful stop):** both builds changed exactly the same 4 files and
-  left every other fixture file byte for byte. `external-ids.json` and `soulseek-holds.json` came
+  left every other fixture file byte for byte. `external-ids.json` (and a since removed hold file) came
   out **byte-identical** between the builds. `upgrades.json` differs only in the resumed job's
   start time. `browse-sessions.json` holds the same three sessions, but in a different order:
   C# writes `ConcurrentDictionary` order, which depends on .NET's per-process string hashing,
@@ -153,7 +153,7 @@ builds within ±3% (the stub floor dominates).
 | p95 on the four endpoints | see above | 10-19% lower | no worse | met |
 | Graceful `docker stop`, no job in flight | 0.16 s | 0.11 s | - | - |
 
-With a Soulseek search in flight both builds take ~10 s to stop: each waits out its 10 s worker
+With a download search in flight both builds take ~10 s to stop: each waits out its 10 s worker
 shutdown budget for the acquisition worker (Rust logs `Abandoned background workers at shutdown:
 AcquisitionWorker`). Same behavior, nothing lost (the job resumes, see 2.1).
 
@@ -192,11 +192,11 @@ concurrency fixes); each was reviewed when its port merged.
 
 ## 6. Remaining risks
 
-1. **No soak yet (Key Result 7).** The 7-day run against a real slskd and Navidrome library,
+1. **No soak yet (Key Result 7).** The 7-day run against a real download client and Navidrome library,
    with a daily state-file and tag audit, cannot run here. It is the release gate: watch for
    panics, stuck workers (the supervisor logs abandoned workers), and state files that stop
    round-tripping.
-2. **The acquisition pipeline end to end.** slskd stubs return no search results, so a real
+2. **The acquisition pipeline end to end.** The download stubs return no search results, so a real
    download, tagging with lofty, fingerprint verification and file placement only ran in unit
    tests and in the fixture library, never through the HTTP surface. Same for Lidarr.
 3. **Radio, stations and mixes, scrobbling to real Last.fm/ListenBrainz** are off or stubbed in

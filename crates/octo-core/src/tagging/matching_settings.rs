@@ -1,5 +1,5 @@
+use crate::settings::downloads::DownloadSettings;
 use crate::settings::metadata::MetadataSettings;
-use crate::settings::soulseek::SoulseekSettings;
 
 /// The settings the chooser reads, snapshotted once per download.
 #[derive(Debug, Clone, PartialEq)]
@@ -25,13 +25,13 @@ impl Default for MatchingSettings {
 }
 
 impl MatchingSettings {
-    pub fn from_settings(metadata: &MetadataSettings, soulseek: &SoulseekSettings) -> Self {
+    pub fn from_settings(metadata: &MetadataSettings, downloads: &DownloadSettings) -> Self {
         Self {
             prefer_original_album: metadata.prefer_original_album,
             year_from_original_release: metadata.year_from_original_release,
             preferred_countries: metadata.effective_preferred_countries(),
-            fingerprint_threshold: soulseek.effective_min_score_fraction(),
-            tag_from_match: soulseek.tag_from_music_brainz || soulseek.name_from_match,
+            fingerprint_threshold: downloads.effective_min_score_fraction(),
+            tag_from_match: downloads.tag_from_music_brainz || downloads.name_from_match,
         }
     }
 }
@@ -46,11 +46,11 @@ mod tests {
             prefer_original_album: false,
             ..Default::default()
         };
-        let soulseek = SoulseekSettings {
+        let downloads = DownloadSettings {
             name_from_match: true,
             ..Default::default()
         };
-        let settings = MatchingSettings::from_settings(&metadata, &soulseek);
+        let settings = MatchingSettings::from_settings(&metadata, &downloads);
         assert!(!settings.prefer_original_album);
         assert!(settings.year_from_original_release);
         assert!(settings.tag_from_match);

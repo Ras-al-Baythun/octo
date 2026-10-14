@@ -41,7 +41,7 @@ impl Fixture {
         let mut app = settings(&navidrome.uri());
         app.family.enabled = family_on;
         app.family.members_path = members.path().to_string_lossy().into_owned();
-        // YouTube only, so the chain queues at once rather than waiting out Soulseek.
+        // YouTube only, so the chain queues at once.
         app.subsonic.heart_download_sources = vec![octo_core::settings::HeartDownloadStep {
             source: octo_core::settings::HeartDownloadSource::YouTube,
             song_enabled: Some(true),
@@ -71,7 +71,7 @@ impl Fixture {
             ..Default::default()
         });
         metadata.songs.lock().insert(
-            ("soulseek".into(), song.clone()),
+            ("outside".into(), song.clone()),
             Song {
                 title: "Teardrop".into(),
                 artist: "Massive Attack".into(),
@@ -81,7 +81,7 @@ impl Fixture {
             },
         );
         metadata.albums.lock().insert(
-            ("soulseek".into(), album.clone()),
+            ("outside".into(), album.clone()),
             Album {
                 title: "Mezzanine".into(),
                 artist: "Massive Attack".into(),

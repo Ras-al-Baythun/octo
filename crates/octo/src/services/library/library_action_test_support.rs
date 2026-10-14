@@ -18,7 +18,7 @@ use super::{
 };
 use crate::services::common::{StarOnArrival, TrackAcquisitionQueue};
 use crate::services::local::{ILocalLibraryService, LocalSongMapping, ParsedExternalId, ParsedSongId};
-use crate::services::soulseek::{ExternalIdRegistry, ISoulseekLink, RejectedPeerRegistry};
+use crate::services::soulseek::ExternalIdRegistry;
 use crate::services::subsonic::NavidromeIdentityService;
 
 /// A queue that asked `user` about Teardrop, Navidrome's `navidrome_id`.
@@ -118,7 +118,6 @@ pub(crate) struct Extras {
     pub ids: Option<Arc<ExternalIdRegistry>>,
     pub notices: Option<Arc<NoticeQueue>>,
     pub stars: Option<Arc<StarOnArrival>>,
-    pub soulseek_link: Option<Arc<dyn ISoulseekLink>>,
     pub sources: Option<Arc<UpgradeSources>>,
     pub answers: Option<super::SongAnswers>,
 }
@@ -140,13 +139,11 @@ pub(crate) fn executor(settings: &Arc<SettingsStore>, extras: Extras) -> Arc<Lib
         ids: extras
             .ids
             .unwrap_or_else(|| Arc::new(ExternalIdRegistry::new(None::<&Path>))),
-        rejected_peers: Arc::new(RejectedPeerRegistry::new(None::<&Path>, None)),
         acquisitions: extras.queue.unwrap_or_default(),
         settings: settings.clone(),
         notices: extras.notices,
         spectrum: None,
         stars: extras.stars,
-        soulseek_link: extras.soulseek_link,
         sources: extras.sources,
         answers: extras.answers,
     }))

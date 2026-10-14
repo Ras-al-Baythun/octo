@@ -6,40 +6,26 @@ use std::sync::Arc;
 use chrono::{DateTime, TimeDelta, Utc};
 use octo_core::common::{Clock, dotnet};
 use octo_core::lidarr::LidarrReleasePick;
-use octo_core::models::download::acquisition_event::quality_text;
-use octo_core::soulseek::SoulseekFileHit;
-use octo_core::soulseek::soulseek_client::normalize_extension;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::services::state_file;
 
-/// Which source a picked copy is from: Soulseek's peer file, or Lidarr's release.
-pub const SOULSEEK_SOURCE: &str = "Soulseek";
-
-/// The other source a copy can be picked from.
+/// The source a picked copy is from: Lidarr's release.
 pub const LIDARR_SOURCE: &str = "Lidarr";
 
-/// One copy someone picked in Find songs: a Soulseek peer's file, or a Lidarr release. Kept as
-/// plain values, so an upgrade job waiting for its turn can carry it on disk. What is derived
-/// from them (whether it is Soulseek's, the Lidarr release) is never written, so the file holds
-/// these fields only.
+/// One copy someone picked in Find songs: a Lidarr release. Kept as plain values, so an upgrade
+/// job waiting for its turn can carry it on disk. What is derived from them (the Lidarr release)
+/// is never written, so the file holds these fields only.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase", default)]
 pub struct PickedCopy {
-    /// "Soulseek" or "Lidarr".
+    /// "Lidarr".
     #[serde(deserialize_with = "state_file::null_as_default")]
     pub source: String,
 
-    // A Soulseek file, as the search found it.
-    pub peer: Option<String>,
-    pub file: Option<String>,
+    /// The release's size in bytes, when known.
     pub size: i64,
-    pub format: Option<String>,
-    pub bit_rate: Option<i32>,
-    pub bit_depth: Option<i32>,
-    pub sample_rate: Option<i32>,
-    pub length: Option<i32>,
 
     // A Lidarr release, and its size in Size. Without one, Lidarr chooses by its quality profile.
     pub release_guid: Option<String>,
@@ -71,15 +57,8 @@ pub struct AnywaySong {
 impl Default for PickedCopy {
     fn default() -> Self {
         PickedCopy {
-            source: SOULSEEK_SOURCE.to_string(),
-            peer: None,
-            file: None,
+            source: LIDARR_SOURCE.to_string(),
             size: 0,
-            format: None,
-            bit_rate: None,
-            bit_depth: None,
-            sample_rate: None,
-            length: None,
             release_guid: None,
             indexer_id: None,
             release_title: None,
@@ -89,36 +68,12 @@ impl Default for PickedCopy {
 }
 
 impl PickedCopy {
-    /// A Soulseek file rather than a Lidarr release.
-    pub fn is_soulseek(&self) -> bool {
-        dotnet::eq_ignore_case(&self.source, SOULSEEK_SOURCE)
-    }
-
-    /// Whether this is the same copy: the same peer's same file, or the same release.
+    /// Whether this is the same copy: the same release.
     pub fn same_as(&self, other: Option<&PickedCopy>) -> bool {
         other.is_some_and(|other| {
             dotnet::eq_ignore_case(&self.source, &other.source)
-                && self.peer == other.peer
-                && self.file == other.file
                 && self.release_guid == other.release_guid
                 && self.indexer_id == other.indexer_id
-        })
-    }
-
-    /// The file as the Soulseek pipeline takes it.
-    pub fn to_hit(&self) -> Option<SoulseekFileHit> {
-        let peer = self.peer.as_deref().filter(|p| !p.is_empty())?;
-        let file = self.file.as_deref().filter(|f| !f.is_empty())?;
-        self.is_soulseek().then(|| SoulseekFileHit {
-            username: peer.to_string(),
-            filename: file.to_string(),
-            size: self.size,
-            bit_rate: self.bit_rate,
-            bit_depth: self.bit_depth,
-            sample_rate: self.sample_rate,
-            length: self.length,
-            extension: normalize_extension(self.format.as_deref(), file),
-            ..Default::default()
         })
     }
 
@@ -126,7 +81,7 @@ impl PickedCopy {
     pub fn release(&self) -> Option<LidarrReleasePick> {
         let guid = self.release_guid.as_deref().filter(|g| !g.is_empty())?;
         let indexer_id = self.indexer_id?;
-        (!self.is_soulseek()).then(|| LidarrReleasePick {
+        Some(LidarrReleasePick {
             guid: guid.to_string(),
             indexer_id,
             title: self.release_title.clone(),
@@ -134,30 +89,17 @@ impl PickedCopy {
         })
     }
 
-    /// "FLAC 16-bit 44.1 kHz from someone", for the log and the upgrade queue.
+    /// "Lidarr release \"...\"" or "Lidarr's choice", for the log and the upgrade queue.
     pub fn describe(&self) -> String {
-        if !self.is_soulseek() {
-            return match self.release_title.as_deref().filter(|t| !t.is_empty()) {
-                Some(release) => format!("Lidarr release \"{release}\""),
-                None => "Lidarr's choice".to_string(),
-            };
+        match self.release_title.as_deref().filter(|t| !t.is_empty()) {
+            Some(release) => format!("Lidarr release \"{release}\""),
+            None => "Lidarr's choice".to_string(),
         }
-        let quality = quality_text(
-            self.format.as_deref(),
-            self.bit_rate,
-            self.bit_depth,
-            self.sample_rate,
-        );
-        format!(
-            "{} from {}",
-            quality.as_deref().unwrap_or("a file"),
-            self.peer.as_deref().unwrap_or("")
-        )
     }
 }
 
 /// Copies picked in Find songs, waiting for their download to take them. Keyed by the outside id
-/// the download runs under; the Soulseek and Lidarr pipelines take the pick instead of searching.
+/// the download runs under; the Lidarr pipeline takes the pick instead of searching.
 /// A pick nobody takes is forgotten after a while, so a download asked for much later searches
 /// as usual.
 ///

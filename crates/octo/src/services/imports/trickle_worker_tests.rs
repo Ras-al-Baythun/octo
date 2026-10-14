@@ -18,7 +18,6 @@ struct Rig {
     started: Arc<Mutex<Vec<String>>>,
     finished: Arc<Mutex<Vec<TrickleJob>>>,
     busy: Arc<AtomicBool>,
-    soulseek_out: Arc<AtomicBool>,
 }
 
 type Owned = Arc<dyn Fn(&TrickleJob) -> Option<String> + Send + Sync>;
@@ -27,16 +26,16 @@ type Outcome = Arc<dyn Fn(&TrickleJob) -> Option<AcquisitionState> + Send + Sync
 fn row(key: &str, state: AcquisitionState) -> AcquisitionSnapshot {
     AcquisitionSnapshot {
         id: key.into(),
-        provider: "soulseek".into(),
+        provider: "outside".into(),
         external_id: key.into(),
         artist: Some("Artist".into()),
         title: Some("Song".into()),
         requested_by: vec!["alice".into()],
-        source: Some("Soulseek".into()),
+        source: Some("YouTube".into()),
         state,
         started_at: Utc::now(),
         updated_at: Utc::now(),
-        error: (state == AcquisitionState::Failed).then(|| "Nobody on Soulseek had it.".to_string()),
+        error: (state == AcquisitionState::Failed).then(|| "No YouTube match.".to_string()),
         library_id: (state == AcquisitionState::Done).then(|| format!("nd-{key}")),
         ..Default::default()
     }
@@ -60,7 +59,6 @@ fn rig_with(owned: Owned, outcome: Outcome) -> Rig {
     let rows: Arc<Mutex<HashMap<String, AcquisitionSnapshot>>> = Arc::default();
     let started: Arc<Mutex<Vec<String>>> = Arc::default();
     let busy = Arc::new(AtomicBool::new(false));
-    let out = Arc::new(AtomicBool::new(false));
     let seams = TrickleSeams {
         owned: Arc::new(move |job| {
             let found = owned(&job).map(|id| OwnedSong(Some(id)));
@@ -69,7 +67,7 @@ fn rig_with(owned: Owned, outcome: Outcome) -> Rig {
         start: {
             let (queue, rows, started) = (queue.clone(), rows.clone(), started.clone());
             Arc::new(move |job| {
-                let key = format!("soulseek:{}", job.key);
+                let key = format!("outside:{}", job.key);
                 queue.update(&job.owner, &job.key, |j| j.acquisition_key = Some(key.clone()));
                 started.lock().push(job.key.clone());
                 if let Some(state) = outcome(&job) {
@@ -86,13 +84,6 @@ fn rig_with(owned: Owned, outcome: Outcome) -> Rig {
             let busy = busy.clone();
             Arc::new(move || busy.load(Ordering::SeqCst))
         },
-        soulseek_out: {
-            let out = out.clone();
-            Arc::new(move || {
-                let value = out.load(Ordering::SeqCst);
-                Box::pin(async move { value })
-            })
-        },
         clock,
     };
     let worker = TrickleWorker::new(queue.clone(), settings.clone(), seams);
@@ -108,7 +99,6 @@ fn rig_with(owned: Owned, outcome: Outcome) -> Rig {
         started,
         finished,
         busy,
-        soulseek_out: out,
     }
 }
 
@@ -156,8 +146,8 @@ async fn a_fetched_song_is_done_with_its_library_id() {
     rig.tick().await;
     let job = rig.queue.get("alice", "a").expect("a");
     assert_eq!(job.state, import_track_states::DONE);
-    assert_eq!(job.library_id.as_deref(), Some("nd-soulseek:a"));
-    assert_eq!(job.detail.as_deref(), Some("Fetched from Soulseek"));
+    assert_eq!(job.library_id.as_deref(), Some("nd-outside:a"));
+    assert_eq!(job.detail.as_deref(), Some("Fetched from YouTube"));
     assert_eq!(rig.finished.lock().len(), 1);
 }
 
@@ -204,7 +194,7 @@ async fn a_song_no_source_had_is_not_found_with_the_reason() {
     rig.tick().await;
     let job = rig.queue.get("alice", "a").expect("a");
     assert_eq!(job.state, import_track_states::NOT_FOUND);
-    assert_eq!(job.detail.as_deref(), Some("Nobody on Soulseek had it."));
+    assert_eq!(job.detail.as_deref(), Some("No YouTube match."));
 }
 
 #[tokio::test]
@@ -239,7 +229,7 @@ async fn a_hand_off_to_lidarr_is_followed_without_holding_the_next_song_back() {
 
     rig.rows
         .lock()
-        .insert("soulseek:a".into(), row("soulseek:a", AcquisitionState::Done));
+        .insert("outside:a".into(), row("outside:a", AcquisitionState::Done));
     rig.tick().await;
     assert_eq!(
         rig.queue.get("alice", "a").expect("a").state,
@@ -248,7 +238,7 @@ async fn a_hand_off_to_lidarr_is_followed_without_holding_the_next_song_back() {
 }
 
 #[tokio::test]
-async fn it_waits_while_peoples_own_downloads_run_and_while_soulseek_is_out() {
+async fn it_waits_while_peoples_own_downloads_run() {
     let rig = rig();
     rig.busy.store(true, Ordering::SeqCst);
     rig.add(&["a"]);
@@ -256,14 +246,6 @@ async fn it_waits_while_peoples_own_downloads_run_and_while_soulseek_is_out() {
     assert_eq!(rig.worker.status_for("alice").state, trickle_states::YIELDING);
 
     rig.busy.store(false, Ordering::SeqCst);
-    rig.soulseek_out.store(true, Ordering::SeqCst);
-    assert!(!rig.tick().await);
-    assert_eq!(
-        rig.worker.status_for("alice").state,
-        trickle_states::WAITING_FOR_SOULSEEK
-    );
-
-    rig.soulseek_out.store(false, Ordering::SeqCst);
     assert!(rig.tick().await);
 }
 

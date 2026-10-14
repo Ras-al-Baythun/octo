@@ -106,7 +106,6 @@ impl Lists {
             Arc::new(
                 crate::services::subsonic::subsonic_response_builder::new_subsonic_response_builder(
                     Arc::clone(&registry),
-                    &SubsonicSettings::default(),
                 ),
             ),
             registry,
@@ -428,10 +427,9 @@ async fn keep_playable_makes_a_forgotten_outside_song_known_again_under_the_same
     let forgetful = ChartPlaylistService::new(
         lists.top_songs.clone(),
         Arc::new(
-            crate::services::subsonic::subsonic_response_builder::new_subsonic_response_builder(
-                Arc::clone(&fresh),
-                &SubsonicSettings::default(),
-            ),
+            crate::services::subsonic::subsonic_response_builder::new_subsonic_response_builder(Arc::clone(
+                &fresh,
+            )),
         ),
         Arc::clone(&fresh),
         SubsonicProxyService::new(Arc::clone(&lists.settings)),

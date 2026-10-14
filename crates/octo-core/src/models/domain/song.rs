@@ -32,7 +32,7 @@ pub struct Song {
     pub suffix: Option<String>,
     pub bit_rate: Option<i32>,
 
-    /// The Soulseek peer and remote filename this came from, when it came from Soulseek.
+    /// The peer and remote filename this came from, when an earlier version fetched it from a peer.
     /// Carried so it can be written down at registration: "Wrong song" needs to know who
     /// delivered the file, and nothing else in Octo records that after the transfer ends.
     pub source_peer: Option<String>,

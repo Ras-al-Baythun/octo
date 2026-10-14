@@ -97,7 +97,6 @@ GROUP_BY_PREFIX = [
     ("/api/admin/explicit", "P"),
     ("/api/admin/radio-outcomes", "L"),
     ("/api/admin/sonic", "L"),
-    ("/api/admin/soulseek/sharing", "E"),
     ("/api/admin/activity", "N"),
     ("/api/admin/ambient", "N"),
     ("/api/admin/auth/recovery", "J"),

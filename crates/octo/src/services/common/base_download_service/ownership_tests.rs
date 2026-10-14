@@ -74,7 +74,7 @@ impl Owned {
             .download_album_with_source(
                 "test",
                 id,
-                DownloadSource::Soulseek,
+                DownloadSource::Lidarr,
                 false,
                 &CancellationToken::new(),
                 Some(vec!["alice".into()]),
@@ -183,7 +183,7 @@ fn build_owned(library: Vec<Candidate>, source: DownloadSource, better_quality: 
 async fn an_owned_flac_is_never_downloaded_again() {
     let owned = build_owned(
         vec![flac("nd-2", "Drake", "Hold On", 201)],
-        DownloadSource::Soulseek,
+        DownloadSource::Lidarr,
         true,
     );
 
@@ -198,7 +198,7 @@ async fn an_owned_flac_is_never_downloaded_again() {
 async fn an_owned_mp3_is_kept_and_queued_for_a_higher_quality_copy() {
     let owned = build_owned(
         vec![mp3("nd-2", "Drake", "Hold On", 200, 320)],
-        DownloadSource::Soulseek,
+        DownloadSource::Lidarr,
         true,
     );
 
@@ -236,7 +236,7 @@ async fn with_only_you_tube_an_owned_mp3_is_just_kept() {
 async fn with_better_quality_off_an_owned_mp3_is_just_kept() {
     let owned = build_owned(
         vec![mp3("nd-2", "Drake", "Hold On", 200, 320)],
-        DownloadSource::Soulseek,
+        DownloadSource::Lidarr,
         false,
     );
 
@@ -250,7 +250,7 @@ async fn with_better_quality_off_an_owned_mp3_is_just_kept() {
 async fn a_better_quality_search_still_downloads() {
     let owned = build_owned(
         vec![mp3("nd-2", "Drake", "Hold On", 200, 320)],
-        DownloadSource::Soulseek,
+        DownloadSource::Lidarr,
         true,
     );
 
@@ -263,7 +263,7 @@ async fn a_better_quality_search_still_downloads() {
 async fn a_song_you_do_not_have_downloads() {
     let owned = build_owned(
         vec![flac("nd-9", "Drake", "Something Else", 200)],
-        DownloadSource::Soulseek,
+        DownloadSource::Lidarr,
         true,
     );
 
@@ -280,7 +280,7 @@ async fn an_album_walk_fetches_only_what_is_missing() {
             flac("nd-3", "Drake", "Started", 181),
             mp3("nd-4", "Drake", "Too Much", 260, 192),
         ],
-        DownloadSource::Soulseek,
+        DownloadSource::Lidarr,
         true,
     );
 
@@ -372,7 +372,7 @@ async fn a_walk_with_no_track_list_is_refused_and_downloads_nothing() {
         .download_album_with_source(
             "test",
             "missing",
-            DownloadSource::Soulseek,
+            DownloadSource::Lidarr,
             false,
             &CancellationToken::new(),
             None,
@@ -389,7 +389,7 @@ async fn a_walk_with_no_track_list_is_refused_and_downloads_nothing() {
             .download_album_with_source(
                 "other",
                 "x",
-                DownloadSource::Soulseek,
+                DownloadSource::Lidarr,
                 false,
                 &CancellationToken::new(),
                 None

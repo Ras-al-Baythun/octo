@@ -196,7 +196,7 @@ impl BaseDownloadService {
         move_file(current_path, &target)?;
         info!("Placed download in {structure:?}: {current_path} -> {target}");
 
-        // Clean up any now-empty folder the file came from (a Soulseek peer's own layout, or the
+        // Clean up any now-empty folder the file came from (a release's own layout, or the
         // YouTube staging folder), never walking above the music root.
         Self::try_remove_empty_parents(get_directory_name(current_path).as_deref(), &download_path);
         Ok(Placement::new(target, !folder_had_audio))
@@ -216,7 +216,7 @@ impl BaseDownloadService {
         extension: &str,
     ) -> String {
         let current = self.settings.current();
-        let choice = Self::choose_layout(song, requested, current.soulseek.name_from_match);
+        let choice = Self::choose_layout(song, requested, current.downloads.name_from_match);
         let structure = current.subsonic.folder_structure;
         // Flat has no folder to scatter, so its file name keeps the whole credit (#49).
         let artist = if structure == FolderStructure::Flat {
@@ -247,7 +247,7 @@ impl BaseDownloadService {
         requested: &RequestedIdentity,
         extension: &str,
     ) -> String {
-        let choice = Self::choose_layout(song, requested, self.settings.current().soulseek.name_from_match);
+        let choice = Self::choose_layout(song, requested, self.settings.current().downloads.name_from_match);
         PathHelper::build_layout_path(
             FolderStructure::Organized,
             &self.download_path(),

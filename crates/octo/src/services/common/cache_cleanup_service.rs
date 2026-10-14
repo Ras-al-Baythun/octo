@@ -246,7 +246,7 @@ mod tests {
     #[test]
     fn old_files_go_and_radio_stays() {
         let dir = tempfile::tempdir().expect("temp dir");
-        let old = dir.path().join("soulseek/a/old.flac");
+        let old = dir.path().join("outside/a/old.flac");
         let fresh = dir.path().join("youtube/fresh.mp3");
         let radio = dir.path().join("radio/key.mp3");
         write(&old, 3);
@@ -256,7 +256,7 @@ mod tests {
         service(dir.path(), StorageMode::Cache).cleanup_old_cached_files(&CancellationToken::new());
 
         assert!(!old.exists());
-        assert!(!dir.path().join("soulseek").exists(), "the emptied folders go");
+        assert!(!dir.path().join("outside").exists(), "the emptied folders go");
         assert!(fresh.exists());
         assert!(radio.exists());
     }

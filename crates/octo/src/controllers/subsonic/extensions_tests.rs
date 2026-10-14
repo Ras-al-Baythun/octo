@@ -4,8 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use octo_core::settings::{
-    AppSettings, LibraryAction, LibraryActionDefinition, LibraryActionSettings, SoulseekSettings,
-    SubsonicSettings,
+    AppSettings, LibraryAction, LibraryActionDefinition, LibraryActionSettings, SubsonicSettings,
 };
 use octo_core::soulseek::soulseek_metadata_service::{RoutingKind, SoulseekRouting};
 use octo_subsonic::xml::XElement;
@@ -159,13 +158,7 @@ impl AcquisitionApp {
             .mount(&navidrome)
             .await;
         let directory = tempfile::tempdir().expect("a temp dir");
-        let mut settings = AppSettings {
-            soulseek: SoulseekSettings {
-                base_url: Some("http://127.0.0.1:1".into()),
-                ..Default::default()
-            },
-            ..settings(&navidrome.uri())
-        };
+        let mut settings = settings(&navidrome.uri());
         change(&mut settings);
         let state = state_with(settings, |_| {});
         state
@@ -201,7 +194,7 @@ impl AcquisitionApp {
     fn seed(&self) {
         let tracker = &self.state.acquisition_tracker;
         tracker.begin(
-            "soulseek",
+            "outside",
             "3kX9Qm",
             Some("3kX9Qm"),
             Some("alice"),
@@ -210,15 +203,15 @@ impl AcquisitionApp {
             Some("Homework"),
         );
         tracker.transfer(
-            "soulseek",
+            "outside",
             "3kX9Qm",
             Some(12_180_000),
             Some(29_000_000),
             Some(42.0),
-            Some("Soulseek"),
+            Some("Lidarr"),
         );
         tracker.begin(
-            "soulseek",
+            "outside",
             "7bYz2p",
             Some("7bYz2p"),
             Some("bob"),
@@ -299,7 +292,7 @@ async fn get_acquisitions_returns_only_the_callers_rows_in_the_apps_shape() {
             "updatedAt"
         ]
     );
-    assert_eq!(row["key"], "soulseek:3kX9Qm");
+    assert_eq!(row["key"], "outside:3kX9Qm");
     assert_eq!(row["kind"], "download");
     assert_eq!(row["coverArt"], "3kX9Qm");
     assert_eq!(row["logLines"], 2);
@@ -311,7 +304,7 @@ async fn get_acquisitions_returns_only_the_callers_rows_in_the_apps_shape() {
     assert_eq!(row["progress"].as_f64(), Some(0.42));
     assert_eq!(row["bytesDone"].as_i64(), Some(12_180_000));
     assert_eq!(row["bytesTotal"].as_i64(), Some(29_000_000));
-    assert_eq!(row["source"], "Soulseek");
+    assert_eq!(row["source"], "Lidarr");
     let stamp = Regex::new(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$").expect("regex");
     assert!(
         stamp.is_match(row["startedAt"].as_str().expect("startedAt")),
@@ -523,11 +516,11 @@ async fn get_acquisition_returns_the_row_with_its_log_in_order() {
     let t = AcquisitionApp::new(|_| {}).await;
     t.seed();
     t.state.acquisition_tracker.found(
-        "soulseek",
+        "outside",
         "3kX9Qm",
         "2 copies fit, best first",
         vec![octo_core::models::download::AcquisitionCandidate {
-            source: "Soulseek".into(),
+            source: "Lidarr".into(),
             peer: Some("peer1".into()),
             file: Some("01 - Da Funk.flac".into()),
             folder: Some("Homework".into()),
@@ -544,7 +537,7 @@ async fn get_acquisition_returns_the_row_with_its_log_in_order() {
     let envelope = get(
         &t.app,
         &format!(
-            "/rest/getAcquisition.view?{}&key=soulseek:3kX9Qm",
+            "/rest/getAcquisition.view?{}&key=outside:3kX9Qm",
             acq_auth("alice")
         ),
     )
@@ -552,7 +545,7 @@ async fn get_acquisition_returns_the_row_with_its_log_in_order() {
     .envelope();
 
     let row = &envelope["acquisition"];
-    assert_eq!(row["key"], "soulseek:3kX9Qm");
+    assert_eq!(row["key"], "outside:3kX9Qm");
     let lines = row["event"].as_array().expect("the log").clone();
     assert_eq!(
         lines
@@ -561,7 +554,7 @@ async fn get_acquisition_returns_the_row_with_its_log_in_order() {
             .collect::<Vec<_>>(),
         ["queued", "transfer", "found"]
     );
-    assert_eq!(lines[1]["text"], "Downloading from Soulseek");
+    assert_eq!(lines[1]["text"], "Downloading from Lidarr");
     assert_eq!(lines[1]["detail"], "27.7 MB");
     let copies = lines[2]["candidate"].as_array().expect("copies");
     assert_eq!(copies.len(), 1);
@@ -577,10 +570,7 @@ async fn get_acquisition_someone_elses_row_is_not_found() {
 
     let envelope = get(
         &t.app,
-        &format!(
-            "/rest/getAcquisition.view?{}&key=soulseek:3kX9Qm",
-            acq_auth("bob")
-        ),
+        &format!("/rest/getAcquisition.view?{}&key=outside:3kX9Qm", acq_auth("bob")),
     )
     .await
     .envelope();
@@ -595,7 +585,7 @@ async fn clear_acquisitions_takes_only_the_callers_finished_rows() {
     t.seed();
     let tracker = &t.state.acquisition_tracker;
     tracker.begin(
-        "soulseek",
+        "outside",
         "9zz",
         Some("9zz"),
         Some("alice"),
@@ -603,7 +593,7 @@ async fn clear_acquisitions_takes_only_the_callers_finished_rows() {
         Some("La Femme d'Argent"),
         Some("Moon Safari"),
     );
-    tracker.fail("soulseek", "9zz", Some("No Soulseek FLAC found"));
+    tracker.fail("outside", "9zz", Some("No lossless copy found"));
 
     let envelope = get(
         &t.app,
@@ -636,21 +626,13 @@ async fn find_songs_starts_a_look_that_get_found_songs_follows_and_pick_found_so
     let id = t.register_teardrop();
     let finder = t.state.song_finder.clone();
     finder.seams(|seams| {
-        seams.sources_for = std::sync::Arc::new(|_| {
-            vec![
-                ("Soulseek".to_string(), None),
-                (
-                    "Lidarr".to_string(),
-                    Some("Lidarr is not set up on this server".to_string()),
-                ),
-            ]
-        });
-        seams.search_soulseek = std::sync::Arc::new(|_, _| {
+        seams.sources_for = std::sync::Arc::new(|_| vec![("Lidarr".to_string(), None)]);
+        seams.search_lidarr = std::sync::Arc::new(|_, _| {
             async {
                 Ok((
                     vec![FoundCopy::new(
                         octo_core::models::download::AcquisitionCandidate {
-                            source: "Soulseek".into(),
+                            source: "Lidarr".into(),
                             peer: Some("peer1".into()),
                             file: Some("03 Teardrop.flac".into()),
                             folder: Some("Mezzanine".into()),
@@ -665,16 +647,16 @@ async fn find_songs_starts_a_look_that_get_found_songs_follows_and_pick_found_so
                             ..Default::default()
                         },
                         PickedCopy {
-                            source: "Soulseek".into(),
-                            peer: Some("peer1".into()),
-                            file: Some(r"Music\Mezzanine\03 Teardrop.flac".into()),
+                            source: "Lidarr".into(),
+                            release_guid: Some("peer1".into()),
+                            indexer_id: Some(1),
+                            release_title: Some("Massive Attack - Mezzanine [FLAC]".into()),
                             size: 40_000_000,
-                            format: Some("flac".into()),
                             ..Default::default()
                         },
                     )],
                     vec!["Massive Attack Teardrop".to_string()],
-                    Some("1 file from 1 peer; 1 fits the song".to_string()),
+                    Some("1 release of Mezzanine".to_string()),
                 ))
             }
             .boxed()
@@ -712,8 +694,7 @@ async fn find_songs_starts_a_look_that_get_found_songs_follows_and_pick_found_so
             )
         })
         .collect();
-    assert_eq!(sources["Soulseek"], "done");
-    assert_eq!(sources["Lidarr"], "off");
+    assert_eq!(sources["Lidarr"], "done");
     let copies = found["candidate"].as_array().expect("copies");
     assert_eq!(copies.len(), 1);
     assert_eq!(copies[0]["index"], 0);
@@ -741,14 +722,17 @@ async fn find_songs_starts_a_look_that_get_found_songs_follows_and_pick_found_so
     .envelope();
     let pick = &picked["pick"];
     assert_eq!(pick["state"], "queued");
-    assert_eq!(pick["key"], format!("soulseek:{id}"));
+    assert_eq!(pick["key"], format!("outside:{id}"));
 
     // The download waits in the queue (no worker runs here) with the pick pinned to it.
     assert!(t.state.download_picks.has(&id));
     let rows = t.state.acquisition_tracker.for_user("alice");
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].kind, "pick");
-    assert_eq!(rows[0].note.as_deref(), Some("Getting FLAC from peer1"));
+    assert_eq!(
+        rows[0].note.as_deref(),
+        Some("Getting Lidarr release \"Massive Attack - Mezzanine [FLAC]\"")
+    );
 }
 
 /// A look for a library song held as FLAC, whose one copy is FLAC too, run as alice, who may
@@ -773,13 +757,13 @@ async fn a_look_at_a_flac_library_song(t: &AcquisitionApp) -> (String, String) {
             }
             .boxed()
         });
-        seams.sources_for = std::sync::Arc::new(|_| vec![("Soulseek".to_string(), None)]);
-        seams.search_soulseek = std::sync::Arc::new(|_, _| {
+        seams.sources_for = std::sync::Arc::new(|_| vec![("Lidarr".to_string(), None)]);
+        seams.search_lidarr = std::sync::Arc::new(|_, _| {
             async {
                 Ok((
                     vec![FoundCopy::new(
                         octo_core::models::download::AcquisitionCandidate {
-                            source: "Soulseek".into(),
+                            source: "Lidarr".into(),
                             peer: Some("peer1".into()),
                             file: Some("03 Teardrop.flac".into()),
                             format: Some("flac".into()),
@@ -789,12 +773,11 @@ async fn a_look_at_a_flac_library_song(t: &AcquisitionApp) -> (String, String) {
                             ..Default::default()
                         },
                         PickedCopy {
-                            source: "Soulseek".into(),
-                            peer: Some("peer1".into()),
-                            file: Some(r"Music\Mezzanine\03 Teardrop.flac".into()),
+                            source: "Lidarr".into(),
+                            release_guid: Some("peer1".into()),
+                            indexer_id: Some(1),
+                            release_title: Some("Massive Attack - Mezzanine [FLAC]".into()),
                             size: 40_000_000,
-                            format: Some("flac".into()),
-                            length: Some(331),
                             ..Default::default()
                         },
                     )],
@@ -832,8 +815,14 @@ fn may_replace(settings: &mut AppSettings) {
         }],
         ..Default::default()
     };
-    settings.soulseek.username = Some("u".into());
-    settings.soulseek.password = Some("p".into());
+    settings.lidarr = octo_core::settings::LidarrSettings {
+        base_url: Some("http://127.0.0.1:1".into()),
+        api_key: Some("k".into()),
+        root_folder_path: Some("/music".into()),
+        quality_profile_id: 1,
+        metadata_profile_id: 1,
+        ..Default::default()
+    };
 }
 
 async fn pick_as_alice(t: &AcquisitionApp, search: &str, copy: &str, extra: &str) -> Value {
@@ -1015,10 +1004,6 @@ impl LibraryApp {
                 auto_detect_download_path: false,
                 admin_username: Some("admin".into()),
                 admin_password: Some("admin-password".into()),
-                ..Default::default()
-            },
-            soulseek: SoulseekSettings {
-                base_url: Some("http://127.0.0.1:1".into()),
                 ..Default::default()
             },
             library_actions: LibraryActionSettings {
@@ -1558,11 +1543,18 @@ async fn remove_with_only_an_api_key_is_skipped_because_it_names_nobody() {
 
 // octoLibraryActions v2: upgrade and getUpgrades
 
-/// Better quality searches Soulseek, so it is offered only where slskd is set up.
-fn better_quality_on(settings: &mut AppSettings, dry_run: bool, slskd: bool) {
-    let login = |value: &str| Some(if slskd { value.to_string() } else { String::new() });
-    settings.soulseek.username = login("slskd-user");
-    settings.soulseek.password = login("slskd-pass");
+/// Better quality searches Lidarr, so it is offered only where Lidarr is set up.
+fn better_quality_on(settings: &mut AppSettings, dry_run: bool, lidarr: bool) {
+    if lidarr {
+        settings.lidarr = octo_core::settings::LidarrSettings {
+            base_url: Some("http://127.0.0.1:1".into()),
+            api_key: Some("k".into()),
+            root_folder_path: Some("/music".into()),
+            quality_profile_id: 1,
+            metadata_profile_id: 1,
+            ..Default::default()
+        };
+    }
     settings.library_actions.actions.push(LibraryActionDefinition {
         action: LibraryAction::BetterQuality,
         enabled: true,
@@ -1587,7 +1579,7 @@ async fn get_library_actions_lists_upgrade_only_while_better_quality_is_on() {
             .await;
         let actions = &envelope(&doc)["libraryActions"];
         assert_eq!(actions["actions"], actions_then_edits(&["remove"]));
-        assert_eq!(actions["parallel"], 1);
+        assert_eq!(actions["parallel"], 3);
     }
     {
         let on = LibraryApp::new(|s| better_quality_on(s, false, true)).await;
@@ -1684,7 +1676,7 @@ async fn upgrade_with_better_quality_off_is_skipped() {
 }
 
 #[tokio::test]
-async fn without_slskd_set_up_upgrade_is_not_offered_and_asking_is_skipped() {
+async fn without_lidarr_set_up_upgrade_is_not_offered_and_asking_is_skipped() {
     let t = LibraryApp::new(|s| better_quality_on(s, false, false)).await;
     let actions = t
         .get_json(&format!("/rest/getLibraryActions.view?{}", lib_auth("alice")))
@@ -1717,7 +1709,7 @@ async fn get_library_actions_names_where_an_upgrade_looks() {
     let doc = t
         .get_json(&format!("/rest/getLibraryActions.view?{}", lib_auth("alice")))
         .await;
-    assert_eq!(envelope(&doc)["libraryActions"]["upgradeSource"], "Soulseek");
+    assert_eq!(envelope(&doc)["libraryActions"]["upgradeSource"], "Lidarr");
 }
 
 #[tokio::test]

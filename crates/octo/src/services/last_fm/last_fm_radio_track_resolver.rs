@@ -695,7 +695,7 @@ mod tests {
                 });
         let song = matching.resolve_scrobble(&id, &IndexMap::new()).await.unwrap();
         assert!(!song.is_local);
-        assert_eq!(song.external_provider.as_deref(), Some("soulseek"));
+        assert_eq!(song.external_provider.as_deref(), Some("outside"));
         let song = matching.resolve_scrobble("navidrome-id", &IndexMap::new()).await;
         assert!(song.is_none());
     }

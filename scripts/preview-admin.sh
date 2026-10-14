@@ -27,7 +27,6 @@ docker run -d --rm \
   --tmpfs /music \
   -e Subsonic__Url=http://127.0.0.1:1 \
   -e Subsonic__AutoDetectDownloadPath=false \
-  -e Soulseek__BaseUrl=http://127.0.0.1:1 \
   -e Library__DownloadPath=/music \
   "$image_name" >/dev/null
 

@@ -106,7 +106,7 @@ pub fn mask_sessions<'a>(sessions: impl IntoIterator<Item = (&'a String, &'a Las
 pub fn effective_document(state: &AppState, raw_config: bool) -> JsonObject {
     let current = state.settings.current();
     let subsonic = &current.subsonic;
-    let soulseek = &current.soulseek;
+    let downloads = &current.downloads;
     let lidarr = &current.lidarr;
     let lastfm = &current.last_fm;
     let genre = &current.genre;
@@ -161,14 +161,6 @@ pub fn effective_document(state: &AppState, raw_config: bool) -> JsonObject {
                 Node::Bool(subsonic.star_downloads_for_requester),
             ),
             ("SkipOwnedSongs", Node::Bool(subsonic.skip_owned_songs)),
-            (
-                "WaitForLosslessOnPlay",
-                Node::Bool(subsonic.wait_for_lossless_on_play),
-            ),
-            (
-                "LosslessWaitTimeoutSeconds",
-                n_num(subsonic.lossless_wait_timeout_seconds),
-            ),
             ("DownloadOnPlay", Node::Bool(subsonic.download_on_play)),
             ("LidarrAlbumOnPlay", Node::Bool(subsonic.lidarr_album_on_play)),
             // These two are rendered by the dashboard but were missing here, so their fields
@@ -233,58 +225,38 @@ pub fn effective_document(state: &AppState, raw_config: bool) -> JsonObject {
         ]),
     );
     doc.insert(
-        "Soulseek".into(),
+        "Downloads".into(),
         n_obj([
-            ("Enabled", Node::Bool(soulseek.enabled)),
-            ("BaseUrl", opt(&soulseek.base_url)),
-            ("Username", opt(&soulseek.username)),
-            // slskd's web login opens slskd entirely, so it goes out as the placeholder too.
-            ("Password", n_str(&mask_secret(soulseek.password.as_deref()))),
-            ("WebUrl", n_str(&soulseek.web_url)),
-            ("CheckListenPort", Node::Bool(soulseek.check_listen_port)),
-            ("ShareLibrary", Node::Bool(soulseek.share_library)),
-            ("SharedFolders", n_str(&soulseek.shared_folders)),
-            ("SearchWaitSeconds", n_num(soulseek.search_wait_seconds)),
-            (
-                "UpgradeSearchWaitSeconds",
-                n_num(soulseek.upgrade_search_wait_seconds),
-            ),
-            ("MinFileSizeBytes", n_num(soulseek.min_file_size_bytes)),
-            ("PreferredExtension", n_str(&soulseek.preferred_extension)),
-            ("DownloadTimeoutSeconds", n_num(soulseek.download_timeout_seconds)),
-            ("VerifyDownloads", Node::Bool(soulseek.verify_downloads)),
+            ("VerifyDownloads", Node::Bool(downloads.verify_downloads)),
             (
                 "AcoustIdApiKey",
-                n_str(&mask_secret(Some(&soulseek.acoust_id_api_key))),
+                n_str(&mask_secret(Some(&downloads.acoust_id_api_key))),
             ),
-            ("MinMatchScore", n_num(soulseek.min_match_score)),
-            ("TagFromMusicBrainz", Node::Bool(soulseek.tag_from_music_brainz)),
-            ("NameFromMatch", Node::Bool(soulseek.name_from_match)),
-            ("RejectedPeerTtlDays", n_num(soulseek.rejected_peer_ttl_days)),
-            ("FingerprintSeconds", n_num(soulseek.fingerprint_seconds)),
+            ("MinMatchScore", n_num(downloads.min_match_score)),
+            ("TagFromMusicBrainz", Node::Bool(downloads.tag_from_music_brainz)),
+            ("NameFromMatch", Node::Bool(downloads.name_from_match)),
+            ("FingerprintSeconds", n_num(downloads.fingerprint_seconds)),
             (
                 "FingerprintTimeoutSeconds",
-                n_num(soulseek.fingerprint_timeout_seconds),
+                n_num(downloads.fingerprint_timeout_seconds),
             ),
             (
                 "AcoustIdTimeoutSeconds",
-                n_num(soulseek.acoust_id_timeout_seconds),
+                n_num(downloads.acoust_id_timeout_seconds),
             ),
-            ("DetectTranscodes", Node::Bool(soulseek.detect_transcodes)),
+            ("DetectTranscodes", Node::Bool(downloads.detect_transcodes)),
             (
                 "TranscodeCheckTimeoutSeconds",
-                n_num(soulseek.transcode_check_timeout_seconds),
+                n_num(downloads.transcode_check_timeout_seconds),
             ),
-            ("OutageHoldHours", n_num(soulseek.outage_hold_hours)),
-            ("ParallelDownloads", n_num(soulseek.parallel_downloads)),
-            ("AlbumFolders", Node::Bool(soulseek.album_folders)),
+            ("ParallelDownloads", n_num(downloads.parallel_downloads)),
             (
                 "SubmitConfirmedFingerprints",
-                Node::Bool(soulseek.submit_confirmed_fingerprints),
+                Node::Bool(downloads.submit_confirmed_fingerprints),
             ),
             (
                 "AcoustIdUserApiKey",
-                n_str(&mask_secret(Some(&soulseek.acoust_id_user_api_key))),
+                n_str(&mask_secret(Some(&downloads.acoust_id_user_api_key))),
             ),
         ]),
     );
@@ -567,10 +539,6 @@ pub fn effective_document(state: &AppState, raw_config: bool) -> JsonObject {
                 "NotifyDownloadCompleted",
                 Node::Bool(notif.notify_download_completed),
             ),
-            (
-                "NotifyLosslessFallback",
-                Node::Bool(notif.notify_lossless_fallback),
-            ),
             ("NotifyDownloadFailed", Node::Bool(notif.notify_download_failed)),
             ("NotifyAlbumCompleted", Node::Bool(notif.notify_album_completed)),
         ]),
@@ -655,9 +623,6 @@ pub async fn get_settings(State(state): State<AppState>) -> Response {
         "_meta".into(),
         n_obj([
             ("ConfigFilePath", n_str(&path.display().to_string())),
-            // Drives the "Forget rejected peers" button's label, so an empty list is visibly
-            // empty rather than a button that looks like it did nothing.
-            ("RejectedPeerCount", n_num(state.rejected_peers.count())),
             ("ConfigFileExists", Node::Bool(path.is_file())),
             // False when the file is there but unparseable, which is when saves are refused.
             ("ConfigFileValid", Node::Bool(state.settings_writer.is_readable())),
@@ -1055,44 +1020,6 @@ pub async fn save_settings(
             }
             subsonic_patch.shift_remove(&password_key);
         }
-    }
-
-    // The slskd sign-in the same way.
-    if let Some(soulseek_patch) = child_mut(&mut patch, "Soulseek")
-        && let Some(password_key) = key_of(soulseek_patch, "Password")
-        && let Some(password) = string_value(soulseek_patch.get(&password_key))
-        && password.starts_with(SECRET_PLACEHOLDER)
-    {
-        if password != SECRET_PLACEHOLDER {
-            return Ok(error_json(
-                StatusCode::BAD_REQUEST,
-                "Retype the whole slskd password; it was added to the hidden placeholder.",
-            ));
-        }
-        let new_user = key_of(soulseek_patch, "Username")
-            .and_then(|key| string_value(soulseek_patch.get(&key)).map(str::to_string));
-        if let Some(new_user) = new_user
-            && new_user.trim() != current.soulseek.username.as_deref().unwrap_or("").trim()
-        {
-            return Ok(error_json(
-                StatusCode::BAD_REQUEST,
-                "Retype the slskd password for the new username.",
-            ));
-        }
-        soulseek_patch.shift_remove(&password_key);
-    }
-
-    // Open slskd puts this address in a link, so only a web address is kept.
-    if let Some(web_patch) = child(&patch, "Soulseek")
-        && let Some(web_key) = key_of(web_patch, "WebUrl")
-        && let Some(web) = string_value(web_patch.get(&web_key))
-        && !is_blank(web)
-        && octo_core::settings::SoulseekSettings::safe_web_url(Some(web)).is_none()
-    {
-        return Ok(error_json(
-            StatusCode::BAD_REQUEST,
-            "slskd's page must be a whole http:// or https:// address, such as http://192.168.1.5:5030.",
-        ));
     }
 
     // Sessions are made by Connect and removed by Disconnect. No form sends them, and an echoed

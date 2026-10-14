@@ -800,10 +800,9 @@ async fn an_outside_song_between_passes_is_read_without_a_new_pass() {
     t.ticks_until_done().await;
     let landed = t.library.directory.join("landed.mp3");
     std::fs::write(&landed, b"some sound").expect("writes");
-    t.worker
-        .arrived_outside("soulseek:xyz", &landed.to_string_lossy());
+    t.worker.arrived_outside("outside:xyz", &landed.to_string_lossy());
     t.tick().await;
-    assert!(profile_of(&t, "soulseek:xyz").is_some());
+    assert!(profile_of(&t, "outside:xyz").is_some());
     assert_eq!(t.store.read(|s| s.pass), 1);
 }
 
@@ -1042,9 +1041,9 @@ async fn an_outside_song_takes_its_tempo_and_isrc_from_its_own_tags() {
     let with_tag = tagged("tagged.flac", Some(96), Some("GBAAA9800001"));
     let with_isrc = tagged("isrc.flac", None, Some("GB-AAA-98-00001"));
     let bare = tagged("bare.flac", None, None);
-    t.worker.arrived_outside("soulseek:1", &with_tag);
-    t.worker.arrived_outside("soulseek:2", &with_isrc);
-    t.worker.arrived_outside("soulseek:3", &bare);
+    t.worker.arrived_outside("outside:1", &with_tag);
+    t.worker.arrived_outside("outside:2", &with_isrc);
+    t.worker.arrived_outside("outside:3", &bare);
     for _ in 0..3 {
         t.tick().await;
     }

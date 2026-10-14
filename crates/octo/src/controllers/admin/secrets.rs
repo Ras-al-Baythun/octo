@@ -17,9 +17,8 @@ use crate::app::AppState;
 /// settings types, so a new one cannot go out in clear without failing it.
 pub const SECRET_FIELDS: &[(&str, &str, &str)] = &[
     ("Subsonic", "AdminPassword", "admin password"),
-    ("Soulseek", "Password", "slskd password"),
-    ("Soulseek", "AcoustIdApiKey", "AcoustID application key"),
-    ("Soulseek", "AcoustIdUserApiKey", "AcoustID user key"),
+    ("Downloads", "AcoustIdApiKey", "AcoustID application key"),
+    ("Downloads", "AcoustIdUserApiKey", "AcoustID user key"),
     ("Lidarr", "ApiKey", "Lidarr API key"),
     ("Lidarr", "WebhookSecret", "Lidarr webhook password"),
     ("LastFm", "ApiKey", "Last.fm API key"),
@@ -33,7 +32,6 @@ pub const SECRET_FIELDS: &[(&str, &str, &str)] = &[
 /// the credential in words.
 pub const SECRET_ADDRESSES: &[(&str, &str, &str, &str)] = &[
     ("Subsonic", "Url", "AdminPassword", "admin password"),
-    ("Soulseek", "BaseUrl", "Password", "slskd password"),
     ("Lidarr", "BaseUrl", "ApiKey", "Lidarr API key"),
     ("Notifications", "NtfyUrl", "NtfyToken", "ntfy token"),
 ];
@@ -55,15 +53,6 @@ pub fn normalize_saved_addresses(patch: &mut JsonObject) {
     {
         let normalized = octo_core::settings::normalize_server_url(url);
         subsonic.insert(key, Node::String(normalized));
-    }
-    // slskd's web address (the Open slskd link) is saved without the spaces it was typed with,
-    // so GET settings never shows them. Only trimmed: a web address keeps its path.
-    if let Some(soulseek) = child_mut(patch, "Soulseek")
-        && let Some(key) = key_of(soulseek, "WebUrl")
-        && let Some(url) = string_value(soulseek.get(&key))
-    {
-        let trimmed = url.trim().to_string();
-        soulseek.insert(key, Node::String(trimmed));
     }
 }
 
@@ -232,13 +221,12 @@ pub fn running_secrets(state: &AppState) -> JsonObject {
         n_obj([("AdminPassword", optional(&current.subsonic.admin_password))]),
     );
     secrets.insert(
-        "Soulseek".into(),
+        "Downloads".into(),
         n_obj([
-            ("Password", optional(&current.soulseek.password)),
-            ("AcoustIdApiKey", text(&current.soulseek.acoust_id_api_key)),
+            ("AcoustIdApiKey", text(&current.downloads.acoust_id_api_key)),
             (
                 "AcoustIdUserApiKey",
-                text(&current.soulseek.acoust_id_user_api_key),
+                text(&current.downloads.acoust_id_user_api_key),
             ),
         ]),
     );

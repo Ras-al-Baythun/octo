@@ -30,7 +30,7 @@ pub fn requested(title: Option<&str>, album: Option<&str>) -> bool {
 mod tests {
     use super::*;
 
-    // The Soulseek live-folder check and download verification build on these; the cases here
+    // The library's live-folder checks and download verification build on these; the cases here
     // test the live markers themselves.
 
     #[test]

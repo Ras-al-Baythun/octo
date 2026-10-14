@@ -1,7 +1,7 @@
 //! The download pipeline every source shares.
 //!
-//! The shared machinery is [`BaseDownloadService`], and the source-specific parts (Soulseek's
-//! download service, for one) are the [`DownloadBackend`] trait it calls back into. A backend
+//! The shared machinery is [`BaseDownloadService`], and the source-specific parts (the YouTube
+//! and Lidarr download service) are the [`DownloadBackend`] trait it calls back into. A backend
 //! gets the base on every call, so it reaches the shared members (`download_path`, `track`,
 //! `notifications`, `services`, ...). `BaseDownloadService` implements [`IDownloadService`].
 //!
@@ -52,7 +52,7 @@ use octo_core::models::domain::{Album, Song};
 use octo_core::models::download::{DownloadHistoryEntry, DownloadInfo, DownloadStatus};
 use octo_core::notifications::{NotificationEvent, NotificationEventType};
 use octo_core::settings::{
-    DownloadMode, DownloadSource, LibraryAction, SettingsStore, SoulseekSettings, StorageMode,
+    DownloadMode, DownloadSettings, DownloadSource, LibraryAction, SettingsStore, StorageMode,
     SubsonicSettings,
 };
 use octo_core::tagging::{AlbumTagContext, ReleaseIdentifier};
@@ -137,8 +137,7 @@ pub struct TrackDownload {
     /// with the transfer, so a backend that can use it (Lidarr reads the album from its tags)
     /// sees it without a new parameter.
     pub replacing_path: Option<String>,
-    /// The source a backend fetched the song from, when the format alone does not say: a FLAC can
-    /// be Lidarr's as well as Soulseek's.
+    /// The source a backend fetched the song from, when the format alone does not say.
     pub fetched_from: Option<String>,
     /// The backend asked for the song to land without a notice of its own (a Lidarr album's songs
     /// that nobody hearted, and the songs of an album heart, which gets one for the album).
@@ -230,7 +229,7 @@ pub trait PlaylistTrackSync: Send + Sync {
 
 /// The services every download needs.
 pub struct DownloadCore {
-    /// The Subsonic, genre, Soulseek, metadata and library action settings, all read at use;
+    /// The Subsonic, genre, download, metadata and library action settings, all read at use;
     /// and the raw `Library:DownloadPath`.
     pub settings: Arc<SettingsStore>,
     pub local_library: Arc<dyn ILocalLibraryService>,
@@ -293,7 +292,7 @@ pub struct DownloadOptions {
     pub requested_by: Option<Vec<String>>,
     /// The album walk this track belongs to.
     pub album_context: Option<Arc<AlbumTagContext<Loudness>>>,
-    /// Search Soulseek the slow, wide way (Better quality, weekly upgrade).
+    /// A Better quality or weekly upgrade search: only a lossless copy will do.
     pub upgrade_search: bool,
     /// A library action's replacement, revealed in the original's place.
     pub replacement: Option<Arc<ReplacementHandoff>>,
@@ -438,10 +437,9 @@ impl BaseDownloadService {
         self.settings.current().subsonic.clone()
     }
 
-    /// `CurrentSoulseekSettings`: the Soulseek settings as they are now, for switches a backend
-    /// reads live.
-    pub fn current_soulseek_settings(&self) -> SoulseekSettings {
-        self.settings.current().soulseek.clone()
+    /// The download settings as they are now, for switches a backend reads live.
+    pub fn current_download_settings(&self) -> DownloadSettings {
+        self.settings.current().downloads.clone()
     }
 
     pub fn local_library(&self) -> &Arc<dyn ILocalLibraryService> {
@@ -856,7 +854,7 @@ impl BaseDownloadService {
         // names the file, which is how every existing library was built.
         let requested = RequestedIdentity::new(&song.artist, &song.title, &song.album, song.track);
 
-        // Parallel only once slskd has proven it files each download in its own folder; until
+        // Parallel as the setting allows, since every download lands in its own folder; until
         // then the lock is held through the transfer exactly as before. The in-progress marker
         // above keeps a second request for this song waiting either way, and the limiter counts
         // every transfer, album walks and hearts outside the queue included.
@@ -1011,8 +1009,8 @@ impl BaseDownloadService {
         }
 
         // Rich tags and real album art, written where the file will stay. Downloads otherwise
-        // arrive bare (YouTube: artist/title and a video thumbnail; Soulseek: whatever the peer
-        // tagged), so this is what makes every fetched song a properly-tagged library citizen.
+        // arrive bare (YouTube: artist/title and a video thumbnail; Lidarr: whatever the release
+        // carried), so this is what makes every fetched song a properly-tagged library citizen.
         let writing = std::time::Instant::now();
         let replacing = options.replacement.as_ref().map(|r| r.original_path.clone());
         let cover = self
@@ -1589,15 +1587,15 @@ impl BaseDownloadService {
     }
 
     /// Whether a lossless copy can be looked for: an owned lossy copy is then queued for Better
-    /// quality rather than kept as it is. That runs through the upgrade sources (Soulseek,
-    /// Lidarr), whichever source this download uses. Without them, as before: this download's
-    /// own source.
+    /// quality rather than kept as it is. That runs through the upgrade sources (Lidarr),
+    /// whichever source this download uses. Without them, as before: this download's own source,
+    /// which is lossless only when it is Lidarr.
     fn source_can_be_lossless(&self, source_override: Option<DownloadSource>) -> bool {
         match &self.services.upgrade_sources {
             Some(sources) => sources.ready(),
             None => matches!(
                 source_override.unwrap_or(self.settings.current().subsonic.download_source),
-                DownloadSource::Soulseek | DownloadSource::SoulseekThenYouTube
+                DownloadSource::Lidarr
             ),
         }
     }
@@ -1641,7 +1639,7 @@ impl BaseDownloadService {
     // ---- bookkeeping ----------------------------------------------------------------------
 
     /// Record a completed download in the fetched-songs log. Best-effort: format and source are
-    /// derived from the file extension (flac -> Soulseek/lossless, otherwise -> YouTube/lossy),
+    /// derived from the file extension (flac -> Lidarr/lossless, otherwise -> YouTube/lossy),
     /// which matches Octo's two download sources, unless the backend named the source.
     async fn record_history(
         &self,
@@ -1677,7 +1675,7 @@ impl BaseDownloadService {
         };
         let source = fetched_from
             .map(str::to_string)
-            .unwrap_or_else(|| if ext == "FLAC" { "Soulseek" } else { "YouTube" }.to_string());
+            .unwrap_or_else(|| if ext == "FLAC" { "Lidarr" } else { "YouTube" }.to_string());
         let size = std::fs::metadata(local_path).map(|m| m.len() as i64).unwrap_or(0);
         let requested_by: Option<Vec<String>> =
             requested_by.filter(|r| !r.is_empty()).map(<[String]>::to_vec);

@@ -15,7 +15,7 @@ use octo_core::json::datetime::format_utc;
 use octo_core::json::dom::Node;
 use octo_core::models::domain::{Album, Artist, Song};
 use octo_core::models::radio::LastFmRadioStation;
-use octo_core::soulseek::{RoutingKind, StreamFacts};
+use octo_core::soulseek::RoutingKind;
 use octo_subsonic::Parameters;
 use octo_subsonic::subsonic_model_mapper::album_key;
 use octo_subsonic::subsonic_response_builder::IdRegistry;
@@ -505,33 +505,23 @@ fn native_song_object(state: &AppState, song: &Song) -> Value {
     // serializers are not symmetric: this one emits no contentType at all, and writes
     // an unknown duration as 0 where the Subsonic one leaves the field out.
     //
-    // The size is the stream's true byte count once it is known, and absent until then (and
-    // always absent while waiting for lossless, whose bytes are not known until the FLAC lands).
-    // The suffix and bit rate follow the format the stream is served in, when known.
-    let lossless = state.settings.current().subsonic.wait_for_lossless_on_play;
-    let facts = if lossless {
-        StreamFacts::default()
-    } else {
-        state
-            .stream_size_warmer
-            .stream_facts(&song.id)
-            .unwrap_or_default()
-    };
-    if !lossless {
-        state.stream_size_warmer.outside_listed(&song.id);
-        if facts.size.is_none() {
-            state.stream_size_warmer.size_wanted(&song.id);
-        }
+    // The size is the stream's true byte count once it is known, and absent until then. The
+    // suffix and bit rate follow the format the stream is served in, when known.
+    let facts = state
+        .stream_size_warmer
+        .stream_facts(&song.id)
+        .unwrap_or_default();
+    state.stream_size_warmer.outside_listed(&song.id);
+    if facts.size.is_none() {
+        state.stream_size_warmer.size_wanted(&song.id);
     }
     let declared = facts.declared();
     let suffix = match &declared {
-        _ if lossless => "flac".to_string(),
         Some(declared) => declared.suffix.clone(),
         None => "m4a".to_string(),
     };
     // Format 140 AAC ~128 kbps; FLAC lands ~850-1000.
     let bit_rate: Option<i64> = match &declared {
-        _ if lossless => Some(950),
         Some(declared) => declared.bit_rate.map(i64::from),
         None => Some(128),
     };
