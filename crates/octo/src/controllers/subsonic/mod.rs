@@ -24,6 +24,7 @@ pub mod family;
 pub mod imports;
 pub mod lyrics;
 pub mod media;
+pub mod preview;
 pub mod stars;
 
 pub(crate) mod playlist_names;
@@ -51,6 +52,8 @@ mod marked_lists_tests;
 mod media_tests;
 #[cfg(test)]
 mod merged_browsing_tests;
+#[cfg(test)]
+mod preview_tests;
 #[cfg(test)]
 mod radio_ban_tests;
 #[cfg(test)]
@@ -150,6 +153,7 @@ pub fn routes() -> RouteSet {
         .merge(stars::routes())
         .merge(extensions::routes())
         .merge(downloads::routes())
+        .merge(preview::routes())
         .merge(lyrics::routes())
         .merge(top_songs::routes())
         .merge(imports::routes())

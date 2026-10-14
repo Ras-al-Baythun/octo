@@ -33,6 +33,7 @@ use crate::services::library::{
     GeneratedPlaylist, LibraryActionOutcome, LibraryEditOutcome, SongLookup, TrashedSong, UpgradeJob,
 };
 use crate::services::soulseek::ExternalIdRegistry;
+use crate::services::you_tube::preview_choices::PreviewChoice;
 
 impl IdRegistry for ExternalIdRegistry {
     fn register(&self, routing: SoulseekRouting) -> String {
@@ -117,6 +118,9 @@ pub trait SubsonicResponseBuilderExt {
 
     /// pickFoundSong: what picking did.
     fn create_pick_response(&self, outcome: &PickOutcome) -> SubsonicReply;
+
+    /// getPreviewChoices: the videos a song from outside the library could play from.
+    fn create_preview_choices_response(&self, id: &str, choices: &[PreviewChoice]) -> SubsonicReply;
 }
 
 impl SubsonicResponseBuilderExt for SubsonicResponseBuilder {
@@ -329,6 +333,15 @@ impl SubsonicResponseBuilderExt for SubsonicResponseBuilder {
             "version": SUBSONIC_VERSION,
             "type": "octo",
             "foundSongs": found_songs_json(found),
+        }))
+    }
+
+    fn create_preview_choices_response(&self, id: &str, choices: &[PreviewChoice]) -> SubsonicReply {
+        self.create_json_response(json!({
+            "status": "ok",
+            "version": SUBSONIC_VERSION,
+            "type": "octo",
+            "previewChoices": { "id": id, "choice": choices },
         }))
     }
 

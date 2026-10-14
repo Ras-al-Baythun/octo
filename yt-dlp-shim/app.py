@@ -354,7 +354,7 @@ def search():
     if cached is not None:
         return jsonify(**cached)
 
-    payload = _search_with_hint(q, duration_hint, bg) if duration_hint is not None else _search_single(q, bg)
+    payload = _search_ranked(q, duration_hint, bg)
     if payload is None:
         return jsonify(error="search_failed"), 502
     if not payload.get("video_id"):
@@ -373,75 +373,22 @@ def _payload_from(data: dict) -> dict:
     }
 
 
-def _search_single(q: str, bg: bool = False) -> Optional[dict]:
-    """No duration hint: fast path. One extraction yields metadata AND the
-    stream URL, which we warm into the URL cache so /stream is a cache hit."""
+# How many of YouTube's results a search weighs. The top result alone is the music video
+# more often than not; among a few, the song's own audio upload is usually there.
+_CANDIDATES = 6
+
+
+def _flat_search(q: str, n: int, bg: bool = False, label: str = "search") -> Optional[list]:
+    """YouTube's first `n` results for `q`, flat (no per-video extraction): id, title,
+    duration and channel each. None when the run failed, [] when it found nothing."""
     out = _run(
         [
-            f"ytsearch1:{q}",
-            "-f", _AUDIO_FORMAT,
-            "--ignore-no-formats-error",
-            "--print", "%(.{id,title,duration,channel})j",
-            "--print", stream_info.FORMAT_PRINT,
-            "--print", "%(urls)s",
-        ],
-        timeout=15,
-        label="search+resolve",
-        bg=bg,
-    )
-    if out is None:
-        return None
-    lines, format_line, stream_url = stream_info.split_run(out)
-    if not lines:
-        return {}
-    try:
-        data = json.loads(lines[0])
-    except json.JSONDecodeError as e:
-        log.warning("search: bad json from yt-dlp: %s", e)
-        return None
-    payload = _payload_from(data)
-    if payload.get("video_id") and stream_url:
-        # Warm the URL cache from the SAME extraction. This used to be a second
-        # `yt-dlp -g` on a detached daemon thread; folding it in removes an
-        # entire yt-dlp invocation per track and makes the warm /stream path a
-        # deterministic cache hit instead of a gate-race.
-        _url_cache_put(payload["video_id"], stream_url)
-        _facts_put(payload["video_id"], stream_info.stream_facts(format_line, stream_url))
-    return _with_facts(payload)
-
-
-_LIVE = re.compile(r"\b(live|unplugged|in concert|concert|bootleg)\b", re.IGNORECASE)
-
-
-def _rank_by_length(candidates: list, q: str, duration_hint: int) -> list:
-    """Closest length first, but a live take never beats a studio one unless the query asks
-    for live itself. A live video of a song is usually within seconds of the studio length,
-    so length alone picked it as often as not. All of them live: the closest still plays."""
-    wants_live = bool(_LIVE.search(q))
-
-    def key(r: dict):
-        live = 0 if wants_live or not _LIVE.search(r.get("title") or "") else 1
-        length = abs((r.get("duration") or 0) - duration_hint) if r.get("duration") else float("inf")
-        return (live, length)
-
-    return sorted(candidates, key=key)
-
-
-def _search_with_hint(q: str, duration_hint: int, bg: bool = False) -> Optional[dict]:
-    """Duration hint present: pick the closest-length of 5 flat candidates
-    (cheap, no per-video extraction), then resolve the winner's URL once.
-
-    Note this path costs TWO gated yt-dlp runs per track (search5 then resolve),
-    where the no-hint path gets both from one extraction.
-    """
-    out = _run(
-        [
-            f"ytsearch5:{q}",
+            f"ytsearch{n}:{q}",
             "--flat-playlist",
             "--print", "%(.{id,title,duration,channel})j",
         ],
         timeout=20,
-        label="search5",
+        label=label,
         bg=bg,
     )
     if out is None:
@@ -455,16 +402,94 @@ def _search_with_hint(q: str, duration_hint: int, bg: bool = False) -> Optional[
             candidates.append(json.loads(ln))
         except json.JSONDecodeError:
             pass
+    return candidates
+
+
+_LIVE = re.compile(r"\b(live|unplugged|in concert|concert|bootleg)\b", re.IGNORECASE)
+# An upload that is the song itself: a label's "- Topic" channel, or a title that says so.
+_AUDIO = re.compile(r"\b(official audio|audio only|audio|lyric video|lyrics?|visuali[sz]er)\b", re.IGNORECASE)
+# An upload that is the song's video, with the intro, the dialogue and the crowd that go with it.
+_VIDEO = re.compile(r"\b(official (music )?video|music video|\(video\)|official clip|video clip|clip officiel)\b", re.IGNORECASE)
+# How far from the hinted length a result may be and still be the same recording.
+_LENGTH_SLACK_SEC = 15
+
+
+def _audio_rank(r: dict) -> int:
+    """0 for the song's own audio, 2 for its video, 1 for anything else."""
+    if (r.get("channel") or "").strip().endswith(" - Topic") or _AUDIO.search(r.get("title") or ""):
+        return 0
+    if _VIDEO.search(r.get("title") or ""):
+        return 2
+    return 1
+
+
+def _rank(candidates: list, q: str, duration_hint: Optional[int]) -> list:
+    """The result to play first. A live take never beats a studio one unless the query asks
+    for live itself (a live video is usually within seconds of the studio length, so length
+    alone picked it as often as not). With a hint, a result far from it or with no length
+    comes after the ones near it, so an audio upload of another edit never beats the right
+    song. Then the song's own audio before anything else before its video; then the closest
+    length to the hint, or YouTube's own order when there is none."""
+    wants_live = bool(_LIVE.search(q))
+
+    def key(item):
+        index, r = item
+        live = 0 if wants_live or not _LIVE.search(r.get("title") or "") else 1
+        length = r.get("duration")
+        if duration_hint is not None:
+            apart = abs(length - duration_hint) if length else float("inf")
+            far = 0 if apart <= _LENGTH_SLACK_SEC else 1
+            return (live, far, _audio_rank(r), apart, index)
+        return (live, 0, _audio_rank(r), 0, index)
+
+    return [r for _, r in sorted(enumerate(candidates), key=key)]
+
+
+def _rank_by_length(candidates: list, q: str, duration_hint: int) -> list:
+    """`_rank` with a hint, as the length ranking was called."""
+    return _rank(candidates, q, duration_hint)
+
+
+def _search_ranked(q: str, duration_hint: Optional[int], bg: bool = False) -> Optional[dict]:
+    """The result to play for `q`: `_CANDIDATES` flat results ranked by `_rank`, the winner's
+    URL then resolved once (single-flight, into the URL cache, so the coming /stream is a hit).
+    Two gated yt-dlp runs per track; the one-run top-result path went, since the top result
+    is the music video as often as not."""
+    candidates = _flat_search(q, _CANDIDATES, bg, label=f"search{_CANDIDATES}")
+    if candidates is None:
+        return None
     if not candidates:
         return {}
-    # Closest duration wins, live takes last; candidates without a duration sort
-    # last so a hint never drags us onto an entry we can't length-match.
-    candidates = _rank_by_length(candidates, q, duration_hint)
-    payload = _payload_from(candidates[0])
+    payload = _payload_from(_rank(candidates, q, duration_hint)[0])
     if payload.get("video_id"):
-        # Warm the URL cache for the coming /stream (single-flight + cached).
         _resolve_url(payload["video_id"], bg)
     return _with_facts(payload)
+
+
+@app.get("/candidates")
+def candidates():
+    """The results `q` could play from, ranked as /search ranks them, with each one's channel:
+    for a listener choosing a version. Flat, nothing resolved."""
+    q = request.args.get("q", "").strip()
+    if not q:
+        abort(400, "missing q")
+    n = _arg_int("n", _CANDIDATES, 1, 12)
+    hint_str = request.args.get("duration", "").strip()
+    duration_hint = int(hint_str) if hint_str.isdigit() else None
+    bg = _is_bg()
+    cache_key = f"cands|{q.lower()}|{n}|{duration_hint or ''}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return jsonify(**cached)
+    found = _flat_search(q, n, bg, label=f"candidates{n}")
+    if found is None:
+        return jsonify(error="search_failed"), 502
+    rows = [_payload_from(r) for r in _rank(found, q, duration_hint) if r.get("id")]
+    if not rows:
+        return jsonify(error="no_hit"), 404
+    payload = {"candidates": rows}
+    _cache_put(cache_key, payload)
+    return jsonify(**payload)
 
 
 _META_CACHE_LOCK = threading.Lock()
@@ -487,7 +512,9 @@ def _norm_q(q: str) -> str:
     lowercase and collapse runs of whitespace. The duration hint is deliberately
     NOT part of the key — a resolved track's YouTube length is what we trust, and
     a slightly different Deezer hint next time must still hit the same row."""
-    return " ".join(q.lower().split())
+    # The version in front retires rows written before results were ranked for the song's own
+    # audio: those named the top result, the music video as often as not.
+    return "v2|" + " ".join(q.lower().split())
 
 
 def _meta_db_init() -> None:
@@ -565,32 +592,14 @@ def meta():
             _META_CACHE.move_to_end(key)
         return jsonify(**persisted)
 
-    if duration_hint is not None:
-        out = _run([f"ytsearch5:{q}", "--flat-playlist", "--print", "%(.{id,title,duration})j"],
-                   timeout=20, label="meta5", bg=bg)
-        cands = []
-        for ln in (out or "").strip().split("\n"):
-            ln = ln.strip()
-            if ln:
-                try:
-                    cands.append(json.loads(ln))
-                except json.JSONDecodeError:
-                    pass
-        if not cands:
-            return jsonify(error="no_hit"), 404
-        data = _rank_by_length(cands, q, duration_hint)[0]
-    else:
-        out = _run([f"ytsearch1:{q}", "--flat-playlist", "--print", "%(.{id,title,duration})j"],
-                   timeout=15, label="meta", bg=bg)
-        if out is None:
-            return jsonify(error="search_failed"), 502
-        line = next((ln.strip() for ln in out.strip().split("\n") if ln.strip()), "")
-        if not line:
-            return jsonify(error="no_hit"), 404
-        try:
-            data = json.loads(line)
-        except json.JSONDecodeError:
-            return jsonify(error="bad_yt_response"), 502
+    # The same results, ranked the same way, as /search would play: the length shown is the
+    # length of the video that plays.
+    cands = _flat_search(q, _CANDIDATES, bg, label=f"meta{_CANDIDATES}")
+    if cands is None:
+        return jsonify(error="search_failed"), 502
+    if not cands:
+        return jsonify(error="no_hit"), 404
+    data = _rank(cands, q, duration_hint)[0]
 
     payload = {"video_id": data.get("id"), "title": data.get("title"), "duration": data.get("duration")}
     if payload["video_id"]:

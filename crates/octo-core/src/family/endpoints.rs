@@ -136,6 +136,7 @@ pub const REST_ENDPOINTS: &[(&str, EndpointClass)] = &[
     ("getLibraryActions", Read),
     ("getLibraryTrash", Read),
     ("getLyricsCandidates", Read),
+    ("getPreviewChoices", Read),
     ("getTopChart", Read),
     ("getTransitionProfile", Read),
     ("getUpgrades", Read),
@@ -145,6 +146,8 @@ pub const REST_ENDPOINTS: &[(&str, EndpointClass)] = &[
     ("libraryAction", LibraryWrite),
     ("pickFoundSong", LibraryWrite),
     ("setLyricsChoice", LibraryWrite),
+    // The pick is what every later play and download of the song reads.
+    ("setPreview", LibraryWrite),
     ("testPing", Read),
     // Octo Family (`octoFamily`): each checks the caller's own rights.
     ("getFamily", Read),
@@ -408,6 +411,7 @@ mod tests {
             "importText",
             "setLyricsChoice",
             "findSongs",
+            "setPreview",
         ] {
             assert_eq!(rest_class(name), Some(LibraryWrite), "{name}");
         }

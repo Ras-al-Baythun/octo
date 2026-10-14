@@ -84,8 +84,16 @@ pub const OWN_EXTENSIONS: &[(&str, &[i32])] = &[
     (RADIO_SOURCES_EXTENSION, &[RADIO_SOURCES_EXTENSION_VERSION]),
     (LISTS_EXTENSION, &[LISTS_EXTENSION_VERSION]),
     (PLAYLISTS_EXTENSION, &[PLAYLISTS_EXTENSION_VERSION]),
+    (PREVIEW_EXTENSION, &[PREVIEW_EXTENSION_VERSION]),
     (TRANSITIONS_EXTENSION, &[TRANSITIONS_EXTENSION_VERSION]),
 ];
+
+/// octoPreview v1: a song from outside the library plays from a video of the listener's
+/// choosing. `getPreviewChoices?id=` lists the videos it could play from (YouTube Music's rows
+/// first, the one playing now marked `current`), `setPreview?id=&videoId=[&length=]` picks one
+/// and answers the song as getSong does. The pick is also what a YouTube download fetches.
+pub const PREVIEW_EXTENSION: &str = "octoPreview";
+pub const PREVIEW_EXTENSION_VERSION: i32 = 1;
 
 /// octoPlaylists v1: playlists Octo keeps itself (`of` ids), which hold songs from outside the
 /// library beside library songs. `createPlaylist` with such a `songId`, or with `octo=true`,

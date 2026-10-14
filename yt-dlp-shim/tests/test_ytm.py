@@ -141,3 +141,44 @@ def test_artist_radio_uses_the_search_rows_radio_id(monkeypatch):
     artist, rows = ytm.artist_radio("massive attack", 10)
     assert artist == "Massive Attack"
     assert rows[0]["durationSeconds"] == 379
+
+
+def test_a_stale_connection_is_tried_once_more_on_a_fresh_client(monkeypatch):
+    import requests
+    made = []
+
+    class Fake:
+        def __init__(self):
+            made.append(self)
+            self.calls = 0
+
+        def search(self, query, filter=None, limit=None):
+            self.calls += 1
+            if len(made) == 1:
+                raise requests.exceptions.ConnectionError("Connection aborted.")
+            return [{"videoId": "v1", "title": query, "artists": [], "resultType": "song", "duration": "3:00"}]
+
+    monkeypatch.setattr(ytm, "YTMusic", Fake)
+    monkeypatch.setattr(ytm, "_local", threading.local())
+    rows = ytm.search("Drake Passionfruit")
+    assert [r["videoId"] for r in rows] == ["v1"]
+    assert len(made) == 2 and made[0].calls == 1 and made[1].calls == 1
+    # The fresh client stays this thread's.
+    assert ytm.client() is made[1]
+
+
+def test_other_errors_are_not_retried(monkeypatch):
+    made = []
+
+    class Fake:
+        def __init__(self):
+            made.append(self)
+
+        def search(self, query, filter=None, limit=None):
+            raise ValueError("page changed")
+
+    monkeypatch.setattr(ytm, "YTMusic", Fake)
+    monkeypatch.setattr(ytm, "_local", threading.local())
+    with pytest.raises(ValueError):
+        ytm.search("x")
+    assert len(made) == 1

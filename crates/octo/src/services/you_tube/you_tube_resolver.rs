@@ -265,6 +265,52 @@ impl YouTubeResolver {
         })
     }
 
+    /// YouTube Music's songs rows for `artist - title` as they come, for a listener choosing
+    /// a version. Empty when YouTube Music could not answer in time.
+    pub async fn music_candidates(&self, artist: &str, title: &str) -> Vec<YtmRow> {
+        match self.music_rows(artist, title) {
+            Some(rows) => rows.await.unwrap_or_default(),
+            None => Vec::new(),
+        }
+    }
+
+    /// The videos `query` could play from, as the shim ranks them (the song's own audio first),
+    /// with each one's channel: at most `n`. Empty when the shim could not answer.
+    pub async fn candidates(&self, query: &str, n: usize, duration_hint: Option<i32>) -> Vec<YouTubeHit> {
+        if query.trim().is_empty() {
+            return Vec::new();
+        }
+        let url = format!(
+            "{}&n={n}",
+            self.query_url("candidates", query, duration_hint, false)
+        );
+        let outcome: anyhow::Result<Vec<YouTubeHit>> = async {
+            let resp = self.search_client.get(&url).send().await?;
+            if !resp.status().is_success() {
+                debug!("shim /candidates HTTP {} for '{query}'", resp.status().as_u16());
+                return Ok(Vec::new());
+            }
+            let root: Value = serde_json::from_str(&resp.text().await?)?;
+            let mut hits = Vec::new();
+            for row in root
+                .get("candidates")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
+                if let Some(hit) = parse_hit(row, true)? {
+                    hits.push(hit);
+                }
+            }
+            Ok(hits)
+        }
+        .await;
+        outcome.unwrap_or_else(|e| {
+            warn!("shim /candidates failed for '{query}': {e}");
+            Vec::new()
+        })
+    }
+
     /// Starts YouTube Music's songs search for `artist - title` without waiting for it, so a
     /// [`Self::music_song`] for the song moments later joins it instead of starting its own.
     pub fn prefetch_music_song(&self, artist: &str, title: &str) {
