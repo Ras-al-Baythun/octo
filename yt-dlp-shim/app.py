@@ -406,8 +406,9 @@ def _flat_search(q: str, n: int, bg: bool = False, label: str = "search") -> Opt
 
 
 _LIVE = re.compile(r"\b(live|unplugged|in concert|concert|bootleg)\b", re.IGNORECASE)
-# An upload that is the song itself: a label's "- Topic" channel, or a title that says so.
-_AUDIO = re.compile(r"\b(official audio|audio only|audio|lyric video|lyrics?|visuali[sz]er)\b", re.IGNORECASE)
+# An upload that is the song itself: a label's "- Topic" channel, or a title that says so. A
+# lyrics video is anyone's upload of anything, so it counts as neither.
+_AUDIO = re.compile(r"\b(official audio|audio only|audio|visuali[sz]er)\b", re.IGNORECASE)
 # An upload that is the song's video, with the intro, the dialogue and the crowd that go with it.
 _VIDEO = re.compile(r"\b(official (music )?video|music video|\(video\)|official clip|video clip|clip officiel)\b", re.IGNORECASE)
 # How far from the hinted length a result may be and still be the same recording.

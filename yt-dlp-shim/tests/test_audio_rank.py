@@ -45,12 +45,13 @@ def test_live_still_comes_last_and_the_old_name_still_ranks():
 
 
 def test_without_a_hint_equal_ranks_keep_youtubes_order():
+    # A lyrics video is anyone's upload: no better than a plain one, so YouTube's order holds.
     candidates = [
         {"id": "b", "title": "Band - Song", "duration": 200, "channel": "someone"},
         {"id": "a", "title": "Band - Song (lyrics)", "duration": 200, "channel": "else"},
-        {"id": "c", "title": "Band - Song HQ", "duration": 200, "channel": "other"},
+        {"id": "c", "title": "Band - Song (Audio)", "duration": 200, "channel": "other"},
     ]
-    assert ids(app_module._rank(candidates, "Band Song", None)) == ["a", "b", "c"]
+    assert ids(app_module._rank(candidates, "Band Song", None)) == ["c", "b", "a"]
 
 
 def _lines(rows):
