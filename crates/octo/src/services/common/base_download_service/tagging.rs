@@ -31,7 +31,7 @@ use super::{BaseDownloadService, RequestedIdentity, get_extension};
 use crate::services::common::acquisition_tracker::acquisition_event_kinds;
 use crate::services::cover_art::CoversOnHand;
 use crate::services::library::navidrome_song_path_resolver::get_full_path;
-use crate::services::soulseek::soulseek_download_service::INCOMING_FOLDER_NAME;
+use crate::services::outside::outside_download_service::INCOMING_FOLDER_NAME;
 
 impl BaseDownloadService {
     /// Whether a landed file came from the video site's staging folder, whose tags are an

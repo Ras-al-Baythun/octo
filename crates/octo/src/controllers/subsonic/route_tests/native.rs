@@ -7,8 +7,8 @@ use std::time::Duration;
 use axum::body::Body;
 use axum::http::{Method, StatusCode};
 use octo_core::models::domain::{Album, Song};
+use octo_core::outside::{OutsideRouting, RoutingKind, StreamFacts};
 use octo_core::settings::{AppSettings, LastFmSettings, SubsonicSettings};
-use octo_core::soulseek::{RoutingKind, SoulseekRouting, StreamFacts};
 use parking_lot::Mutex;
 use serde_json::Value;
 use wiremock::matchers::any;
@@ -139,7 +139,7 @@ async fn fixture() -> Fixture {
 }
 
 fn register_outside_artist(state: &AppState) -> String {
-    state.external_id_registry.register(SoulseekRouting {
+    state.external_id_registry.register(OutsideRouting {
         kind: RoutingKind::Artist,
         artist: Some("Test Artist".into()),
         // Tapped in search: this artist, not the better known one of the name.
@@ -344,7 +344,7 @@ async fn plain_fixture(metadata: TestMetadata) -> (MockServer, AppState, App) {
 #[tokio::test]
 async fn an_external_id_on_an_unhandled_endpoint_gets_the_empty_ok() {
     let (_server, state, app) = plain_fixture(TestMetadata::default()).await;
-    let id = state.external_id_registry.register(SoulseekRouting {
+    let id = state.external_id_registry.register(OutsideRouting {
         kind: RoutingKind::Song,
         artist: Some("A".into()),
         title: Some("B".into()),
@@ -403,13 +403,13 @@ async fn a_native_song_detail_for_an_outside_song_is_answered_by_octo() {
             ..Default::default()
         },
     );
-    let tidal = SoulseekRouting {
+    let tidal = OutsideRouting {
         kind: RoutingKind::Song,
         artist: Some("Zephyr Echo".into()),
         title: Some("Tidal".into()),
         ..Default::default()
     };
-    let known = crate::services::soulseek::ExternalIdRegistry::make_short_id(&tidal);
+    let known = crate::services::outside::ExternalIdRegistry::make_short_id(&tidal);
     metadata.songs.lock().insert(
         known.clone(),
         Song {
@@ -464,13 +464,13 @@ async fn a_native_song_detail_for_an_outside_song_is_answered_by_octo() {
 #[tokio::test]
 async fn a_native_song_with_an_unknown_size_or_bit_rate_says_zero() {
     let metadata = TestMetadata::default();
-    let song = SoulseekRouting {
+    let song = OutsideRouting {
         kind: RoutingKind::Song,
         artist: Some("Zephyr Echo".into()),
         title: Some("Undertow".into()),
         ..Default::default()
     };
-    let id = crate::services::soulseek::ExternalIdRegistry::make_short_id(&song);
+    let id = crate::services::outside::ExternalIdRegistry::make_short_id(&song);
     metadata.songs.lock().insert(
         id.clone(),
         Song {

@@ -14,7 +14,7 @@ use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::Response;
 use axum::routing::{get, post};
 use octo_core::common::dotnet::{self, is_blank};
-use octo_core::soulseek::RoutingKind;
+use octo_core::outside::RoutingKind;
 use octo_media::cover::cover_image;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -30,7 +30,7 @@ use crate::http::error::problem;
 use crate::http::routes::RouteSet;
 use crate::services::common::acquisition_tracker::AcquisitionSnapshot;
 use crate::services::local::DownloadHistoryService;
-use crate::services::soulseek::SoulseekMetadataService;
+use crate::services::outside::OutsideMetadataService;
 use crate::services::subsonic::subsonic_response_builder::{
     acquisition_json, event_json, found_songs_json, pick_json,
 };
@@ -266,7 +266,7 @@ pub async fn find_cover(State(state): State<AppState>, request: Request) -> Resp
         return problem(StatusCode::NOT_FOUND);
     };
     let mut raw = id.trim().to_string();
-    let prefix = format!("{}:", SoulseekMetadataService::PROVIDER_NAME);
+    let prefix = format!("{}:", OutsideMetadataService::PROVIDER_NAME);
     if dotnet::starts_with_ignore_case(&raw, &prefix) {
         raw = raw[prefix.len()..].to_string();
     }
@@ -280,7 +280,7 @@ pub async fn find_cover(State(state): State<AppState>, request: Request) -> Resp
         .external_id_registry
         .lookup(&raw)
         .map(|shared| shared.snapshot())
-        .or_else(|| SoulseekMetadataService::try_decode_external_id(Some(&raw)));
+        .or_else(|| OutsideMetadataService::try_decode_external_id(Some(&raw)));
     if let Some(routing) = routing.filter(|r| r.kind == RoutingKind::Song && r.has_artist_title()) {
         let meta = state
             .deezer_metadata

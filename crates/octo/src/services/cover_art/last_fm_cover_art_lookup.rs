@@ -7,8 +7,8 @@ use bytes::Bytes;
 use octo_core::common::dotnet;
 use octo_core::json::element::{enumerate_array, get_string, try_get_property};
 use octo_core::metadata::accept_language_header;
+use octo_core::outside::routing::{OutsideRouting, RoutingKind};
 use octo_core::settings::{LastFmSettings, MetadataSettings};
-use octo_core::soulseek::soulseek_metadata_service::{RoutingKind, SoulseekRouting};
 use reqwest::header::{ACCEPT_LANGUAGE, HeaderMap, HeaderValue};
 use serde_json::Value;
 use tracing::debug;
@@ -61,7 +61,7 @@ impl LastFmCoverArtLookup {
         }
     }
 
-    async fn fetch(&self, routing: &SoulseekRouting) -> anyhow::Result<Option<Bytes>> {
+    async fn fetch(&self, routing: &OutsideRouting) -> anyhow::Result<Option<Bytes>> {
         let artist = routing.artist.as_deref().unwrap_or("").trim();
         let img_url = match routing.kind {
             RoutingKind::Album => {
@@ -202,7 +202,7 @@ impl ICoverArtSource for LastFmCoverArtLookup {
         "lastfm"
     }
 
-    async fn try_fetch(&self, routing: &SoulseekRouting, _background: bool) -> Option<Bytes> {
+    async fn try_fetch(&self, routing: &OutsideRouting, _background: bool) -> Option<Bytes> {
         if self.api_key.is_empty() {
             return None;
         }
@@ -269,7 +269,7 @@ mod tests {
 
         let bytes = lookup
             .try_fetch(
-                &SoulseekRouting {
+                &OutsideRouting {
                     kind: RoutingKind::Album,
                     artist: Some("Air".into()),
                     album: Some("Sexy Boy".into()),
@@ -303,7 +303,7 @@ mod tests {
         assert!(
             keyless
                 .try_fetch(
-                    &SoulseekRouting {
+                    &OutsideRouting {
                         artist: Some("Air".into()),
                         title: Some("x".into()),
                         ..Default::default()

@@ -7,8 +7,8 @@ use std::time::Duration;
 use axum::body::Body;
 use axum::http::{Method, StatusCode};
 use indexmap::IndexMap;
+use octo_core::outside::routing::{OutsideRouting, RoutingKind};
 use octo_core::settings::{AppSettings, GeneratedPlaylistSettings, SubsonicSettings};
-use octo_core::soulseek::soulseek_metadata_service::{RoutingKind, SoulseekRouting};
 use octo_subsonic::xml::XElement;
 use wiremock::matchers::any;
 use wiremock::{Mock, MockServer, Request as MockRequest, Respond, ResponseTemplate};
@@ -373,7 +373,7 @@ async fn star_with_no_sign_in_is_refused_without_a_ping() {
 #[tokio::test]
 async fn star_on_an_outside_album_with_a_wrong_password_starts_nothing() {
     let fixture = SignIn::new().await;
-    let album_id = fixture.state.external_id_registry.register(SoulseekRouting {
+    let album_id = fixture.state.external_id_registry.register(OutsideRouting {
         kind: RoutingKind::Album,
         artist: Some("Massive Attack".into()),
         album: Some("Mezzanine".into()),
@@ -652,7 +652,7 @@ impl crate::services::cover_art::ICoverArtSource for OnePicture {
         "one"
     }
 
-    async fn try_fetch(&self, _: &SoulseekRouting, _: bool) -> Option<bytes::Bytes> {
+    async fn try_fetch(&self, _: &OutsideRouting, _: bool) -> Option<bytes::Bytes> {
         let mut picture = Vec::new();
         image::DynamicImage::new_rgb8(64, 64)
             .write_to(&mut std::io::Cursor::new(&mut picture), image::ImageFormat::Jpeg)
@@ -676,7 +676,7 @@ async fn a_badged_outside_cover_is_kept_and_served_again_from_memory() {
         inner.cover_art_service =
             Arc::new(octo_media::cover::CoverArtService::new(None).with_logo_paths(vec![logo]));
     });
-    let id = state.external_id_registry.register(SoulseekRouting {
+    let id = state.external_id_registry.register(OutsideRouting {
         kind: RoutingKind::Song,
         artist: Some("Artist".into()),
         title: Some("Title".into()),
@@ -721,7 +721,7 @@ impl crate::services::cover_art::ICoverArtSource for NotAPicture {
         "broken"
     }
 
-    async fn try_fetch(&self, _: &SoulseekRouting, _: bool) -> Option<bytes::Bytes> {
+    async fn try_fetch(&self, _: &OutsideRouting, _: bool) -> Option<bytes::Bytes> {
         Some(bytes::Bytes::from_static(b"not a picture"))
     }
 }
@@ -736,7 +736,7 @@ async fn a_cover_the_badge_failed_on_is_not_kept() {
             Arc::new(NotAPicture),
         ]));
     });
-    let id = state.external_id_registry.register(SoulseekRouting {
+    let id = state.external_id_registry.register(OutsideRouting {
         kind: RoutingKind::Song,
         artist: Some("Artist".into()),
         title: Some("Broken".into()),
@@ -794,7 +794,7 @@ async fn a_size_no_play_has_confirmed_never_refuses_a_range() {
         inner.download_service = downloads.clone();
         inner.local_library = library.clone();
     });
-    let id = state.external_id_registry.register(SoulseekRouting {
+    let id = state.external_id_registry.register(OutsideRouting {
         kind: RoutingKind::Song,
         artist: Some("Daft Punk".into()),
         title: Some("Veridis Quo".into()),
@@ -805,7 +805,7 @@ async fn a_size_no_play_has_confirmed_never_refuses_a_range() {
     state.external_id_registry.remember_stream(
         &id,
         "vid-b",
-        &octo_core::soulseek::StreamFacts {
+        &octo_core::outside::StreamFacts {
             size: Some(1000),
             ..Default::default()
         },
@@ -835,7 +835,7 @@ async fn a_range_past_the_end_of_a_known_stream_is_a_416_with_its_size() {
         inner.download_service = downloads.clone();
         inner.local_library = library.clone();
     });
-    let id = state.external_id_registry.register(SoulseekRouting {
+    let id = state.external_id_registry.register(OutsideRouting {
         kind: RoutingKind::Song,
         artist: Some("Daft Punk".into()),
         title: Some("Emotion".into()),
@@ -846,7 +846,7 @@ async fn a_range_past_the_end_of_a_known_stream_is_a_416_with_its_size() {
     state.external_id_registry.remember_stream(
         &id,
         "vid-a",
-        &octo_core::soulseek::StreamFacts {
+        &octo_core::outside::StreamFacts {
             size: Some(1000),
             size_confirmed: true,
             ..Default::default()

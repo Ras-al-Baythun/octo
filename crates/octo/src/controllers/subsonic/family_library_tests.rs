@@ -9,7 +9,7 @@ use http_body_util::BodyExt;
 use octo_core::family::abilities::{Abilities, Preset, RequestQuality};
 use octo_core::family::request::RequestState;
 use octo_core::models::domain::Song;
-use octo_core::soulseek::soulseek_metadata_service::{RoutingKind, SoulseekRouting};
+use octo_core::outside::routing::{OutsideRouting, RoutingKind};
 use wiremock::matchers::{path, query_param};
 use wiremock::{Mock, MockServer};
 
@@ -74,7 +74,7 @@ impl Fixture {
         );
         let mut songs = Vec::new();
         for title in ["Teardrop", "Angel"] {
-            let id = state.external_id_registry.register(SoulseekRouting {
+            let id = state.external_id_registry.register(OutsideRouting {
                 kind: RoutingKind::Song,
                 artist: Some("Massive Attack".into()),
                 title: Some(title.into()),

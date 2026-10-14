@@ -11,8 +11,8 @@ use futures::FutureExt;
 use octo_core::common::dotnet::{self, is_blank};
 use octo_core::common::{SongIdentity, playlist_id_helper};
 use octo_core::models::radio::{LastFmRadioStation, LastFmRadioStationKind};
+use octo_core::outside::routing::{OutsideRouting, RoutingKind};
 use octo_core::settings::NoticeKind;
-use octo_core::soulseek::soulseek_metadata_service::{RoutingKind, SoulseekRouting};
 use octo_media::cover::{CoverGlyph, CoverSeed, ListCover, list_kinds};
 use octo_subsonic::SubsonicCredential;
 use octo_subsonic::subsonic_request_parser::Parameters;
@@ -714,7 +714,7 @@ pub(crate) fn station_cover_seeds(state: &AppState, station: &LastFmRadioStation
         if !seen.insert(distinct) {
             continue;
         }
-        let routing = SoulseekRouting {
+        let routing = OutsideRouting {
             kind: RoutingKind::Song,
             artist: Some(track.artist.clone()),
             title: Some(track.title.clone()),
@@ -824,7 +824,7 @@ fn chart_cover_seeds(
             continue;
         }
         if let Some(song) = chart.outside.iter().find(|song| song.id == id) {
-            let routing = SoulseekRouting {
+            let routing = OutsideRouting {
                 kind: RoutingKind::Song,
                 artist: Some(song.artist.clone()),
                 title: Some(song.title.clone()),

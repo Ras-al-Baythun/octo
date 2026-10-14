@@ -32,7 +32,7 @@ use crate::services::fingerprint::AcoustIdRateLimiter;
 use crate::services::framework::DotnetDictionary;
 use crate::services::library::library_walk;
 use crate::services::local::ILocalLibraryService;
-use crate::services::soulseek::soulseek_download_service::excluded_folder_names;
+use crate::services::outside::outside_download_service::excluded_folder_names;
 use crate::services::state_file;
 
 /// The one question the sweep asks of a file, behind a seam so tests need no fpcalc.

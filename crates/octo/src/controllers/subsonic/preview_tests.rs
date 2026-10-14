@@ -1,8 +1,8 @@
 //! getPreviewChoices and setPreview: the videos a song from outside the library could play
 //! from, and the pick that every later play reads.
 
+use octo_core::outside::{OutsideRouting, RoutingKind};
 use octo_core::settings::{AppSettings, SubsonicSettings};
-use octo_core::soulseek::{RoutingKind, SoulseekRouting};
 use serde_json::{Value, json};
 use wiremock::matchers::{any, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -70,7 +70,7 @@ async fn fixture() -> Fixture {
 }
 
 fn song(fixture: &Fixture, pinned: Option<&str>) -> String {
-    fixture.state.external_id_registry.register(SoulseekRouting {
+    fixture.state.external_id_registry.register(OutsideRouting {
         kind: RoutingKind::Song,
         artist: Some("Drake".into()),
         title: Some("Passionfruit".into()),
@@ -118,7 +118,7 @@ async fn the_video_that_plays_now_is_marked_and_listed_first_when_unknown() {
     assert_eq!(choices[1]["current"], true);
     assert_eq!(choices[0]["current"], false);
 
-    let elsewhere = fixture.state.external_id_registry.register(SoulseekRouting {
+    let elsewhere = fixture.state.external_id_registry.register(OutsideRouting {
         kind: RoutingKind::Song,
         artist: Some("Drake".into()),
         title: Some("Passionfruit".into()),

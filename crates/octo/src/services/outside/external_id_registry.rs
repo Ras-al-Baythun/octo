@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use octo_core::common::SongIdentity;
-use octo_core::soulseek::{LengthSource, RoutingKind, SongLength, SoulseekRouting, StreamFacts};
+use octo_core::outside::{LengthSource, OutsideRouting, RoutingKind, SongLength, StreamFacts};
 use parking_lot::{Mutex, MutexGuard};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -23,20 +23,20 @@ use crate::services::state_file;
 /// Lock order: the registry never takes a routing's lock while holding its own, so a caller
 /// may hold a routing locked and still call into the registry.
 #[derive(Debug, Clone, Default)]
-pub struct SharedRouting(Arc<Mutex<SoulseekRouting>>);
+pub struct SharedRouting(Arc<Mutex<OutsideRouting>>);
 
 impl SharedRouting {
-    pub fn new(routing: SoulseekRouting) -> Self {
+    pub fn new(routing: OutsideRouting) -> Self {
         SharedRouting(Arc::new(Mutex::new(routing)))
     }
 
     /// The routing, locked for reading or changing in place.
-    pub fn lock(&self) -> MutexGuard<'_, SoulseekRouting> {
+    pub fn lock(&self) -> MutexGuard<'_, OutsideRouting> {
         self.0.lock()
     }
 
     /// A copy of the routing as it is now.
-    pub fn snapshot(&self) -> SoulseekRouting {
+    pub fn snapshot(&self) -> OutsideRouting {
         self.0.lock().clone()
     }
 
@@ -56,8 +56,8 @@ impl SharedRouting {
     }
 }
 
-impl From<SoulseekRouting> for SharedRouting {
-    fn from(routing: SoulseekRouting) -> Self {
+impl From<OutsideRouting> for SharedRouting {
+    fn from(routing: OutsideRouting) -> Self {
         SharedRouting::new(routing)
     }
 }
@@ -129,13 +129,13 @@ impl Lru {
     }
 }
 
-/// One line of `external-ids.json` (the private record `Persisted(string Id, SoulseekRouting Routing)`).
+/// One line of `external-ids.json` (the private record `Persisted(string Id, OutsideRouting Routing)`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase", default)]
 struct Persisted {
     #[serde(deserialize_with = "state_file::null_as_default")]
     id: String,
-    routing: Option<SoulseekRouting>,
+    routing: Option<OutsideRouting>,
 }
 
 const ALPHABET: &[u8; 62] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -434,7 +434,7 @@ impl ExternalIdRegistry {
     /// The Kind prefix is critical: a song "Drake - Hotline Bling" must hash to a
     /// different id than the album "Hotline Bling" or the artist "Drake", or
     /// getCoverArt would return the wrong scope's artwork.
-    pub fn make_short_id(r: &SoulseekRouting) -> String {
+    pub fn make_short_id(r: &OutsideRouting) -> String {
         /// `ExplicitStatus.CleanWord`: the version a clean edit carries.
         const CLEAN_WORD: &str = "clean";
         let text = |s: &Option<String>| s.clone().unwrap_or_default();

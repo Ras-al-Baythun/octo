@@ -17,8 +17,8 @@ use octo_core::lidarr::lidarr_track_fetcher::is_lossless;
 use octo_core::lidarr::{LidarrAlbumCandidate, LidarrError, LidarrImportedTrack};
 use octo_core::models::domain::{Album, Song};
 use octo_core::notifications::{NotificationEvent, NotificationEventType};
+use octo_core::outside::{OutsideRouting, RoutingKind};
 use octo_core::settings::{DownloadSource, LidarrCompletionMode, LidarrSettings, SettingsStore};
-use octo_core::soulseek::{RoutingKind, SoulseekRouting};
 use parking_lot::Mutex;
 use tokio::sync::{Notify, watch};
 use tokio::task::JoinHandle;
@@ -34,7 +34,7 @@ use crate::services::library::navidrome_song_path_resolver::get_full_path;
 use crate::services::library::{LibraryActionJournal, LibraryOwnership, OwnedCopy, UpgradeAsk, UpgradeQueue};
 use crate::services::metadata::DeezerMetadataService;
 use crate::services::notifications::NotificationService;
-use crate::services::soulseek::{ExternalIdRegistry, SoulseekMetadataService};
+use crate::services::outside::{ExternalIdRegistry, OutsideMetadataService};
 use crate::services::subsonic::NavidromeIdentityService;
 
 /// Hearts through Lidarr.
@@ -1155,7 +1155,7 @@ impl Inner {
         before: Arc<HashSet<i32>>,
         landed: Landed,
     ) {
-        let provider = SoulseekMetadataService::PROVIDER_NAME;
+        let provider = OutsideMetadataService::PROVIDER_NAME;
         let mut id = song.as_ref().and_then(|s| {
             let p = s.external_provider.as_deref()?;
             let e = s.external_id.as_deref().filter(|e| !e.is_empty())?;
@@ -1164,7 +1164,7 @@ impl Inner {
         if id.is_none()
             && let Some(ids) = &self.ids
         {
-            id = Some(ids.register(SoulseekRouting {
+            id = Some(ids.register(OutsideRouting {
                 kind: RoutingKind::Song,
                 artist: Some(track.artist.clone().unwrap_or_else(|| album.artist.clone())),
                 title: if dotnet::is_blank(&track.title) {

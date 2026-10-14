@@ -6,8 +6,8 @@ use std::time::Duration;
 use octo_core::common::dotnet;
 use octo_core::fingerprint::VerificationResult;
 use octo_core::models::domain::Song;
+use octo_core::outside::routing::{OutsideRouting, RoutingKind};
 use octo_core::settings::{MetadataSettings, SettingsStore};
-use octo_core::soulseek::soulseek_metadata_service::{RoutingKind, SoulseekRouting};
 use octo_media::cover::cover_image;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
@@ -435,7 +435,7 @@ impl DownloadCoverResolver {
         }
 
         if !found.iter().any(|f| f.side >= Self::SHARP_SIDE) {
-            let routing = SoulseekRouting {
+            let routing = OutsideRouting {
                 kind: if dotnet::is_blank(&song.album) {
                     RoutingKind::Song
                 } else {

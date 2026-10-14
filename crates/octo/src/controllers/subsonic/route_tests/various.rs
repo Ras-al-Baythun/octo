@@ -11,8 +11,8 @@ use chrono::{TimeDelta, Utc};
 use octo_core::last_fm::last_fm_radio_state_store::station_id;
 use octo_core::models::domain::Album;
 use octo_core::models::radio::{LastFmRadioStation, LastFmRadioStationKind, LastFmRadioTrack};
+use octo_core::outside::{OutsideRouting, RoutingKind};
 use octo_core::settings::{AppSettings, GeneratedPlaylistSettings, LastFmSettings, SubsonicSettings};
-use octo_core::soulseek::{RoutingKind, SoulseekRouting};
 use parking_lot::Mutex;
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -1020,7 +1020,7 @@ async fn a_played_outside_song_remembers_the_length_of_the_video_that_played() {
 
 /// An outside artist, as search registers one: its id.
 fn outside_artist(fixture: &LengthFixture, name: &str) -> String {
-    fixture.state.external_id_registry.register(SoulseekRouting {
+    fixture.state.external_id_registry.register(OutsideRouting {
         kind: RoutingKind::Artist,
         artist: Some(name.into()),
         ..Default::default()

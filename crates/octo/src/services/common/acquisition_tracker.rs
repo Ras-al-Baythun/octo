@@ -30,7 +30,7 @@ pub enum AcquisitionState {
     /// Accepted, waiting for the worker.
     #[default]
     Queued,
-    /// Looking for a source or a peer.
+    /// Looking for a source or a copy.
     Searching,
     /// Bytes are flowing.
     Downloading,
@@ -107,9 +107,8 @@ pub struct AcquisitionSnapshot {
     pub key: String,
     /// What the row is for: [`acquisition_kinds`].
     pub kind: String,
-    /// The copy being fetched, once one is chosen: its quality and its peer.
+    /// The copy being fetched, once one is chosen: its quality.
     pub quality: Option<String>,
-    pub peer: Option<String>,
     /// How many lines its log has.
     pub log_lines: i32,
     /// The log itself, oldest first; only [`AcquisitionTracker::detail`] fills it in.
@@ -224,9 +223,8 @@ struct Entry {
 
     kind: String,
 
-    /// The copy being fetched, once one is chosen: its quality and its peer.
+    /// The copy being fetched, once one is chosen: its quality.
     quality: Option<String>,
-    peer: Option<String>,
 
     /// The log of this run, oldest first.
     events: Vec<AcquisitionEvent>,
@@ -316,7 +314,7 @@ impl AcquisitionTracker {
     /// How long a finished or failed entry stays visible.
     pub const FINISHED_RETENTION: TimeDelta = TimeDelta::hours(3);
 
-    /// Lines kept per run of a download. A walk of five peers with every check logs about
+    /// Lines kept per run of a download. A walk of five copies with every check logs about
     /// thirty; past this the oldest lines after the first go.
     pub const MAX_EVENTS: usize = 150;
 
@@ -662,10 +660,9 @@ impl AcquisitionTracker {
                     .filter(|s| !blank(s))
                     .map(str::to_string)
                     .or_else(|| entry.source.clone());
-                let text = match (&from, &entry.peer) {
-                    (None, _) => "Downloading".to_string(),
-                    (Some(from), Some(who)) => format!("Downloading from {from} ({who})"),
-                    (Some(from), _) => format!("Downloading from {from}"),
+                let text = match &from {
+                    None => "Downloading".to_string(),
+                    Some(from) => format!("Downloading from {from}"),
                 };
                 let size = bytes_total.filter(|total| *total > 0).map(size_text);
                 add(
@@ -880,8 +877,7 @@ impl AcquisitionTracker {
         );
     }
 
-    /// The copy being tried now, and why it was chosen. The row shows its quality and peer from
-    /// here on.
+    /// The copy being tried now, and why it was chosen. The row shows its quality from here on.
     pub fn trying(
         &self,
         provider: &str,
@@ -903,7 +899,6 @@ impl AcquisitionTracker {
             return;
         };
         entry.quality = candidate.quality();
-        entry.peer = candidate.peer.clone();
         entry.updated_at = now;
         add(
             entry,
@@ -1221,7 +1216,6 @@ fn open<'a>(
         entry.note = None;
         entry.kind = acquisition_kinds::DOWNLOAD.to_string();
         entry.quality = None;
-        entry.peer = None;
         entry.logged_source = None;
         entry.events.clear();
     } else {
@@ -1249,7 +1243,6 @@ fn open<'a>(
                 run: 0,
                 kind: acquisition_kinds::DOWNLOAD.to_string(),
                 quality: None,
-                peer: None,
                 events: Vec::new(),
                 logged_source: None,
             },
@@ -1385,7 +1378,6 @@ fn snapshot(entry: &Entry, ahead: Option<i32>, with_events: bool) -> Acquisition
         key: key_of(&entry.provider, &entry.external_id),
         kind: entry.kind.clone(),
         quality: entry.quality.clone(),
-        peer: entry.peer.clone(),
         log_lines: entry.events.len() as i32,
         events: with_events.then(|| entry.events.clone()),
     }

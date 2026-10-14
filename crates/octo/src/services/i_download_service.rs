@@ -1,5 +1,5 @@
 //! The music download service's interface and `DirectStreamInfo`. The service itself is
-//! `BaseDownloadService` and `SoulseekDownloadService`.
+//! `BaseDownloadService` and `OutsideDownloadService`.
 //!
 //! Where a download cannot be done the methods answer `Err`, and a caller that branches on the
 //! kind downcasts (`ReplacementRejectedException`).

@@ -43,7 +43,7 @@ Baseline: Rust at 2026.10.04 parity. Target: `main` at `ce63143` (release
 - **Shared files.** The Rust build reads the C# app's own files: the
   dashboard (`octo/wwwroot`), `octo/Assets`, the cover design
   (`octo/Services/CoverArt/Design`), `octo/appsettings.json`, the golden
-  cover samples (`octo.Tests/CoverGolden`), the shared case files
+  cover samples (`crates/octo-media/tests/fixtures/cover-golden`), the shared case files
   (`docs/*-cases.json`) and the release number (`octo/octo.csproj`). A debug
   run serves the dashboard from `octo/wwwroot` with no env vars.
 - **Port behavior, then improve on purpose.** Follow

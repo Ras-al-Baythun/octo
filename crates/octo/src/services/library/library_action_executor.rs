@@ -17,8 +17,8 @@ use indexmap::IndexMap;
 use octo_core::library::generated_playlist_service::dotnet_ticks;
 use octo_core::lidarr::lidarr_client::LidarrError;
 use octo_core::lyrics::{LyricsQuery, LyricsResult, LyricsTiming};
+use octo_core::outside::{OutsideRouting, RoutingKind};
 use octo_core::settings::{DownloadSource, LibraryAction, MetadataSettings, SettingsStore};
-use octo_core::soulseek::{RoutingKind, SoulseekRouting};
 use octo_media::audio::spectrum_analyzer::{SpectrumAnalyzer, SpectrumReport};
 use octo_media::tags::{KeptIdentity, KeptIdentityTags};
 use octo_subsonic::SubsonicCredential;
@@ -44,7 +44,7 @@ use crate::services::library::library_tag_edits::{self, song_tag_fields};
 use crate::services::library::replacement_handoff::ArrivedTags;
 use crate::services::local::ILocalLibraryService;
 use crate::services::lyrics::{LyricsChoiceService, LyricsService, LyricsSidecarWriter};
-use crate::services::soulseek::{ExternalIdRegistry, SoulseekMetadataService};
+use crate::services::outside::{ExternalIdRegistry, OutsideMetadataService};
 
 /// Told the provider and external id of the replacement download the moment it is queued, so the
 /// upgrade queue can follow that download's progress.
@@ -311,7 +311,7 @@ fn is_invalid_operation(error: &anyhow::Error) -> bool {
         error.downcast_ref::<LidarrError>(),
         Some(LidarrError::InvalidOperation(_))
     ) || error
-        .downcast_ref::<crate::services::soulseek::soulseek_download_service::InvalidOperationException>()
+        .downcast_ref::<crate::services::outside::outside_download_service::InvalidOperationException>()
         .is_some()
 }
 
@@ -1035,7 +1035,7 @@ impl LibraryActionExecutor {
                         song.length
                             .map_or_else(String::new, |length| format!(", {length} s long")),
                     );
-                    SoulseekRouting {
+                    OutsideRouting {
                         kind: RoutingKind::Song,
                         artist: Some(original.artist.clone()),
                         title: Some(song.title.clone()),
@@ -1044,7 +1044,7 @@ impl LibraryActionExecutor {
                         ..Default::default()
                     }
                 }
-                None => SoulseekRouting {
+                None => OutsideRouting {
                     kind: RoutingKind::Song,
                     artist: Some(original.artist.clone()),
                     title: Some(original.title.clone()),
@@ -1056,7 +1056,7 @@ impl LibraryActionExecutor {
             let external_id = self.ids.register(routing);
             if let Some(listener) = &request.on_replacement_queued {
                 let told = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    listener(SoulseekMetadataService::PROVIDER_NAME, &external_id)
+                    listener(OutsideMetadataService::PROVIDER_NAME, &external_id)
                 }));
                 if told.is_err() {
                     debug!("Replacement listener failed: it panicked");
@@ -1098,7 +1098,7 @@ impl LibraryActionExecutor {
                     )));
                 };
                 let completion = self.acquisitions.enqueue(
-                    SoulseekMetadataService::PROVIDER_NAME,
+                    OutsideMetadataService::PROVIDER_NAME,
                     &external_id,
                     true,
                     false,

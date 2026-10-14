@@ -19,8 +19,8 @@ use futures::future::BoxFuture;
 use indexmap::IndexMap;
 use octo_core::common::Clock;
 use octo_core::last_fm::last_fm_scrobble_service::sign;
+use octo_core::outside::routing::{OutsideRouting, RoutingKind};
 use octo_core::settings::{AppSettings, LastFmUserSession};
-use octo_core::soulseek::soulseek_metadata_service::{RoutingKind, SoulseekRouting};
 use parking_lot::Mutex;
 use tokio::sync::watch;
 use wiremock::matchers::{any, method};
@@ -334,7 +334,7 @@ impl Fixture {
     }
 
     fn register_outside_song(&self, title: &str, duration: i32) -> String {
-        self.state.external_id_registry.register(SoulseekRouting {
+        self.state.external_id_registry.register(OutsideRouting {
             kind: RoutingKind::Song,
             artist: Some("Bladee".into()),
             title: Some(title.into()),

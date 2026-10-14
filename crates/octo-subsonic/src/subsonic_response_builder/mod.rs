@@ -30,7 +30,7 @@ use octo_core::json::format_double;
 use octo_core::models::domain::{Album, Artist, Song, explicit_status};
 use octo_core::models::radio::LastFmRadioStation;
 use octo_core::models::subsonic::ExternalPlaylist;
-use octo_core::soulseek::{RoutingKind, SoulseekRouting, StreamFacts};
+use octo_core::outside::{OutsideRouting, RoutingKind, StreamFacts};
 use serde_json::{Map, Number, Value, json};
 
 use crate::xml::{XElement, XValue};
@@ -136,7 +136,7 @@ pub const FILE_ONLY_FIELDS: &[&str] = &[
 /// the same routing every time. The registry itself lives in the `octo` crate, which
 /// implements this for it.
 pub trait IdRegistry: Send + Sync {
-    fn register(&self, routing: SoulseekRouting) -> String;
+    fn register(&self, routing: OutsideRouting) -> String;
 
     /// What is known of the stream an outside song under `song_id` plays, when anything is.
     fn stream_facts(&self, _song_id: &str) -> Option<StreamFacts> {
@@ -782,14 +782,14 @@ impl SubsonicResponseBuilder {
         };
 
         let artist_id = song.artist_id.clone().unwrap_or_else(|| {
-            self.id_registry.register(SoulseekRouting {
+            self.id_registry.register(OutsideRouting {
                 kind: RoutingKind::Artist,
                 artist: Some(song.artist.clone()),
                 ..Default::default()
             })
         });
         let album_id = song.album_id.clone().unwrap_or_else(|| {
-            self.id_registry.register(SoulseekRouting {
+            self.id_registry.register(OutsideRouting {
                 kind: RoutingKind::Album,
                 artist: Some(song.artist.clone()),
                 album: Some(album_name.clone()),
@@ -931,7 +931,7 @@ impl SubsonicResponseBuilder {
     /// looking unlike anything the upstream server returns.
     fn build_album_fields(&self, album: &Album) -> Fields {
         let artist_id = album.artist_id.clone().unwrap_or_else(|| {
-            self.id_registry.register(SoulseekRouting {
+            self.id_registry.register(OutsideRouting {
                 kind: RoutingKind::Artist,
                 artist: Some(album.artist.clone()),
                 ..Default::default()

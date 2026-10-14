@@ -46,7 +46,7 @@ use crate::services::family::family_playlists::{
 use crate::services::family::{FamilyCaller, FamilyPlaylist, FamilyPlaylistEntry, family_caller, kid_filter};
 use crate::services::library::library_action_playlist_provisioner::{REMOVE_PLAYLIST, REQUEST_PLAYLIST};
 use crate::services::library::{GeneratedPlaylist, LibraryActionPlaylistProvisioner};
-use crate::services::soulseek::SoulseekMetadataService;
+use crate::services::outside::OutsideMetadataService;
 use crate::services::subsonic::SubsonicResponseBuilderExt;
 use octo_core::family::abilities::RequestQuality;
 use tracing::info;
@@ -1525,7 +1525,7 @@ async fn outside_id_of(state: &AppState, id: &str, path: Option<&str>) -> Option
 /// The song id an outside song plays by: one Octo knows by its short id, any other as
 /// `ext-<provider>-song-<id>`.
 fn outside_song_id(state: &AppState, provider: &str, external_id: &str) -> String {
-    if eq_ignore_case(provider, SoulseekMetadataService::PROVIDER_NAME)
+    if eq_ignore_case(provider, OutsideMetadataService::PROVIDER_NAME)
         && state.external_id_registry.lookup(external_id).is_some()
     {
         return external_id.to_string();

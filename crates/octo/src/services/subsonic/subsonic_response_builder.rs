@@ -16,8 +16,8 @@ use chrono::{DateTime, Utc};
 use octo_core::common::dotnet::to_lower_invariant;
 use octo_core::json::dom::Node;
 use octo_core::library::for_you_lists;
+use octo_core::outside::OutsideRouting;
 use octo_core::settings::GeneratedPlaylistSettings;
-use octo_core::soulseek::SoulseekRouting;
 use octo_subsonic::subsonic_response_builder::{
     Fields, IdRegistry, LOOKUP_ACTION, REMOVE_ACTION, SUBSONIC_VERSION, SubsonicReply,
     SubsonicResponseBuilder,
@@ -32,11 +32,11 @@ use crate::services::common::song_finder::{FindSnapshot, PickOutcome};
 use crate::services::library::{
     GeneratedPlaylist, LibraryActionOutcome, LibraryEditOutcome, SongLookup, TrashedSong, UpgradeJob,
 };
-use crate::services::soulseek::ExternalIdRegistry;
+use crate::services::outside::ExternalIdRegistry;
 use crate::services::you_tube::preview_choices::PreviewChoice;
 
 impl IdRegistry for ExternalIdRegistry {
-    fn register(&self, routing: SoulseekRouting) -> String {
+    fn register(&self, routing: OutsideRouting) -> String {
         ExternalIdRegistry::register(self, routing)
     }
 }
@@ -472,7 +472,6 @@ pub fn event_json(line: &AcquisitionEvent) -> Fields {
 pub fn candidate_json(copy: &AcquisitionCandidate) -> Fields {
     let mut fields = Fields::new();
     fields.insert("source".into(), copy.source.clone().into());
-    fields.insert("peer".into(), json!(copy.peer));
     fields.insert("file".into(), json!(copy.file));
     fields.insert("folder".into(), json!(copy.folder));
     fields.insert("title".into(), json!(copy.title));
@@ -484,9 +483,6 @@ pub fn candidate_json(copy: &AcquisitionCandidate) -> Fields {
     fields.insert("sampleRate".into(), json!(copy.sample_rate));
     fields.insert("size".into(), json!(copy.size));
     fields.insert("length".into(), json!(copy.length));
-    fields.insert("queueLength".into(), json!(copy.queue_length));
-    fields.insert("freeSlot".into(), json!(copy.free_slot));
-    fields.insert("speed".into(), json!(copy.speed));
     fields.insert("rank".into(), json!(copy.rank));
     fields.insert("note".into(), json!(copy.note));
     fields
@@ -520,7 +516,6 @@ pub fn acquisition_json(row: &AcquisitionSnapshot) -> Fields {
     fields.insert("key".into(), row.key.clone().into());
     fields.insert("kind".into(), row.kind.clone().into());
     fields.insert("quality".into(), json!(row.quality));
-    fields.insert("peer".into(), json!(row.peer));
     fields.insert(
         "coverArt".into(),
         row.library_id.clone().unwrap_or_else(|| row.id.clone()).into(),
@@ -605,7 +600,7 @@ mod tests {
                 r#""id":"deezer:1","artist":"A","title":null,"album":null,"state":"downloading","progress":0.25,"#,
                 r#""bytesDone":10,"bytesTotal":null,"source":null,"startedAt":"2026-10-04T08:07:45Z","#,
                 r#""updatedAt":"2026-10-04T08:07:45Z","error":null,"libraryId":null,"ahead":2,"note":null,"#,
-                r#""key":"","kind":"","quality":null,"peer":null,"coverArt":"deezer:1","logLines":0}]}}}"#
+                r#""key":"","kind":"","quality":null,"coverArt":"deezer:1","logLines":0}]}}}"#
             )
         );
     }

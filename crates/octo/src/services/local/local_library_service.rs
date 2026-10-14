@@ -29,7 +29,7 @@ use super::i_local_library_service::{ParsedExternalId, ParsedSongId};
 use super::scan_wait::ScanHold;
 use crate::services::family::NavidromeAdmin;
 use crate::services::framework::DotnetDictionary;
-use crate::services::soulseek::{ExternalIdRegistry, SoulseekMetadataService};
+use crate::services::outside::{ExternalIdRegistry, OutsideMetadataService};
 use crate::services::state_file;
 use crate::services::subsonic::NavidromeIdentityService;
 use crate::services::subsonic::navidrome_version::ServerInfo;
@@ -444,7 +444,7 @@ impl ILocalLibraryService for LocalLibraryService {
         if self.id_registry.lookup(id).is_some() {
             return (
                 true,
-                Some(SoulseekMetadataService::PROVIDER_NAME.into()),
+                Some(OutsideMetadataService::PROVIDER_NAME.into()),
                 Some("song".into()),
                 Some(id.to_string()),
             );

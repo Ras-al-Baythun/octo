@@ -737,9 +737,9 @@ async fn exception_envelopes_use_the_relaxed_encoder() {
     );
 }
 
-fn outside_song(title: &str) -> octo_core::soulseek::SoulseekRouting {
-    octo_core::soulseek::SoulseekRouting {
-        kind: octo_core::soulseek::RoutingKind::Song,
+fn outside_song(title: &str) -> octo_core::outside::OutsideRouting {
+    octo_core::outside::OutsideRouting {
+        kind: octo_core::outside::RoutingKind::Song,
         artist: Some("Artist".into()),
         title: Some(title.into()),
         ..Default::default()

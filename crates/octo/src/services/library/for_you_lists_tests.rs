@@ -16,10 +16,10 @@ use indexmap::IndexMap;
 use octo_core::json::dom::Node;
 use octo_core::library::for_you_lists::{self as lists, TopArtist};
 use octo_core::library::generated_playlist_service::str_of;
+use octo_core::outside::routing::{OutsideRouting, RoutingKind};
 use octo_core::settings::{
     AppSettings, ExplicitFilter, GeneratedPlaylistSettings, SettingsStore, SubsonicSettings,
 };
-use octo_core::soulseek::soulseek_metadata_service::{RoutingKind, SoulseekRouting};
 use octo_subsonic::subsonic_response_builder::SubsonicResponseBuilder;
 use parking_lot::Mutex;
 use tempfile::TempDir;
@@ -31,7 +31,7 @@ use crate::services::library::generated_playlist_service::{
     ForYouServices, GeneratedPlaylist, GeneratedPlaylistService,
 };
 use crate::services::metadata::{DeezerMetadataService, DeezerRateLimitHandler, DeezerRateLimiter};
-use crate::services::soulseek::ExternalIdRegistry;
+use crate::services::outside::ExternalIdRegistry;
 use crate::services::subsonic::{SubsonicProxyService, SubsonicResponseBuilderExt};
 
 /// A stand-in Deezer (under `/dz`) and Navidrome (under `/nd`) in one: an artist with releases
@@ -742,7 +742,7 @@ async fn an_outside_song_pushed_out_of_octos_memory_is_made_again_with_the_same_
 
     // A busy day of searches: more outside songs than Octo remembers.
     for i in 0..ExternalIdRegistry::MAX_ENTRIES + 50 {
-        built.registry.register(SoulseekRouting {
+        built.registry.register(OutsideRouting {
             kind: RoutingKind::Song,
             artist: Some("Flood".into()),
             title: Some(format!("Song {i}")),

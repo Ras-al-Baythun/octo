@@ -10,14 +10,14 @@ use indexmap::IndexMap;
 use octo_core::common::dotnet;
 use octo_core::json::element::{ElementResult, enumerate_array, get_int32, get_string, try_get_property};
 use octo_core::models::domain::Song;
-use octo_core::soulseek::soulseek_metadata_service::RoutingKind;
+use octo_core::outside::routing::RoutingKind;
 use serde_json::Value;
 use tracing::debug;
 
 pub use octo_core::last_fm::last_fm_radio_track_resolver::is_same_recording;
 
 use crate::services::i_music_metadata_service::IMusicMetadataService;
-use crate::services::soulseek::{ExternalIdRegistry, SoulseekMetadataService};
+use crate::services::outside::{ExternalIdRegistry, OutsideMetadataService};
 use crate::services::subsonic::SubsonicProxyService;
 
 #[derive(Clone)]
@@ -58,7 +58,7 @@ impl LastFmRadioTrackResolver {
                 album: route.album.unwrap_or_default(),
                 duration: route.duration,
                 is_local: false,
-                external_provider: Some(SoulseekMetadataService::PROVIDER_NAME.to_string()),
+                external_provider: Some(OutsideMetadataService::PROVIDER_NAME.to_string()),
                 external_id: Some(id.to_string()),
                 ..Default::default()
             });
@@ -547,15 +547,14 @@ mod tests {
             metadata.clone(),
         )
         .await;
-        let id =
-            resolver
-                .registry
-                .register(octo_core::soulseek::soulseek_metadata_service::SoulseekRouting {
-                    artist: Some("A".into()),
-                    title: Some("T".into()),
-                    duration: Some(180),
-                    ..Default::default()
-                });
+        let id = resolver
+            .registry
+            .register(octo_core::outside::routing::OutsideRouting {
+                artist: Some("A".into()),
+                title: Some("T".into()),
+                duration: Some(180),
+                ..Default::default()
+            });
         metadata.hits.lock().insert(
             ("A".into(), "T".into()),
             Song {
@@ -685,14 +684,13 @@ mod tests {
                 .is_none()
         );
 
-        let id =
-            matching
-                .registry
-                .register(octo_core::soulseek::soulseek_metadata_service::SoulseekRouting {
-                    artist: Some("A".into()),
-                    title: Some("T".into()),
-                    ..Default::default()
-                });
+        let id = matching
+            .registry
+            .register(octo_core::outside::routing::OutsideRouting {
+                artist: Some("A".into()),
+                title: Some("T".into()),
+                ..Default::default()
+            });
         let song = matching.resolve_scrobble(&id, &IndexMap::new()).await.unwrap();
         assert!(!song.is_local);
         assert_eq!(song.external_provider.as_deref(), Some("outside"));

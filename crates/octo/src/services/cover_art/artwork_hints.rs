@@ -11,7 +11,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use bytes::Bytes;
 use octo_core::common::SongIdentity;
-use octo_core::soulseek::soulseek_metadata_service::{RoutingKind, SoulseekRouting};
+use octo_core::outside::routing::{OutsideRouting, RoutingKind};
 use parking_lot::Mutex;
 use tracing::debug;
 
@@ -56,7 +56,7 @@ impl ArtworkHints {
     }
 
     /// The cover remembered for a routing, if any.
-    pub fn for_routing(&self, routing: &SoulseekRouting) -> Option<String> {
+    pub fn for_routing(&self, routing: &OutsideRouting) -> Option<String> {
         let name = match routing.kind {
             RoutingKind::Song => routing.title.as_deref()?,
             RoutingKind::Album => routing.album.as_deref()?,
@@ -105,7 +105,7 @@ impl ICoverArtSource for HintedArtwork {
         "chart"
     }
 
-    async fn try_fetch(&self, routing: &SoulseekRouting, _background: bool) -> Option<Bytes> {
+    async fn try_fetch(&self, routing: &OutsideRouting, _background: bool) -> Option<Bytes> {
         let url = self.hints.for_routing(routing)?;
         let response = match self.client.get(&url).send().await {
             Ok(response) if response.status().is_success() => response,

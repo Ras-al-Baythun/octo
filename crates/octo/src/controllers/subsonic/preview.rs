@@ -13,7 +13,7 @@ use crate::app::AppState;
 use crate::http::error::AppResult;
 use crate::http::routes::RouteSet;
 use crate::services::i_music_metadata_service::IMusicMetadataService;
-use crate::services::soulseek::SoulseekMetadataService;
+use crate::services::outside::OutsideMetadataService;
 use crate::services::subsonic::SubsonicResponseBuilderExt;
 use crate::services::you_tube::preview_choices::{preview_choices, set_preview};
 
@@ -40,7 +40,7 @@ fn outside_song(state: &AppState, id: &str) -> Option<String> {
     if !external
         || !provider
             .as_deref()
-            .is_some_and(|p| p.eq_ignore_ascii_case(SoulseekMetadataService::PROVIDER_NAME))
+            .is_some_and(|p| p.eq_ignore_ascii_case(OutsideMetadataService::PROVIDER_NAME))
     {
         return None;
     }
@@ -119,7 +119,7 @@ pub async fn set_preview_video(State(state): State<AppState>, req: Request) -> A
     });
     let Some(mut song) = state
         .music_metadata
-        .get_song(SoulseekMetadataService::PROVIDER_NAME, &external_id)
+        .get_song(OutsideMetadataService::PROVIDER_NAME, &external_id)
         .await
     else {
         return Ok(builder.create_error(FORMAT, 70, "Song not found").into_response());

@@ -23,7 +23,7 @@ use super::media::draws_its_own_marks;
 use crate::app::AppState;
 use crate::http::routes::RouteSet;
 use crate::services::family::family_caller;
-use crate::services::soulseek::SoulseekMetadataService;
+use crate::services::outside::OutsideMetadataService;
 
 /// A lyrics lookup made while a client waits: a slow or overloaded source costs at most this,
 /// and the song simply shows no lyrics this time.
@@ -89,7 +89,7 @@ pub async fn get_lyrics_by_song_id(State(state): State<AppState>, req: Request) 
             .external_id_registry
             .lookup(&id)
             .map(|r| r.snapshot())
-            .or_else(|| SoulseekMetadataService::try_decode_external_id(Some(&id)));
+            .or_else(|| OutsideMetadataService::try_decode_external_id(Some(&id)));
         let known = routing.as_ref().filter(|r| r.has_artist_title());
         let artist = known.and_then(|r| r.artist.clone()).unwrap_or_default();
         let title = known.and_then(|r| r.title.clone()).unwrap_or_default();
@@ -449,7 +449,7 @@ async fn song_for_lyrics(state: &AppState, call: &SubsonicCall, id: &str) -> Opt
         .external_id_registry
         .lookup(id)
         .map(|r| r.snapshot())
-        .or_else(|| SoulseekMetadataService::try_decode_external_id(Some(id)))?;
+        .or_else(|| OutsideMetadataService::try_decode_external_id(Some(id)))?;
     routing.has_artist_title().then(|| Song {
         artist: routing.artist.clone().unwrap_or_default(),
         title: routing.title.clone().unwrap_or_default(),

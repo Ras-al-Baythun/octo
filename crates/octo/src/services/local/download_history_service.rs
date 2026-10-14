@@ -342,7 +342,6 @@ mod tests {
                 (1..=copies)
                     .map(|i| octo_core::models::download::AcquisitionCandidate {
                         source: "Lidarr".into(),
-                        peer: Some(format!("peer{i}")),
                         file: Some(format!("/share/{i}.flac")),
                         format: Some("flac".into()),
                         bit_depth: Some(16),
@@ -424,7 +423,7 @@ mod tests {
         assert_eq!(saved[0].text, "Found 30 copies");
         let copies = saved[0].candidates.as_ref().expect("copies");
         assert_eq!(copies.len(), DownloadHistoryService::MAX_SAVED_CANDIDATES);
-        assert_eq!(copies[0].peer.as_deref(), Some("peer1"));
+        assert_eq!(copies[0].file.as_deref(), Some("/share/1.flac"));
         assert!(saved[1].text.contains("left out"));
         assert_eq!(
             saved[saved.len() - 1].text.chars().count(),

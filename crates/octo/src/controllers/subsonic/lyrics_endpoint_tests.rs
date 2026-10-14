@@ -15,8 +15,8 @@ use chrono::Utc;
 use octo_core::lyrics::{
     ILyricsSource, LyricsCandidate, LyricsLookup, LyricsPin, LyricsQuery, LyricsResult, LyricsSearch,
 };
+use octo_core::outside::routing::{OutsideRouting, RoutingKind};
 use octo_core::settings::{AppSettings, MetadataSettings};
-use octo_core::soulseek::soulseek_metadata_service::{RoutingKind, SoulseekRouting};
 use octo_subsonic::xml::XElement;
 use parking_lot::Mutex;
 use serde_json::Value;
@@ -328,7 +328,7 @@ impl Factory {
 
     /// An outside song in the registry.
     fn external(&self, artist: &str, title: &str) -> String {
-        self.state.external_id_registry.register(SoulseekRouting {
+        self.state.external_id_registry.register(OutsideRouting {
             kind: RoutingKind::Song,
             artist: Some(artist.into()),
             title: Some(title.into()),
@@ -407,7 +407,7 @@ async fn get_lyrics_by_song_id_external_song_returns_structured_lyrics() {
         ),
     )
     .await;
-    let id = factory.state.external_id_registry.register(SoulseekRouting {
+    let id = factory.state.external_id_registry.register(OutsideRouting {
         kind: RoutingKind::Song,
         artist: Some("Some Artist".into()),
         title: Some("Some Song".into()),
@@ -443,7 +443,7 @@ async fn get_lyrics_by_song_id_external_song_fetch_off_is_an_empty_list() {
         ),
     )
     .await;
-    let id = factory.state.external_id_registry.register(SoulseekRouting {
+    let id = factory.state.external_id_registry.register(OutsideRouting {
         kind: RoutingKind::Song,
         artist: Some("Some Artist".into()),
         title: Some("Other Song".into()),

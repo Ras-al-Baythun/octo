@@ -116,7 +116,6 @@ fn a_download_logs_each_step_once_in_order() {
         "abc",
         "1 copy fits, best first",
         vec![AcquisitionCandidate {
-            peer: Some("peer1".into()),
             file: Some("Da Funk.flac".into()),
             format: Some("flac".into()),
             rank: Some(1),
@@ -128,7 +127,6 @@ fn a_download_logs_each_step_once_in_order() {
         "outside",
         "abc",
         AcquisitionCandidate {
-            peer: Some("peer1".into()),
             file: Some("Da Funk.flac".into()),
             format: Some("flac".into()),
             bit_depth: Some(16),
@@ -164,11 +162,10 @@ fn a_download_logs_each_step_once_in_order() {
             "queued", "search", "found", "try", "transfer", "check", "tags", "library", "done"
         ]
     );
-    assert_eq!(lines[4].text, "Downloading from Lidarr (peer1)");
+    assert_eq!(lines[4].text, "Downloading from Lidarr");
     assert_eq!(lines.last().expect("a line").text, "In your library");
     let row = tracker.detail("outside:abc", Some("alice")).expect("the row");
     assert_eq!(row.quality.as_deref(), Some("FLAC 16-bit 44.1 kHz"));
-    assert_eq!(row.peer.as_deref(), Some("peer1"));
 }
 
 #[test]

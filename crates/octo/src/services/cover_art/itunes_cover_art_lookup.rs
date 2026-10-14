@@ -15,7 +15,7 @@ use octo_core::common::cover_names::cover_name_score;
 use octo_core::common::{Clock, SongIdentity, SongMatchOptions, dotnet};
 // `BarcodeForms` came over with tagging, which reads it too.
 use octo_core::json::element::{array_length, enumerate_array, get_string, str_prop, try_get_property};
-use octo_core::soulseek::soulseek_metadata_service::{RoutingKind, SoulseekRouting};
+use octo_core::outside::routing::{OutsideRouting, RoutingKind};
 pub use octo_core::tagging::release_distance::barcode_forms;
 use parking_lot::Mutex;
 use regex::Regex;
@@ -657,7 +657,7 @@ impl ICoverArtSource for ITunesCoverArtLookup {
         "itunes"
     }
 
-    async fn try_fetch(&self, routing: &SoulseekRouting, _background: bool) -> Option<Bytes> {
+    async fn try_fetch(&self, routing: &OutsideRouting, _background: bool) -> Option<Bytes> {
         let artist = routing.artist.as_deref().unwrap_or("").trim();
         match routing.kind {
             RoutingKind::Album => {

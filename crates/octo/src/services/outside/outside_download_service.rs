@@ -1,13 +1,13 @@
 //! The download service: an outside song's permanent copy from YouTube (the yt-dlp shim's MP3)
 //! or Lidarr, and its instant preview stream from YouTube.
 //!
-//! [`SoulseekDownloadService`] is the [`DownloadBackend`] of a [`BaseDownloadService`]: the
+//! [`OutsideDownloadService`] is the [`DownloadBackend`] of a [`BaseDownloadService`]: the
 //! source-specific members, called back by the base with itself.
-//! [`SoulseekDownloadService::build`] puts the two together, and the base is what the app holds
+//! [`OutsideDownloadService::build`] puts the two together, and the base is what the app holds
 //! as its `IDownloadService`.
 //!
 //! The optional services the base does not carry (Lidarr's import hand-off and track fetcher)
-//! are the `Option` fields of [`SoulseekDownloadParts`].
+//! are the `Option` fields of [`OutsideDownloadParts`].
 
 use std::path::Path;
 use std::sync::Arc;
@@ -19,13 +19,13 @@ use octo_core::common::{dotnet, live_version};
 use octo_core::fingerprint::{InconclusiveReason, VerificationVerdict};
 use octo_core::models::domain::Song;
 use octo_core::notifications::{NotificationEvent, NotificationEventType};
+use octo_core::outside::{LengthSource, OutsideRouting, RoutingKind, StreamFacts};
 use octo_core::settings::DownloadSource;
-use octo_core::soulseek::{LengthSource, RoutingKind, SoulseekRouting, StreamFacts};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use super::external_id_registry::{ExternalIdRegistry, SharedRouting};
-use super::soulseek_metadata_service::SoulseekMetadataService;
+use super::outside_metadata_service::OutsideMetadataService;
 use crate::services::common::acquisition_tracker::acquisition_event_kinds;
 use crate::services::common::download_picks::LIDARR_SOURCE;
 use crate::services::common::{
@@ -88,7 +88,7 @@ async fn or_canceled<T>(
 }
 
 /// What the service needs beyond the base's own services.
-pub struct SoulseekDownloadParts {
+pub struct OutsideDownloadParts {
     pub verification: Arc<DownloadVerificationService>,
     pub youtube: Arc<YouTubeResolver>,
     pub id_registry: Arc<ExternalIdRegistry>,
@@ -103,7 +103,7 @@ pub struct SoulseekDownloadParts {
 ///   - `download_track`     -> permanent copy: Lidarr when a caller asks for it by name, else
 ///     the YouTube MP3. Runs when the user stars a track, and in Permanent mode when one is
 ///     played.
-pub struct SoulseekDownloadService {
+pub struct OutsideDownloadService {
     verification: Arc<DownloadVerificationService>,
     youtube: Arc<YouTubeResolver>,
     id_registry: Arc<ExternalIdRegistry>,
@@ -111,9 +111,9 @@ pub struct SoulseekDownloadService {
     lidarr_fetcher: Option<Arc<dyn ILidarrTrackFetcher>>,
 }
 
-impl SoulseekDownloadService {
-    pub fn new(parts: SoulseekDownloadParts) -> Self {
-        SoulseekDownloadService {
+impl OutsideDownloadService {
+    pub fn new(parts: OutsideDownloadParts) -> Self {
+        OutsideDownloadService {
             verification: parts.verification,
             youtube: parts.youtube,
             id_registry: parts.id_registry,
@@ -123,12 +123,12 @@ impl SoulseekDownloadService {
     }
 
     /// The download service as the app registers it (`AddSingleton<IDownloadService,
-    /// SoulseekDownloadService>()`): the base over this backend.
+    /// OutsideDownloadService>()`): the base over this backend.
     pub fn build(
         core: DownloadCore,
         services: DownloadServices,
-        parts: SoulseekDownloadParts,
-    ) -> (Arc<BaseDownloadService>, Arc<SoulseekDownloadService>) {
+        parts: OutsideDownloadParts,
+    ) -> (Arc<BaseDownloadService>, Arc<OutsideDownloadService>) {
         let backend = Arc::new(Self::new(parts));
         let base = BaseDownloadService::new(core, services, Arc::clone(&backend) as Arc<dyn DownloadBackend>);
         (base, backend)
@@ -136,7 +136,7 @@ impl SoulseekDownloadService {
 
     fn routing_for(&self, external_id: &str) -> Option<SharedRouting> {
         self.id_registry.lookup(external_id).or_else(|| {
-            SoulseekMetadataService::try_decode_external_id(Some(external_id)).map(SharedRouting::new)
+            OutsideMetadataService::try_decode_external_id(Some(external_id)).map(SharedRouting::new)
         })
     }
 
@@ -151,7 +151,7 @@ impl SoulseekDownloadService {
     async fn adopt_lidarr_import(
         &self,
         base: &BaseDownloadService,
-        routing: &SoulseekRouting,
+        routing: &OutsideRouting,
         download: &mut TrackDownload,
         import: LidarrImport,
     ) -> anyhow::Result<String> {
@@ -233,7 +233,7 @@ impl SoulseekDownloadService {
     async fn download_via_lidarr(
         &self,
         base: &BaseDownloadService,
-        routing: &SoulseekRouting,
+        routing: &OutsideRouting,
         download: &mut TrackDownload,
         lossless_only: bool,
         ct: &CancellationToken,
@@ -448,9 +448,9 @@ impl SoulseekDownloadService {
 }
 
 #[async_trait]
-impl DownloadBackend for SoulseekDownloadService {
+impl DownloadBackend for OutsideDownloadService {
     fn provider_name(&self) -> &str {
-        SoulseekMetadataService::PROVIDER_NAME
+        OutsideMetadataService::PROVIDER_NAME
     }
 
     /// The service needs nothing beyond the shim it is built with, so it is always available; a
@@ -469,7 +469,7 @@ impl DownloadBackend for SoulseekDownloadService {
     }
 
     /// Restore an album track's routing if the registry evicted it mid-download.
-    /// The fields here MUST match what SoulseekMetadataService's get_album registered
+    /// The fields here MUST match what OutsideMetadataService's get_album registered
     /// (YouTubeId left None, the Song's own Duration) or this hashes to a different id and
     /// fails to restore anything. Routings are mutated in place elsewhere, so rebuild from
     /// the Song, which still carries the values used at registration time.
@@ -481,7 +481,7 @@ impl DownloadBackend for SoulseekDownloadService {
             return;
         }
 
-        self.id_registry.register(SoulseekRouting {
+        self.id_registry.register(OutsideRouting {
             kind: RoutingKind::Song,
             artist: Some(track.artist.clone()),
             title: Some(track.title.clone()),
@@ -506,7 +506,7 @@ impl DownloadBackend for SoulseekDownloadService {
         range_header: Option<&str>,
         _cancellation_token: &CancellationToken,
     ) -> anyhow::Result<Option<DirectStreamInfo>> {
-        if !dotnet::eq_ignore_case(external_provider, SoulseekMetadataService::PROVIDER_NAME) {
+        if !dotnet::eq_ignore_case(external_provider, OutsideMetadataService::PROVIDER_NAME) {
             return Ok(None);
         }
 
@@ -682,7 +682,7 @@ fn sweep_incoming(incoming: &str) {
 // ---- small helpers -------------------------------------------------------------------------
 
 /// The routing's artist and title, for messages.
-fn names(routing: &SoulseekRouting) -> (String, String) {
+fn names(routing: &OutsideRouting) -> (String, String) {
     (
         routing.artist.clone().unwrap_or_default(),
         routing.title.clone().unwrap_or_default(),
@@ -746,5 +746,5 @@ fn files_in(folder: &str) -> std::io::Result<Vec<String>> {
 }
 
 #[cfg(test)]
-#[path = "soulseek_download_service_tests.rs"]
+#[path = "outside_download_service_tests.rs"]
 mod tests;

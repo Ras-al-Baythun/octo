@@ -3,10 +3,10 @@
 
 use std::path::{Path, PathBuf};
 
+use octo_core::outside::routing::{OutsideRouting, RoutingKind};
 use octo_core::settings::{
     AppSettings, LibraryAction, LibraryActionDefinition, LibraryActionSettings, SubsonicSettings,
 };
-use octo_core::soulseek::soulseek_metadata_service::{RoutingKind, SoulseekRouting};
 use octo_subsonic::xml::XElement;
 use regex::Regex;
 use serde_json::{Value, json};
@@ -222,7 +222,7 @@ impl AcquisitionApp {
     }
 
     fn register_teardrop(&self) -> String {
-        self.state.external_id_registry.register(SoulseekRouting {
+        self.state.external_id_registry.register(OutsideRouting {
             kind: RoutingKind::Song,
             artist: Some("Massive Attack".into()),
             title: Some("Teardrop".into()),
@@ -282,7 +282,6 @@ async fn get_acquisitions_returns_only_the_callers_rows_in_the_apps_shape() {
             "libraryId",
             "logLines",
             "note",
-            "peer",
             "progress",
             "quality",
             "source",
@@ -521,7 +520,6 @@ async fn get_acquisition_returns_the_row_with_its_log_in_order() {
         "2 copies fit, best first",
         vec![octo_core::models::download::AcquisitionCandidate {
             source: "Lidarr".into(),
-            peer: Some("peer1".into()),
             file: Some("01 - Da Funk.flac".into()),
             folder: Some("Homework".into()),
             format: Some("flac".into()),
@@ -559,7 +557,7 @@ async fn get_acquisition_returns_the_row_with_its_log_in_order() {
     let copies = lines[2]["candidate"].as_array().expect("copies");
     assert_eq!(copies.len(), 1);
     assert_eq!(copies[0]["quality"], "FLAC 16-bit 44.1 kHz");
-    assert_eq!(copies[0]["peer"], "peer1");
+    assert_eq!(copies[0]["file"], "01 - Da Funk.flac");
     assert_eq!(copies[0]["rank"], 1);
 }
 
@@ -633,7 +631,6 @@ async fn find_songs_starts_a_look_that_get_found_songs_follows_and_pick_found_so
                     vec![FoundCopy::new(
                         octo_core::models::download::AcquisitionCandidate {
                             source: "Lidarr".into(),
-                            peer: Some("peer1".into()),
                             file: Some("03 Teardrop.flac".into()),
                             folder: Some("Mezzanine".into()),
                             format: Some("flac".into()),
@@ -764,7 +761,6 @@ async fn a_look_at_a_flac_library_song(t: &AcquisitionApp) -> (String, String) {
                     vec![FoundCopy::new(
                         octo_core::models::download::AcquisitionCandidate {
                             source: "Lidarr".into(),
-                            peer: Some("peer1".into()),
                             file: Some("03 Teardrop.flac".into()),
                             format: Some("flac".into()),
                             size: Some(40_000_000),

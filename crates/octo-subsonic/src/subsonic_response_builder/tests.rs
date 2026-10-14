@@ -10,8 +10,8 @@ use octo_core::lyrics::lyrics_models::LyricsResult;
 use octo_core::models::domain::{Album, Artist, Song};
 use octo_core::models::radio::{LastFmRadioStation, LastFmRadioTrack};
 use octo_core::models::subsonic::ExternalPlaylist;
+use octo_core::outside::OutsideRouting;
 use octo_core::settings::LibraryActionSettings;
-use octo_core::soulseek::SoulseekRouting;
 use serde_json::{Value, json};
 
 use super::*;
@@ -21,7 +21,7 @@ use crate::xml::XElement;
 struct TestIds;
 
 impl IdRegistry for TestIds {
-    fn register(&self, routing: SoulseekRouting) -> String {
+    fn register(&self, routing: OutsideRouting) -> String {
         format!(
             "{:?}:{}:{}",
             routing.kind,
@@ -329,7 +329,7 @@ struct StreamIds {
 }
 
 impl IdRegistry for StreamIds {
-    fn register(&self, routing: SoulseekRouting) -> String {
+    fn register(&self, routing: OutsideRouting) -> String {
         TestIds.register(routing)
     }
 

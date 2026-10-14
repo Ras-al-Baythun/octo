@@ -337,7 +337,7 @@ async fn a_second_action_on_the_same_song_is_skipped_while_the_first_runs() {
 #[tokio::test]
 async fn a_joined_download_leaves_the_file_it_returned_alone() {
     let f = Fixture::new().await;
-    let external_id = f.ids.register(SoulseekRouting {
+    let external_id = f.ids.register(OutsideRouting {
         kind: RoutingKind::Song,
         artist: Some("Massive Attack".into()),
         title: Some("Teardrop".into()),
@@ -346,7 +346,7 @@ async fn a_joined_download_leaves_the_file_it_returned_alone() {
         ..Default::default()
     });
     let _ = f.queue.enqueue(
-        SoulseekMetadataService::PROVIDER_NAME,
+        OutsideMetadataService::PROVIDER_NAME,
         &external_id,
         true,
         false,

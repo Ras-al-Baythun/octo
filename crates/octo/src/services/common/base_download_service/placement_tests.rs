@@ -21,7 +21,7 @@ use super::test_support::{Harness, build};
 use super::*;
 use crate::services::local::LocalSongMapping;
 use crate::services::local::test_support::FakeLocalLibrary;
-use crate::services::soulseek::soulseek_download_service::INCOMING_FOLDER_NAME;
+use crate::services::outside::outside_download_service::INCOMING_FOLDER_NAME;
 use crate::services::test_support::{flac, mp3};
 
 fn requested(artist: &str, title: &str, album: &str, track: Option<i32>) -> RequestedIdentity {

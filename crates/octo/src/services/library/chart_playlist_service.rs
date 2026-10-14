@@ -29,9 +29,9 @@ use octo_core::common::Clock;
 use octo_core::library::generated_playlist_service::{period_index, playlist_id, user_key};
 use octo_core::models::domain::Song;
 use octo_core::models::radio::{LastFmRadioStation, LastFmRadioTrack};
+use octo_core::outside::LengthSource;
+use octo_core::outside::routing::{OutsideRouting, RoutingKind};
 use octo_core::settings::{ExplicitFilter, SettingsStore};
-use octo_core::soulseek::LengthSource;
-use octo_core::soulseek::soulseek_metadata_service::{RoutingKind, SoulseekRouting};
 use octo_subsonic::SubsonicResponseBuilder;
 use octo_subsonic::subsonic_request_parser::Parameters;
 use parking_lot::Mutex;
@@ -42,7 +42,7 @@ use crate::services::common::{TopSong, TopSongsService, top_songs_service::LIBRA
 use crate::services::family::{FamilyStore, kid_filter};
 use crate::services::framework::InFlight;
 use crate::services::library::GeneratedPlaylist;
-use crate::services::soulseek::external_id_registry::ExternalIdRegistry;
+use crate::services::outside::external_id_registry::ExternalIdRegistry;
 use crate::services::subsonic::SubsonicProxyService;
 
 /// The kind every chart list carries, as a mix carries "genre" or "decade".
@@ -315,7 +315,7 @@ impl ChartPlaylistService {
                 .as_deref()
                 .is_some_and(|id| registry.lookup(id).is_none())
             {
-                registry.register(SoulseekRouting {
+                registry.register(OutsideRouting {
                     kind: RoutingKind::Artist,
                     artist: Some(song.artist.clone()),
                     ..Default::default()
@@ -327,14 +327,14 @@ impl ChartPlaylistService {
                 .is_some_and(|id| registry.lookup(id).is_none())
                 && !song.album.trim().is_empty()
             {
-                registry.register(SoulseekRouting {
+                registry.register(OutsideRouting {
                     kind: RoutingKind::Album,
                     artist: Some(song.artist.clone()),
                     album: Some(song.album.clone()),
                     ..Default::default()
                 });
             }
-            let id = registry.register(SoulseekRouting {
+            let id = registry.register(OutsideRouting {
                 kind: RoutingKind::Song,
                 artist: Some(song.artist.clone()),
                 title: Some(song.title.clone()),

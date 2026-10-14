@@ -894,9 +894,9 @@ async fn nothing_from_octos_sources_lets_navidrome_answer() {
 // library artist is, instead of an empty answer; asked again, Last.fm is not asked again.
 #[tokio::test]
 async fn an_outside_artist_is_the_top_songs_of_artists_like_them() {
-    use octo_core::soulseek::soulseek_metadata_service::{RoutingKind, SoulseekRouting};
+    use octo_core::outside::routing::{OutsideRouting, RoutingKind};
     let f = fixture(|_| {}).await;
-    let id = f.state.external_id_registry.register(SoulseekRouting {
+    let id = f.state.external_id_registry.register(OutsideRouting {
         kind: RoutingKind::Artist,
         artist: Some("Massive Attack".into()),
         ..Default::default()
@@ -917,10 +917,10 @@ async fn an_outside_artist_is_the_top_songs_of_artists_like_them() {
 // the caller: one it refuses never makes Octo look a song up on YouTube.
 #[tokio::test]
 async fn a_scrobble_prewarms_the_queue_only_for_a_caller_navidrome_accepts() {
-    use octo_core::soulseek::soulseek_metadata_service::{RoutingKind, SoulseekRouting};
+    use octo_core::outside::routing::{OutsideRouting, RoutingKind};
     let f = fixture(|_| {}).await;
     let outside = |title: &str| {
-        f.state.external_id_registry.register(SoulseekRouting {
+        f.state.external_id_registry.register(OutsideRouting {
             kind: RoutingKind::Song,
             artist: Some("Queue Band".into()),
             title: Some(title.into()),

@@ -10,9 +10,9 @@ use octo_core::library::for_you_lists::{self, TopArtist};
 use octo_core::library::generated_playlist_service::str_of;
 use octo_core::metadata::deezer_metadata_service::{AlbumAnswer, AlbumHit, AlbumTrack};
 use octo_core::models::domain::Song;
+use octo_core::outside::routing::{OutsideRouting, RoutingKind};
+use octo_core::outside::song_length::LengthSource;
 use octo_core::settings::ExplicitFilter;
-use octo_core::soulseek::song_length::LengthSource;
-use octo_core::soulseek::soulseek_metadata_service::{RoutingKind, SoulseekRouting};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Semaphore;
@@ -20,8 +20,8 @@ use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 use crate::services::metadata::DeezerMetadataService;
-use crate::services::soulseek::ExternalIdRegistry;
-use crate::services::soulseek::soulseek_metadata_service::SoulseekMetadataService;
+use crate::services::outside::ExternalIdRegistry;
+use crate::services::outside::outside_metadata_service::OutsideMetadataService;
 
 /// What an outside song of New Releases is made from, kept with the list so the song can be made
 /// again, with the same id, whenever the list is served: Octo remembers outside songs only so
@@ -74,7 +74,7 @@ pub struct CatalogTrackSong<'a> {
 }
 
 pub fn catalog_song(registry: &ExternalIdRegistry, track: &CatalogTrackSong) -> Song {
-    let artist_id = registry.register(SoulseekRouting {
+    let artist_id = registry.register(OutsideRouting {
         kind: RoutingKind::Artist,
         artist: Some(track.artist.to_string()),
         external_artist_id: track.artist_id.map(str::to_string),
@@ -84,7 +84,7 @@ pub fn catalog_song(registry: &ExternalIdRegistry, track: &CatalogTrackSong) -> 
         .album
         .filter(|album| !octo_core::common::dotnet::is_blank(album))
         .map(|album| {
-            registry.register(SoulseekRouting {
+            registry.register(OutsideRouting {
                 kind: RoutingKind::Album,
                 artist: Some(track.artist.to_string()),
                 album: Some(album.to_string()),
@@ -94,7 +94,7 @@ pub fn catalog_song(registry: &ExternalIdRegistry, track: &CatalogTrackSong) -> 
         });
     // The album rides on the song's routing too, so a download tags it with this album rather
     // than one found again from the artist and title.
-    let id = registry.register(SoulseekRouting {
+    let id = registry.register(OutsideRouting {
         kind: RoutingKind::Song,
         artist: Some(track.artist.to_string()),
         title: Some(track.title.to_string()),
@@ -114,7 +114,7 @@ pub fn catalog_song(registry: &ExternalIdRegistry, track: &CatalogTrackSong) -> 
         cover_art_url: track.cover_url.map(str::to_string),
         cover_art_url_large: track.cover_url.map(str::to_string),
         is_local: false,
-        external_provider: Some(SoulseekMetadataService::PROVIDER_NAME.to_string()),
+        external_provider: Some(OutsideMetadataService::PROVIDER_NAME.to_string()),
         external_id: Some(id),
         ..Default::default()
     }

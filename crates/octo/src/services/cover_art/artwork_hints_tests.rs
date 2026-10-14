@@ -3,8 +3,8 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use super::*;
 
-fn song(artist: &str, title: &str) -> SoulseekRouting {
-    SoulseekRouting {
+fn song(artist: &str, title: &str) -> OutsideRouting {
+    OutsideRouting {
         kind: RoutingKind::Song,
         artist: Some(artist.into()),
         title: Some(title.into()),
@@ -34,7 +34,7 @@ fn a_song_and_an_album_are_found_by_artist_and_name() {
         hints.for_routing(&song("DRAKE", "solar eclipse")).as_deref(),
         Some("https://cdn/song.jpg")
     );
-    let album = SoulseekRouting {
+    let album = OutsideRouting {
         kind: RoutingKind::Album,
         artist: Some("Drake".into()),
         album: Some("HABIBTI (FOMO)".into()),
@@ -45,7 +45,7 @@ fn a_song_and_an_album_are_found_by_artist_and_name() {
         Some("https://cdn/album.jpg")
     );
     assert_eq!(hints.for_routing(&song("Drake", "Quebec")), None);
-    let artist = SoulseekRouting {
+    let artist = OutsideRouting {
         kind: RoutingKind::Artist,
         artist: Some("Drake".into()),
         ..Default::default()

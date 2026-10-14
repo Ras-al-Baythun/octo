@@ -15,7 +15,7 @@ use crate::services::family::FamilyPlacement;
 use crate::services::i_download_service::IDownloadService;
 use crate::services::library::ReplacementRejectedException;
 use crate::services::notifications::NotificationService;
-use crate::services::soulseek::{ExternalIdRegistry, SoulseekMetadataService};
+use crate::services::outside::{ExternalIdRegistry, OutsideMetadataService};
 
 /// Drains [`TrackAcquisitionQueue`].
 ///
@@ -205,7 +205,7 @@ impl AcquisitionWorker {
             .id_registry
             .lookup(&request.external_id)
             .map(|shared| shared.snapshot())
-            .or_else(|| SoulseekMetadataService::try_decode_external_id(Some(&request.external_id)));
+            .or_else(|| OutsideMetadataService::try_decode_external_id(Some(&request.external_id)));
         let askers = request.requested_by();
         self.notifications.notify(NotificationEvent {
             artist: routing.as_ref().and_then(|r| r.artist.clone()),

@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use octo_core::common::dotnet;
-use octo_core::soulseek::soulseek_metadata_service::{RoutingKind, SoulseekRouting};
+use octo_core::outside::routing::{OutsideRouting, RoutingKind};
 use tracing::{debug, info};
 
 use super::i_cover_art_source::ICoverArtSource;
@@ -51,7 +51,7 @@ impl CoverArtAggregator {
         }
     }
 
-    pub async fn get_cover(&self, routing: &SoulseekRouting, background: bool) -> Option<Bytes> {
+    pub async fn get_cover(&self, routing: &OutsideRouting, background: bool) -> Option<Bytes> {
         let cache_key = make_cache_key(routing);
         if let Some(cached) = self.cache.get(&cache_key) {
             return cached;
@@ -87,7 +87,7 @@ impl CoverArtAggregator {
     }
 }
 
-fn make_cache_key(r: &SoulseekRouting) -> String {
+fn make_cache_key(r: &OutsideRouting) -> String {
     let artist = dotnet::to_lower_invariant(r.artist.as_deref().unwrap_or("").trim());
     let album_or_title = if r.kind == RoutingKind::Album {
         r.album.as_deref().or(r.title.as_deref())
@@ -123,7 +123,7 @@ mod tests {
             self.name
         }
 
-        async fn try_fetch(&self, _routing: &SoulseekRouting, _background: bool) -> Option<Bytes> {
+        async fn try_fetch(&self, _routing: &OutsideRouting, _background: bool) -> Option<Bytes> {
             self.asked.fetch_add(1, Ordering::SeqCst);
             self.answer.map(Bytes::from_static)
         }
@@ -145,7 +145,7 @@ mod tests {
         let hit = fake("itunes", Some(b"jpeg"));
         let never = fake("lastfm", Some(b"other"));
         let aggregator = CoverArtAggregator::new(vec![empty.clone(), hit.clone(), never.clone()]);
-        let routing = SoulseekRouting {
+        let routing = OutsideRouting {
             kind: RoutingKind::Album,
             artist: Some(" Air ".into()),
             album: Some("Moon Safari".into()),

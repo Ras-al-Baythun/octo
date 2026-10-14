@@ -49,7 +49,7 @@ impl Respond for Catalog {
 
 struct Harness {
     registry: Arc<ExternalIdRegistry>,
-    service: SoulseekMetadataService,
+    service: OutsideMetadataService,
     catalog: Catalog,
     _server: MockServer,
 }
@@ -64,7 +64,7 @@ impl Harness {
             .count()
     }
 
-    fn lookup(&self, id: &str) -> SoulseekRouting {
+    fn lookup(&self, id: &str) -> OutsideRouting {
         self.registry.lookup(id).expect("registered").snapshot()
     }
 }
@@ -98,7 +98,7 @@ async fn build_service_with_delay(routes: Vec<(&str, &str)>, delay: Option<Durat
         .mount(&server)
         .await;
     let registry = Arc::new(ExternalIdRegistry::in_memory());
-    let service = SoulseekMetadataService::new(
+    let service = OutsideMetadataService::new(
         Arc::new(YouTubeResolver::with_base_url(Some(&server.uri()))),
         registry.clone(),
         deezer_over(&server.uri()),
@@ -113,7 +113,7 @@ async fn build_service_with_delay(routes: Vec<(&str, &str)>, delay: Option<Durat
     }
 }
 
-const PROVIDER: &str = SoulseekMetadataService::PROVIDER_NAME;
+const PROVIDER: &str = OutsideMetadataService::PROVIDER_NAME;
 
 const ALBUM_SEARCH_JSON: &str = r#"{"data":[
     {"id":1,"title":"Test Album","record_type":"album","nb_tracks":2,
@@ -245,7 +245,7 @@ async fn get_album_tracklist_unresolvable_still_returns_album() {
 }
 
 fn file_track_one(h: &Harness) {
-    h.registry.register(SoulseekRouting {
+    h.registry.register(OutsideRouting {
         kind: RoutingKind::Song,
         artist: Some("Test Artist".into()),
         title: Some("Track One".into()),
@@ -347,7 +347,7 @@ async fn get_album_wrong_provider_returns_null() {
 /// as the response builder mints it for getSong and search3 (`convert_song_to_json`: an album
 /// routing of the row's artist and its album, or its title when it has none).
 fn album_id_from_song_row(h: &Harness, artist: &str, title: &str) -> String {
-    h.registry.register(SoulseekRouting {
+    h.registry.register(OutsideRouting {
         kind: RoutingKind::Album,
         artist: Some(artist.into()),
         album: Some(title.into()),
@@ -360,7 +360,7 @@ async fn get_album_song_row_album_deezer_cannot_name_lists_the_song_that_named_i
     // Issue #59: an upload Deezer does not know gets a single-style album named after
     // itself. getAlbum answered it with no songs, and Tempo crashed opening the player.
     let h = build_service(Vec::new()).await;
-    let song_id = h.registry.register(SoulseekRouting {
+    let song_id = h.registry.register(OutsideRouting {
         kind: RoutingKind::Song,
         you_tube_id: Some("yt-raya".into()),
         artist: Some("Phonk".into()),
@@ -384,7 +384,7 @@ async fn get_album_song_row_album_deezer_cannot_name_lists_the_song_that_named_i
 async fn get_album_song_row_album_lists_each_recording_once_under_its_newest_id() {
     // The same upload minted twice (a lookup found its video, so its id changed) is one song.
     let h = build_service(Vec::new()).await;
-    let song = |yt: Option<&str>, artist: &str, duration: i32| SoulseekRouting {
+    let song = |yt: Option<&str>, artist: &str, duration: i32| OutsideRouting {
         kind: RoutingKind::Song,
         you_tube_id: yt.map(str::to_string),
         artist: Some(artist.into()),
@@ -408,7 +408,7 @@ async fn get_album_song_row_album_lists_each_recording_once_under_its_newest_id(
 // The page used to trust the first search hit, and two artists can share a name.
 
 fn outside_artist(h: &Harness, name: &str, deezer_id: Option<&str>) -> String {
-    h.registry.register(SoulseekRouting {
+    h.registry.register(OutsideRouting {
         kind: RoutingKind::Artist,
         artist: Some(name.into()),
         external_artist_id: deezer_id.map(str::to_string),
@@ -767,27 +767,27 @@ async fn outside_albums_say_what_kind_of_release_they_are() {
 
 #[tokio::test]
 async fn the_long_external_id_round_trips_and_a_bad_one_reads_as_nothing() {
-    let routing = SoulseekRouting {
+    let routing = OutsideRouting {
         you_tube_id: Some("abc".into()),
         artist: Some("Sigur Rós".into()),
         title: Some("Hoppípolla?".into()),
         duration: Some(268),
         ..Default::default()
     };
-    let id = SoulseekMetadataService::encode_external_id(&routing);
+    let id = OutsideMetadataService::encode_external_id(&routing);
     assert!(id.starts_with("yt|abc|"), "{id}");
     assert!(!id.contains('='), "{id}");
-    let back = SoulseekMetadataService::try_decode_external_id(Some(&id)).expect("decodes");
+    let back = OutsideMetadataService::try_decode_external_id(Some(&id)).expect("decodes");
     assert_eq!(back.artist, routing.artist);
     assert_eq!(back.title, routing.title);
     assert_eq!(back.duration, Some(268));
     assert_eq!(back.you_tube_id.as_deref(), Some("abc"));
 
-    assert!(SoulseekMetadataService::try_decode_external_id(Some("yt|a|b")).is_none());
-    assert!(SoulseekMetadataService::try_decode_external_id(Some("xx|a|b|c")).is_none());
-    assert!(SoulseekMetadataService::try_decode_external_id(Some("yt|a|!!!|c")).is_none());
-    assert!(SoulseekMetadataService::try_decode_external_id(Some(" ")).is_none());
-    let no_length = SoulseekMetadataService::try_decode_external_id(Some("yt||QQ|VA| x")).expect("decodes");
+    assert!(OutsideMetadataService::try_decode_external_id(Some("yt|a|b")).is_none());
+    assert!(OutsideMetadataService::try_decode_external_id(Some("xx|a|b|c")).is_none());
+    assert!(OutsideMetadataService::try_decode_external_id(Some("yt|a|!!!|c")).is_none());
+    assert!(OutsideMetadataService::try_decode_external_id(Some(" ")).is_none());
+    let no_length = OutsideMetadataService::try_decode_external_id(Some("yt||QQ|VA| x")).expect("decodes");
     assert_eq!(no_length.duration, None);
     assert_eq!(no_length.artist.as_deref(), Some("A"));
 
@@ -959,7 +959,7 @@ struct LengthFixture {
     tables: LengthTables,
     registry: Arc<ExternalIdRegistry>,
     deezer: Arc<DeezerMetadataService>,
-    service: SoulseekMetadataService,
+    service: OutsideMetadataService,
     _servers: (MockServer, MockServer),
 }
 
@@ -978,7 +978,7 @@ impl LengthFixture {
             .await;
         let registry = Arc::new(ExternalIdRegistry::in_memory());
         let deezer = deezer_over(&deezer_server.uri());
-        let service = SoulseekMetadataService::new(
+        let service = OutsideMetadataService::new(
             Arc::new(YouTubeResolver::with_base_url(Some(&shim_server.uri()))),
             registry.clone(),
             deezer.clone(),
@@ -1039,7 +1039,7 @@ impl LengthFixture {
         self
     }
 
-    fn routing(&self, song: &Song) -> SoulseekRouting {
+    fn routing(&self, song: &Song) -> OutsideRouting {
         self.registry.lookup(&song.id).expect("registered").snapshot()
     }
 

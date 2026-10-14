@@ -15,7 +15,7 @@ use crate::services::i_download_service::IDownloadService;
 use crate::services::i_music_metadata_service::IMusicMetadataService;
 use crate::services::library::{HeartOwnership, OwnedCopy, UpgradeSources};
 use crate::services::lidarr::ILidarrHeartAcquisitionService;
-use crate::services::soulseek::ExternalIdRegistry;
+use crate::services::outside::ExternalIdRegistry;
 
 /// The coordinator's optional collaborators, each `None` by default.
 #[derive(Default, Clone)]

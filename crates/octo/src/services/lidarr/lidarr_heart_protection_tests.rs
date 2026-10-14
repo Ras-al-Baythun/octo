@@ -13,11 +13,11 @@ use chrono::Utc;
 use futures::FutureExt;
 use octo_core::models::domain::{Album, Song};
 use octo_core::models::download::DownloadInfo;
+use octo_core::outside::{OutsideRouting, RoutingKind};
 use octo_core::settings::{
     AppSettings, DownloadSource, LibraryAction, LibraryActionDefinition, LibraryActionSettings,
     LidarrSettings, SettingsStore, SubsonicSettings,
 };
-use octo_core::soulseek::{RoutingKind, SoulseekRouting};
 use parking_lot::Mutex;
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
@@ -204,7 +204,7 @@ impl Fixture {
     }
 
     fn id(&self, title: &str) -> String {
-        self.ids.register(SoulseekRouting {
+        self.ids.register(OutsideRouting {
             kind: RoutingKind::Song,
             artist: Some("Massive Attack".into()),
             title: Some(title.into()),

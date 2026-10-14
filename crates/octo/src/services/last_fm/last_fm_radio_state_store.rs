@@ -19,15 +19,15 @@ use octo_core::models::radio::{
     LastFmRadioBan, LastFmRadioPlay, LastFmRadioStateDocument, LastFmRadioStation, LastFmRadioTrack,
     LastFmRadioUnavailableTrack, LastFmRadioUserState, LastFmRadioUserSummary,
 };
+use octo_core::outside::routing::{OutsideRouting, RoutingKind};
 use octo_core::settings::SettingsStore;
-use octo_core::soulseek::soulseek_metadata_service::{RoutingKind, SoulseekRouting};
 use parking_lot::Mutex;
 use serde::Serialize;
 use serde::ser::SerializeMap;
 use tracing::warn;
 
 use crate::services::framework::DotnetDictionary;
-use crate::services::soulseek::{ExternalIdRegistry, SoulseekMetadataService};
+use crate::services::outside::{ExternalIdRegistry, OutsideMetadataService};
 use crate::services::state_file;
 
 pub use octo_core::last_fm::last_fm_radio_state_store::{station_id, to_base62};
@@ -522,7 +522,7 @@ fn rehydrate_routes(registry: &ExternalIdRegistry, user: &mut LastFmRadioUserSta
         .flat_map(|station| station.tracks.iter_mut())
         .filter(|track| !track.is_local)
     {
-        track.resolved_id = Some(registry.register(SoulseekRouting {
+        track.resolved_id = Some(registry.register(OutsideRouting {
             kind: RoutingKind::Song,
             artist: Some(track.artist.clone()),
             title: Some(track.title.clone()),
@@ -532,7 +532,7 @@ fn rehydrate_routes(registry: &ExternalIdRegistry, user: &mut LastFmRadioUserSta
             ..Default::default()
         }));
         if track.external_provider.is_none() {
-            track.external_provider = Some(SoulseekMetadataService::PROVIDER_NAME.to_string());
+            track.external_provider = Some(OutsideMetadataService::PROVIDER_NAME.to_string());
         }
     }
 }

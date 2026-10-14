@@ -9,7 +9,7 @@ use wiremock::matchers::any;
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use super::*;
-use crate::services::soulseek::ExternalIdRegistry;
+use crate::services::outside::ExternalIdRegistry;
 use crate::services::subsonic::NavidromeIdentityService;
 
 const SCAN_STATUS: &str =

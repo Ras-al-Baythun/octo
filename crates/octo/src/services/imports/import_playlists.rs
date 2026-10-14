@@ -7,14 +7,14 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use chrono::Utc;
 use octo_core::common::dotnet::eq_ignore_case;
-use octo_core::soulseek::soulseek_metadata_service::{RoutingKind, SoulseekRouting};
+use octo_core::outside::routing::{OutsideRouting, RoutingKind};
 use tracing::{info, warn};
 
 use super::ImportList;
 use super::import_models::import_sources;
 use crate::services::family::{FamilyPlaylistEntry, FamilyPlaylistStore};
 use crate::services::library::NavidromePlaylistApi;
-use crate::services::soulseek::ExternalIdRegistry;
+use crate::services::outside::ExternalIdRegistry;
 use crate::services::subsonic::NavidromeIdentityService;
 
 /// Where a list goes when Octo keeps its playlist itself: the store of the playlists Octo
@@ -199,7 +199,7 @@ impl ImportPlaylists {
         };
         let mut wanted: Vec<FamilyPlaylistEntry> = Vec::new();
         for track in &list.tracks {
-            let outside = kept.ids.register(SoulseekRouting {
+            let outside = kept.ids.register(OutsideRouting {
                 kind: RoutingKind::Song,
                 artist: Some(track.artist.clone()),
                 title: Some(track.title.clone()),

@@ -23,8 +23,8 @@ impl StreamFactsSource for FakeShim {
     }
 }
 
-fn song(artist: &str, title: &str) -> SoulseekRouting {
-    SoulseekRouting {
+fn song(artist: &str, title: &str) -> OutsideRouting {
+    OutsideRouting {
         kind: RoutingKind::Song,
         artist: Some(artist.into()),
         title: Some(title.into()),
@@ -126,7 +126,7 @@ async fn sized_unknown_and_recently_tried_songs_are_not_queued_twice() {
     registry.remember_stream(&sized_id, "vid-c", &sized(1));
     assert!(!warmer.want(&sized_id, true));
     assert!(!warmer.want("unknown", true));
-    let artist = registry.register(SoulseekRouting {
+    let artist = registry.register(OutsideRouting {
         kind: RoutingKind::Artist,
         artist: Some("Justice".into()),
         ..Default::default()
@@ -224,7 +224,7 @@ async fn a_stream_far_from_the_catalog_length_never_replaces_it() {
     let mut shim = FakeShim::default();
     shim.hits.insert("Velvet Static Velvet".into(), hit_of(3));
     let (registry, _shim, warmer) = warmer_over(shim);
-    let id = registry.register(SoulseekRouting {
+    let id = registry.register(OutsideRouting {
         duration: Some(201),
         ..song("Velvet Static", "Velvet")
     });
@@ -241,7 +241,7 @@ async fn a_stream_length_fills_an_unknown_length() {
     let mut shim = FakeShim::default();
     shim.hits.insert("Velvet Static Velvet".into(), hit_of(200));
     let (registry, _shim, warmer) = warmer_over(shim);
-    let id = registry.register(SoulseekRouting {
+    let id = registry.register(OutsideRouting {
         duration: None,
         ..song("Velvet Static", "Velvet")
     });
@@ -259,7 +259,7 @@ async fn a_clip_length_never_fills_an_unknown_length() {
     let mut shim = FakeShim::default();
     shim.hits.insert("Velvet Static Velvet".into(), hit_of(3));
     let (registry, _shim, warmer) = warmer_over(shim);
-    let id = registry.register(SoulseekRouting {
+    let id = registry.register(OutsideRouting {
         duration: None,
         ..song("Velvet Static", "Velvet")
     });

@@ -21,15 +21,15 @@ use octo_core::last_fm::last_fm_radio_track_resolver::is_same_recording;
 use octo_core::library::generated_playlist_service::dotnet_ticks;
 use octo_core::models::domain::{Album, Artist, Song};
 use octo_core::models::radio::{LastFmRadioStation, LastFmRadioTrack};
+use octo_core::outside::{OutsideRouting, RoutingKind};
 use octo_core::settings::{ExplicitFilter, SettingsStore, SubsonicSettings};
-use octo_core::soulseek::{RoutingKind, SoulseekRouting};
 use parking_lot::Mutex;
 use serde_json::Value;
 use tracing::{debug, info, warn};
 
 use crate::services::family::{LibraryScope, ScopeResolver};
 use crate::services::i_music_metadata_service::IMusicMetadataService;
-use crate::services::soulseek::ExternalIdRegistry;
+use crate::services::outside::ExternalIdRegistry;
 use crate::services::subsonic::SubsonicProxyService;
 
 /// Which kind of row a sync walk pages through (one kind per walk).
@@ -677,7 +677,7 @@ impl SyncCatalogService {
                 Some(id) => {
                     self.metadata
                         .get_song(
-                            crate::services::soulseek::soulseek_metadata_service::SoulseekMetadataService::PROVIDER_NAME,
+                            crate::services::outside::outside_metadata_service::OutsideMetadataService::PROVIDER_NAME,
                             id,
                         )
                         .await
@@ -731,7 +731,7 @@ impl SyncCatalogService {
                     local_ids.insert(artist_id.to_string());
                 }
                 _ => {
-                    hit.artist_id = Some(self.registry.register(SoulseekRouting {
+                    hit.artist_id = Some(self.registry.register(OutsideRouting {
                         kind: RoutingKind::Artist,
                         artist: Some(hit.artist.clone()),
                         ..Default::default()
@@ -749,7 +749,7 @@ impl SyncCatalogService {
                     local_ids.insert(album_id.clone());
                 }
                 None => {
-                    hit.album_id = Some(self.registry.register(SoulseekRouting {
+                    hit.album_id = Some(self.registry.register(OutsideRouting {
                         kind: RoutingKind::Album,
                         artist: Some(hit.artist.clone()),
                         album: Some(album),

@@ -321,7 +321,7 @@ mod tests {
     use super::*;
     use crate::services::last_fm::LastFmService;
     use crate::services::last_fm::last_fm_radio_state_store::station_id;
-    use crate::services::soulseek::ExternalIdRegistry;
+    use crate::services::outside::ExternalIdRegistry;
 
     struct WorkerFixture {
         _dir: TempDir,

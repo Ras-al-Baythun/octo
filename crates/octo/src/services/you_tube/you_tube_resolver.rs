@@ -4,8 +4,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures::future::{BoxFuture, Shared};
+use octo_core::outside::StreamFacts;
 use octo_core::settings::SettingsStore;
-use octo_core::soulseek::StreamFacts;
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use serde_json::Value;
 use tokio::sync::Semaphore;

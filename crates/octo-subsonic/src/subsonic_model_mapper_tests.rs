@@ -6,7 +6,7 @@ use std::sync::Arc;
 use octo_core::models::domain::{Album, Artist, Song};
 use octo_core::models::search::SearchResult;
 use octo_core::models::subsonic::ExternalPlaylist;
-use octo_core::soulseek::SoulseekRouting;
+use octo_core::outside::OutsideRouting;
 use serde_json::{Value, json};
 
 use super::*;
@@ -15,7 +15,7 @@ use crate::subsonic_response_builder::IdRegistry;
 struct TestIds;
 
 impl IdRegistry for TestIds {
-    fn register(&self, routing: SoulseekRouting) -> String {
+    fn register(&self, routing: OutsideRouting) -> String {
         format!("{:?}:{}", routing.kind, routing.artist.unwrap_or_default())
     }
 }

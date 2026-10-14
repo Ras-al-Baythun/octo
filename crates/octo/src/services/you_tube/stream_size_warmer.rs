@@ -22,7 +22,7 @@ use async_trait::async_trait;
 use axum::extract::{Request, State};
 use axum::middleware::Next;
 use axum::response::Response;
-use octo_core::soulseek::{LengthSource, RoutingKind, SongLength, SoulseekRouting, StreamFacts};
+use octo_core::outside::{LengthSource, OutsideRouting, RoutingKind, SongLength, StreamFacts};
 use octo_subsonic::subsonic_response_builder::IdRegistry;
 use parking_lot::Mutex;
 use tokio::sync::{Semaphore, mpsc};
@@ -30,7 +30,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
 
 use super::you_tube_resolver::{YouTubeHit, YouTubeResolver};
-use crate::services::soulseek::ExternalIdRegistry;
+use crate::services::outside::ExternalIdRegistry;
 
 /// How many songs can wait at once; past this, new rows are dropped.
 pub const QUEUE_CAPACITY: usize = 512;
@@ -258,7 +258,7 @@ impl StreamSizeWarmer {
     /// nothing was asked; else whether the lookup brought an answer.
     pub async fn warm_one(&self, song_id: &str) -> Option<bool> {
         let routing = self.registry.lookup(song_id)?;
-        let r: SoulseekRouting = routing.snapshot();
+        let r: OutsideRouting = routing.snapshot();
         let loudness = self.loudness_wanted.lock().remove(song_id) && r.track_gain.is_none();
         if r.kind != RoutingKind::Song || (r.stream_size.is_some() && !loudness) {
             return None;
@@ -431,7 +431,7 @@ impl StreamSizeWarmer {
 }
 
 impl IdRegistry for StreamSizeWarmer {
-    fn register(&self, routing: SoulseekRouting) -> String {
+    fn register(&self, routing: OutsideRouting) -> String {
         self.registry.register(routing)
     }
 

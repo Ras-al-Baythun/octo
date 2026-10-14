@@ -15,7 +15,7 @@ use octo_core::json::datetime::format_utc;
 use octo_core::json::dom::Node;
 use octo_core::models::domain::{Album, Artist, Song};
 use octo_core::models::radio::LastFmRadioStation;
-use octo_core::soulseek::RoutingKind;
+use octo_core::outside::RoutingKind;
 use octo_subsonic::Parameters;
 use octo_subsonic::subsonic_model_mapper::album_key;
 use octo_subsonic::subsonic_response_builder::IdRegistry;
@@ -28,7 +28,7 @@ use super::action_helpers::{
 use super::playlists::to_node;
 use crate::app::AppState;
 use crate::http::error::AppError;
-use crate::services::soulseek::SoulseekMetadataService;
+use crate::services::outside::OutsideMetadataService;
 use crate::services::subsonic::{RawRelayResult, SubsonicProxyService};
 
 /// The request as the catch-all read it.
@@ -665,7 +665,7 @@ async fn try_serve_native_external_album(state: &AppState, endpoint: &str) -> Op
     }
     let album = state
         .metadata_service
-        .get_album(SoulseekMetadataService::PROVIDER_NAME, &id)
+        .get_album(OutsideMetadataService::PROVIDER_NAME, &id)
         .await?;
     let body = octo_core::json::to_string(&native_album_object(&album, 1));
     Some(written_json(
@@ -695,7 +695,7 @@ async fn try_serve_native_album_songs(state: &AppState, request: &NativeRequest<
     }
     let album = state
         .metadata_service
-        .get_album(SoulseekMetadataService::PROVIDER_NAME, album_id)
+        .get_album(OutsideMetadataService::PROVIDER_NAME, album_id)
         .await?;
     let rows: Vec<Value> = album
         .songs
@@ -721,7 +721,7 @@ async fn try_serve_native_external_artist(state: &AppState, endpoint: &str) -> O
     }
     let artist = state
         .metadata_service
-        .get_artist(SoulseekMetadataService::PROVIDER_NAME, &id)
+        .get_artist(OutsideMetadataService::PROVIDER_NAME, &id)
         .await?;
     // The counts come from the same list the page shows, so they agree with it. Only the
     // track counts already known: the page asks for that list at the same moment, and
@@ -789,11 +789,11 @@ async fn outside_artist_albums(
     let metadata = &state.metadata_service;
     let mut albums = if known_counts_only {
         metadata
-            .get_artist_albums_known_counts(SoulseekMetadataService::PROVIDER_NAME, artist_id)
+            .get_artist_albums_known_counts(OutsideMetadataService::PROVIDER_NAME, artist_id)
             .await
     } else {
         metadata
-            .get_artist_albums(SoulseekMetadataService::PROVIDER_NAME, artist_id)
+            .get_artist_albums(OutsideMetadataService::PROVIDER_NAME, artist_id)
             .await
     };
     for album in &mut albums {

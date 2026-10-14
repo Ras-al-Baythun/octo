@@ -44,7 +44,6 @@ fn flac(indexer: &str, rank: i32) -> FoundCopy {
     FoundCopy::new(
         AcquisitionCandidate {
             source: LIDARR_SOURCE.into(),
-            peer: Some(indexer.into()),
             file: Some(release.clone()),
             format: Some("FLAC".into()),
             size: Some(300_000_000),

@@ -13,7 +13,7 @@ use wiremock::matchers::any;
 use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
 use super::*;
-use crate::services::soulseek::ExternalIdRegistry;
+use crate::services::outside::ExternalIdRegistry;
 
 /// The usual Last.fm fake: tags, similar tracks and artists, and top tracks, by `method`.
 #[derive(Clone)]

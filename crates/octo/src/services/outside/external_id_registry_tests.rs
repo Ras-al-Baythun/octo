@@ -3,8 +3,8 @@
 
 use super::*;
 
-fn song(artist: &str, title: &str) -> SoulseekRouting {
-    SoulseekRouting {
+fn song(artist: &str, title: &str) -> OutsideRouting {
+    OutsideRouting {
         kind: RoutingKind::Song,
         artist: Some(artist.into()),
         title: Some(title.into()),
@@ -12,8 +12,8 @@ fn song(artist: &str, title: &str) -> SoulseekRouting {
     }
 }
 
-fn album(artist: &str, album: &str, deezer: Option<&str>) -> SoulseekRouting {
-    SoulseekRouting {
+fn album(artist: &str, album: &str, deezer: Option<&str>) -> OutsideRouting {
+    OutsideRouting {
         kind: RoutingKind::Album,
         artist: Some(artist.into()),
         album: Some(album.into()),
@@ -38,7 +38,7 @@ const FIXTURE: &str = concat!(
 #[test]
 fn register_same_routing_produces_same_id() {
     let registry = ExternalIdRegistry::in_memory();
-    let a = SoulseekRouting {
+    let a = OutsideRouting {
         duration: Some(255),
         ..song("Radiohead", "Nude")
     };
@@ -53,7 +53,7 @@ fn register_different_kinds_same_names_produce_different_ids() {
     let registry = ExternalIdRegistry::in_memory();
     let song_id = registry.register(song("Radiohead", "In Rainbows"));
     let album_id = registry.register(album("Radiohead", "In Rainbows", None));
-    let artist_id = registry.register(SoulseekRouting {
+    let artist_id = registry.register(OutsideRouting {
         kind: RoutingKind::Artist,
         artist: Some("Radiohead".into()),
         ..Default::default()
@@ -126,7 +126,7 @@ fn register_survives_a_restart() {
     let (_dir, path) = temp_path("octo-ids.json");
     let id = {
         let first = ExternalIdRegistry::new(Some(&path));
-        first.register(SoulseekRouting {
+        first.register(OutsideRouting {
             duration: Some(290),
             ..song("Radiohead", "Reckoner")
         })
@@ -168,13 +168,13 @@ fn register_artist_by_name_alone_keeps_the_catalog_artist_already_chosen() {
     // Two artists can share a name, and the page settled on one of them. Every album row
     // mints its artist again by name alone, which must not undo that choice.
     let registry = ExternalIdRegistry::in_memory();
-    let id = registry.register(SoulseekRouting {
+    let id = registry.register(OutsideRouting {
         kind: RoutingKind::Artist,
         artist: Some("Nirvana".into()),
         external_artist_id: Some("415".into()),
         ..Default::default()
     });
-    registry.register(SoulseekRouting {
+    registry.register(OutsideRouting {
         kind: RoutingKind::Artist,
         artist: Some("Nirvana".into()),
         ..Default::default()
@@ -341,7 +341,7 @@ fn a_looked_up_routing_changed_in_place_is_what_the_registry_holds() {
 
     // An artist page settles the catalog artist on the routing it looked up and registers that
     // same object again (ReferenceEquals: nothing to merge).
-    let artist_id = registry.register(SoulseekRouting {
+    let artist_id = registry.register(OutsideRouting {
         kind: RoutingKind::Artist,
         artist: Some("Nirvana".into()),
         ..Default::default()
@@ -355,7 +355,7 @@ fn a_looked_up_routing_changed_in_place_is_what_the_registry_holds() {
 #[test]
 fn songs_filed_under_finds_one_row_per_recording_newest_first() {
     let registry = ExternalIdRegistry::in_memory();
-    let with_album = |title: &str, album: Option<&str>, duration: i32| SoulseekRouting {
+    let with_album = |title: &str, album: Option<&str>, duration: i32| OutsideRouting {
         album: album.map(String::from),
         duration: Some(duration),
         ..song("Justice", title)
@@ -395,7 +395,7 @@ fn songs_filed_under_finds_one_row_per_recording_newest_first() {
 #[test]
 fn ids_only_a_clean_copy_gets_a_new_one() {
     let registry = ExternalIdRegistry::in_memory();
-    let song = |version: Option<&str>| SoulseekRouting {
+    let song = |version: Option<&str>| OutsideRouting {
         kind: RoutingKind::Song,
         artist: Some("Kendrick Lamar".into()),
         title: Some("luther".into()),
@@ -403,7 +403,7 @@ fn ids_only_a_clean_copy_gets_a_new_one() {
         version: version.map(String::from),
         ..Default::default()
     };
-    let album = |version: Option<&str>| SoulseekRouting {
+    let album = |version: Option<&str>| OutsideRouting {
         kind: RoutingKind::Album,
         artist: Some("Kendrick Lamar".into()),
         album: Some("GNX".into()),
@@ -424,7 +424,7 @@ fn ids_only_a_clean_copy_gets_a_new_one() {
 #[test]
 fn registry_a_search_row_minted_again_keeps_what_the_catalog_said() {
     let registry = ExternalIdRegistry::in_memory();
-    let id = registry.register(SoulseekRouting {
+    let id = registry.register(OutsideRouting {
         explicit_content: Some(1),
         ..song("Tame Impala", "Dracula")
     });
@@ -446,7 +446,7 @@ fn registry_a_search_row_minted_again_keeps_what_the_catalog_said() {
 #[test]
 fn a_registration_without_an_album_keeps_the_album_already_known() {
     let registry = ExternalIdRegistry::in_memory();
-    let searched = registry.register(SoulseekRouting {
+    let searched = registry.register(OutsideRouting {
         album: Some("Tidal Lines".into()),
         ..song("Zephyr Echo", "Glass Harbor")
     });
@@ -455,13 +455,13 @@ fn a_registration_without_an_album_keeps_the_album_already_known() {
     let album_of = |id: &str| registry.lookup(id).expect("known").lock().album.clone();
     assert_eq!(album_of(&radio).as_deref(), Some("Tidal Lines"));
 
-    let blank = registry.register(SoulseekRouting {
+    let blank = registry.register(OutsideRouting {
         album: Some("  ".into()),
         ..song("Zephyr Echo", "Glass Harbor")
     });
     assert_eq!(album_of(&blank).as_deref(), Some("Tidal Lines"));
 
-    let other = registry.register(SoulseekRouting {
+    let other = registry.register(OutsideRouting {
         album: Some("Another Album".into()),
         ..song("Zephyr Echo", "Glass Harbor")
     });

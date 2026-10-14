@@ -226,7 +226,7 @@ async fn a_search_takes_the_hit_that_names_the_artist() {
 
     let cover = lookup
         .try_fetch(
-            &SoulseekRouting {
+            &OutsideRouting {
                 kind: RoutingKind::Song,
                 artist: Some("Kino".into()),
                 title: Some("Gruppa krovi".into()),

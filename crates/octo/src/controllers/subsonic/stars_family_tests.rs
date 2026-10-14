@@ -9,7 +9,7 @@ use axum::extract::{Request, State};
 use http_body_util::BodyExt;
 use octo_core::family::abilities::{Abilities, Preset};
 use octo_core::models::domain::{Album, Song};
-use octo_core::soulseek::soulseek_metadata_service::{RoutingKind, SoulseekRouting};
+use octo_core::outside::routing::{OutsideRouting, RoutingKind};
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::path;
 use wiremock::{Mock, MockServer};
@@ -56,7 +56,7 @@ impl Fixture {
                 ..Default::default()
             },
         );
-        let song = state.external_id_registry.register(SoulseekRouting {
+        let song = state.external_id_registry.register(OutsideRouting {
             kind: RoutingKind::Song,
             artist: Some("Massive Attack".into()),
             title: Some("Teardrop".into()),
@@ -64,7 +64,7 @@ impl Fixture {
             duration: Some(330),
             ..Default::default()
         });
-        let album = state.external_id_registry.register(SoulseekRouting {
+        let album = state.external_id_registry.register(OutsideRouting {
             kind: RoutingKind::Album,
             artist: Some("Massive Attack".into()),
             album: Some("Mezzanine".into()),

@@ -8,8 +8,8 @@ use octo_core::common::playlist_id_helper;
 use octo_core::last_fm::last_fm_radio_refresh_policy;
 use octo_core::last_fm::last_fm_scrobble_service::LastFmTrack;
 use octo_core::models::radio::LastFmRadioPlay;
+use octo_core::outside::routing::RoutingKind;
 use octo_core::settings::LibraryRatingScope;
-use octo_core::soulseek::soulseek_metadata_service::RoutingKind;
 use tracing::{debug, info};
 
 use super::caller_checks::{
@@ -24,7 +24,7 @@ use crate::services::family::{HeartOutcome, SavedAlbum, SavedSong, family_caller
 use crate::services::i_music_metadata_service::IMusicMetadataService;
 use crate::services::last_fm::LastFmRadioTrackResolver;
 use crate::services::library::RatingActionRequest;
-use crate::services::soulseek::SoulseekMetadataService;
+use crate::services::outside::OutsideMetadataService;
 use crate::services::subsonic::RelayError;
 use octo_core::family::abilities::RequestQuality;
 use octo_core::family::request::RequestKind;
@@ -125,7 +125,7 @@ pub async fn star(State(state): State<AppState>, req: Request) -> AppResult {
             .local_library
             .parse_song_id(&album_candidate)
             .1
-            .unwrap_or_else(|| SoulseekMetadataService::PROVIDER_NAME.to_string());
+            .unwrap_or_else(|| OutsideMetadataService::PROVIDER_NAME.to_string());
 
         info!("Starring external album {album_candidate}, triggering full album download");
 
@@ -332,7 +332,7 @@ async fn save_album(state: &AppState, user: &str, album_id: &str) {
         .local_library
         .parse_song_id(album_id)
         .1
-        .unwrap_or_else(|| SoulseekMetadataService::PROVIDER_NAME.to_string());
+        .unwrap_or_else(|| OutsideMetadataService::PROVIDER_NAME.to_string());
     let album = state.metadata_service.get_album(&provider, album_id).await;
     let saved = SavedAlbum {
         id: album_id.to_string(),

@@ -1,5 +1,5 @@
 //! The golden covers from the design's reference (tools/cover-art/reference.py in the Octo
-//! app's repo, copied as octo.Tests/CoverGolden/samples.json): the words' sizes and boxes, and
+//! app's repo, copied as crates/octo-media/tests/fixtures/cover-golden/samples.json): the words' sizes and boxes, and
 //! the veiled background before any words, sampled across each cover.
 //!
 //! Beyond those, the reference renderer's output (docs/rust-migration/fixtures/covers): every
@@ -26,8 +26,8 @@ fn book() -> &'static CoverBook {
 }
 
 static SAMPLES: LazyLock<Value> = LazyLock::new(|| {
-    let text =
-        std::fs::read_to_string(repo("octo.Tests/CoverGolden/samples.json")).expect("samples.json reads");
+    let text = std::fs::read_to_string(repo("crates/octo-media/tests/fixtures/cover-golden/samples.json"))
+        .expect("samples.json reads");
     serde_json::from_str(&text).expect("samples.json parses")
 });
 

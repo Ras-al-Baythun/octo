@@ -8,8 +8,8 @@ use octo_core::common::cover_names::cover_name_score;
 use octo_core::common::{SongIdentity, dotnet};
 use octo_core::json::element::{array_length, enumerate_array, get_string, str_prop, try_get_property};
 use octo_core::metadata::accept_language_header;
+use octo_core::outside::routing::{OutsideRouting, RoutingKind};
 use octo_core::settings::MetadataSettings;
-use octo_core::soulseek::soulseek_metadata_service::{RoutingKind, SoulseekRouting};
 use serde_json::Value;
 use tracing::debug;
 
@@ -53,7 +53,7 @@ impl DeezerCoverArtLookup {
         }
     }
 
-    async fn fetch(&self, routing: &SoulseekRouting, background: bool) -> anyhow::Result<Option<Bytes>> {
+    async fn fetch(&self, routing: &OutsideRouting, background: bool) -> anyhow::Result<Option<Bytes>> {
         let artist = routing.artist.as_deref().unwrap_or("").trim();
         let album = routing
             .album
@@ -223,7 +223,7 @@ impl ICoverArtSource for DeezerCoverArtLookup {
         "deezer"
     }
 
-    async fn try_fetch(&self, routing: &SoulseekRouting, background: bool) -> Option<Bytes> {
+    async fn try_fetch(&self, routing: &OutsideRouting, background: bool) -> Option<Bytes> {
         match self.fetch(routing, background).await {
             Ok(bytes) => bytes,
             Err(e) => {

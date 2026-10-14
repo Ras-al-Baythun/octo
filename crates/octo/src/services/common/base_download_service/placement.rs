@@ -19,7 +19,7 @@ use crate::services::library::navidrome_song_path_resolver::get_full_path;
 use crate::services::library::replacement_handoff::ArrivedTags;
 use crate::services::library::{ReplacementHandoff, ReplacementRejectedException};
 use crate::services::lyrics::lyrics_sidecar_writer::LyricsJob;
-use crate::services::soulseek::soulseek_download_service::INCOMING_FOLDER_NAME;
+use crate::services::outside::outside_download_service::INCOMING_FOLDER_NAME;
 
 /// What a download's path is built from.
 #[derive(Debug, Clone, PartialEq, Eq)]

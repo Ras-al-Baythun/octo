@@ -3,8 +3,8 @@
 use octo_core::common::song_identity::{SongMatchOptions, SongRef};
 use octo_core::common::{SongIdentity, dotnet};
 use octo_core::json::element::{ElementResult, enumerate_array, get_int32, try_get_property};
+use octo_core::outside::SongLength;
 use octo_core::settings::SettingsStore;
-use octo_core::soulseek::SongLength;
 use serde_json::Value;
 use tracing::debug;
 

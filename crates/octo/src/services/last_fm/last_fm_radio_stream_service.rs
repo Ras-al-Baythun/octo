@@ -43,7 +43,7 @@ use crate::services::i_download_service::{DirectStreamInfo, IDownloadService};
 use crate::services::i_music_metadata_service::IMusicMetadataService;
 use crate::services::listen_brainz::ListenBrainzService;
 use crate::services::local::ILocalLibraryService;
-use crate::services::soulseek::{ExternalIdRegistry, RadioQueueStore, SoulseekMetadataService};
+use crate::services::outside::{ExternalIdRegistry, OutsideMetadataService, RadioQueueStore};
 use crate::services::subsonic::SubsonicProxyService;
 
 /// The radio streams playing at once, process-wide: 8, or more with Family on (see
@@ -974,7 +974,7 @@ impl LastFmRadioStreamService {
         let provider = track
             .external_provider
             .clone()
-            .unwrap_or_else(|| SoulseekMetadataService::PROVIDER_NAME.to_string());
+            .unwrap_or_else(|| OutsideMetadataService::PROVIDER_NAME.to_string());
         self.shared
             .downloads
             .get_direct_stream(&provider, resolved_id, None, cancellation_token)

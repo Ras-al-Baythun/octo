@@ -367,7 +367,7 @@ mod response {
     use serde_json::Value;
 
     use super::*;
-    use crate::services::soulseek::ExternalIdRegistry;
+    use crate::services::outside::ExternalIdRegistry;
     use crate::services::subsonic::subsonic_response_builder::{
         SubsonicResponseBuilderExt, new_subsonic_response_builder,
     };

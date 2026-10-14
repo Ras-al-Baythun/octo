@@ -6,9 +6,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::http::StatusCode;
+use octo_core::outside::routing::{OutsideRouting, RoutingKind};
 use octo_core::settings::AppSettings;
 use octo_core::settings::SettingsStore;
-use octo_core::soulseek::soulseek_metadata_service::{RoutingKind, SoulseekRouting};
 use octo_subsonic::xml::XElement;
 use parking_lot::Mutex;
 use serde_json::Value;
@@ -19,7 +19,7 @@ use super::test_app::*;
 use crate::app::AppState;
 use crate::services::cover_art::CoverArtAggregator;
 use crate::services::metadata::{DeezerMetadataService, DeezerRateLimitHandler, DeezerRateLimiter};
-use crate::services::soulseek::SoulseekMetadataService;
+use crate::services::outside::OutsideMetadataService;
 use crate::services::you_tube::YouTubeResolver;
 
 const AUTH: &str = "u=alice&t=good&s=salt&v=1.16.1&c=test";
@@ -198,7 +198,7 @@ impl Merged {
                 deezer_settings,
                 deezer_base,
             ));
-            inner.music_metadata = Arc::new(SoulseekMetadataService::new(
+            inner.music_metadata = Arc::new(OutsideMetadataService::new(
                 Arc::new(YouTubeResolver::with_base_url(Some("http://127.0.0.1:1"))),
                 inner.external_id_registry.clone(),
                 catalog,
@@ -460,7 +460,7 @@ async fn get_artist_a_library_artist_gains_the_albums_the_library_lacks() {
 #[tokio::test]
 async fn get_artist_an_outside_artists_page_lists_their_albums() {
     let fixture = Merged::new().await;
-    let id = fixture.state.external_id_registry.register(SoulseekRouting {
+    let id = fixture.state.external_id_registry.register(OutsideRouting {
         kind: RoutingKind::Artist,
         artist: Some("Test Artist".into()),
         // Tapped in search: this artist, not the better known one of the name.

@@ -32,8 +32,8 @@ use octo_core::charts::top_songs::{
 use octo_core::common::SongIdentity;
 use octo_core::common::dotnet::is_blank;
 use octo_core::models::domain::Song;
+use octo_core::outside::routing::RoutingKind;
 use octo_core::settings::SettingsStore;
-use octo_core::soulseek::soulseek_metadata_service::RoutingKind;
 use parking_lot::Mutex;
 use serde_json::Value;
 use tokio::time::Instant;
@@ -46,7 +46,7 @@ use crate::services::i_music_metadata_service::IMusicMetadataService;
 use crate::services::last_fm::last_fm_service::LastFmService;
 use crate::services::library::for_you_lists;
 use crate::services::metadata::deezer_metadata_service::{CHART_LIMIT, DeezerMetadataService};
-use crate::services::soulseek::external_id_registry::ExternalIdRegistry;
+use crate::services::outside::external_id_registry::ExternalIdRegistry;
 
 /// A whole list keeps for this long once every source answered; one built while a source did
 /// not answer, or that came out empty, is asked again soon.

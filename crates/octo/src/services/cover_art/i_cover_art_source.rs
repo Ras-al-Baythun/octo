@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use octo_core::soulseek::soulseek_metadata_service::SoulseekRouting;
+use octo_core::outside::routing::OutsideRouting;
 
 /// One backend that can supply cover art bytes for a routing (song / album /
 /// artist). Multiple sources stack behind `CoverArtAggregator`;
@@ -23,5 +23,5 @@ pub trait ICoverArtSource: Send + Sync {
     /// `background` is true only for fire-and-forget prewarm. Sources with a shared
     /// rate-limited lane (Deezer) route this onto the background lane so prewarm traffic
     /// cannot make an interactive search or cover fetch queue behind it.
-    async fn try_fetch(&self, routing: &SoulseekRouting, background: bool) -> Option<Bytes>;
+    async fn try_fetch(&self, routing: &OutsideRouting, background: bool) -> Option<Bytes>;
 }

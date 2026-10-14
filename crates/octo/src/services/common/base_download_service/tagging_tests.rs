@@ -30,7 +30,7 @@ use super::*;
 use crate::services::fingerprint::MusicBrainzClient;
 use crate::services::metadata::deezer_rate_limit_handler::DeezerRateLimitHandler;
 use crate::services::metadata::deezer_rate_limiter::DeezerRateLimiter;
-use crate::services::soulseek::soulseek_download_service::INCOMING_FOLDER_NAME;
+use crate::services::outside::outside_download_service::INCOMING_FOLDER_NAME;
 use crate::services::test_support::{Routes, flac, mp3};
 
 // ---- the fakes ----------------------------------------------------------------------------

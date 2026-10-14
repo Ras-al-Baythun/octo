@@ -1130,7 +1130,7 @@ mod tests;
 /// An answer the radio readers refuse (`Err`) counts as no length, so the length lookup still
 /// goes on to its last step, the yt-dlp probe.
 #[async_trait::async_trait]
-impl crate::services::soulseek::soulseek_metadata_service::LastFmTrackLengths for LastFmService {
+impl crate::services::outside::outside_metadata_service::LastFmTrackLengths for LastFmService {
     fn has_api_key(&self) -> bool {
         LastFmService::has_api_key(self)
     }

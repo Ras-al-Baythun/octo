@@ -102,13 +102,11 @@ mod tests {
             vec![
                 AcquisitionCandidate {
                     source: "Lidarr".into(),
-                    peer: Some("peer1".into()),
                     rank: Some(1),
                     ..Default::default()
                 },
                 AcquisitionCandidate {
                     source: "Lidarr".into(),
-                    peer: Some("peer2".into()),
                     note: Some("Too short".into()),
                     ..Default::default()
                 },
@@ -120,11 +118,10 @@ mod tests {
             "song-1",
             AcquisitionCandidate {
                 source: "Lidarr".into(),
-                peer: Some("peer1".into()),
                 format: Some("flac".into()),
                 ..Default::default()
             },
-            "Trying peer1",
+            "Trying the first copy",
             Some("The best copy"),
         );
         history.record(DownloadHistoryEntry {

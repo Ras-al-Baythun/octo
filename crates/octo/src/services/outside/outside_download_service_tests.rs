@@ -6,8 +6,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use octo_core::models::domain::Song;
+use octo_core::outside::{OutsideRouting, RoutingKind};
 use octo_core::settings::{AppSettings, DownloadSettings, DownloadSource, SettingsStore, SubsonicSettings};
-use octo_core::soulseek::{RoutingKind, SoulseekRouting};
 use parking_lot::Mutex;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
@@ -116,7 +116,7 @@ async fn build(root: &Root, source: DownloadSource) -> Built {
         .iter()
         .enumerate()
         .map(|(i, (title, seconds))| {
-            let id = registry.register(SoulseekRouting {
+            let id = registry.register(OutsideRouting {
                 kind: RoutingKind::Song,
                 artist: Some("Drake".into()),
                 title: Some(title.to_string()),
@@ -200,14 +200,14 @@ async fn build(root: &Root, source: DownloadSource) -> Built {
         None,
         None,
     ));
-    let parts = SoulseekDownloadParts {
+    let parts = OutsideDownloadParts {
         verification,
         youtube: Arc::new(YouTubeResolver::with_base_url(Some(&server.uri()))),
         id_registry: registry.clone(),
         lidarr_imports: None,
         lidarr_fetcher: None,
     };
-    let (service, _) = SoulseekDownloadService::build(core, services, parts);
+    let (service, _) = OutsideDownloadService::build(core, services, parts);
     Built {
         service,
         registry,

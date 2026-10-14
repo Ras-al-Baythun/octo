@@ -123,7 +123,7 @@ impl ICoverArtSource for FixedSource {
         "fixed"
     }
 
-    async fn try_fetch(&self, _: &SoulseekRouting, _: bool) -> Option<Bytes> {
+    async fn try_fetch(&self, _: &OutsideRouting, _: bool) -> Option<Bytes> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         self.bytes.clone().map(Bytes::from)
     }

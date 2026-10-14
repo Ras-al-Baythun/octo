@@ -1,5 +1,5 @@
 //! ListenBrainz as a radio source, against answers captured from the live labs service
-//! (`octo.Tests/Fixtures/listenbrainz`, 2026-10-04): a recording found by name or by its tag, its
+//! (`crates/octo/tests/fixtures/listenbrainz`, 2026-10-04): a recording found by name or by its tag, its
 //! similar recordings scaled to 0 to 1, and LB Radio only with a token.
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -17,7 +17,7 @@ use crate::services::listen_brainz::listen_brainz_radio_client::collect_rows;
 
 fn fixture(name: &str) -> String {
     std::fs::read_to_string(format!(
-        "{}/../../octo.Tests/Fixtures/listenbrainz/{name}",
+        "{}/tests/fixtures/listenbrainz/{name}",
         env!("CARGO_MANIFEST_DIR")
     ))
     .expect("the fixture is in the repo")

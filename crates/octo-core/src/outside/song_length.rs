@@ -2,7 +2,7 @@
 
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
-use crate::soulseek::soulseek_metadata_service::SoulseekRouting;
+use crate::outside::routing::OutsideRouting;
 
 /// Where the length shown for an outside song came from, weakest first. A shown length is
 /// only ever replaced by one from the same or a stronger source.
@@ -32,13 +32,13 @@ pub enum LengthSource {
 
 /// The rules for the length a client is shown for a song Octo found outside the library.
 ///
-/// This is display only. It lives on [`SoulseekRouting::shown_duration`], never on
-/// [`SoulseekRouting::duration`], because Duration is what a download ranks peer files by and
+/// This is display only. It lives on [`OutsideRouting::shown_duration`], never on
+/// [`OutsideRouting::duration`], because Duration is what a download ranks peer files by and
 /// checks the finished file against, to within 8 seconds. A length filled in so a row can
 /// show one must not start rejecting files a download used to accept.
 ///
 /// A shared routing sits behind a mutex
-/// (`octo::services::soulseek::external_id_registry::SharedRouting`), so these take the routing
+/// (`octo::services::outside::external_id_registry::SharedRouting`), so these take the routing
 /// the caller already holds locked.
 pub struct SongLength;
 
@@ -77,7 +77,7 @@ impl SongLength {
     /// Store a length on the routing unless a stronger source already gave one. Returns
     /// whether it was stored. A missing or zero length is never stored: no length beats a
     /// made-up one.
-    pub fn remember(routing: &mut SoulseekRouting, seconds: Option<i32>, source: LengthSource) -> bool {
+    pub fn remember(routing: &mut OutsideRouting, seconds: Option<i32>, source: LengthSource) -> bool {
         let Some(s) = seconds else { return false };
         if s <= 0 || source == LengthSource::None {
             return false;
@@ -94,13 +94,13 @@ impl SongLength {
     }
 
     /// The shown length and where it came from, read together.
-    pub fn shown(routing: &SoulseekRouting) -> (Option<i32>, LengthSource) {
+    pub fn shown(routing: &OutsideRouting) -> (Option<i32>, LengthSource) {
         (routing.shown_duration, routing.shown_duration_source)
     }
 
     /// A length from a metadata source is known. A video length is only a
     /// stand-in, and still worth asking Deezer and Last.fm about.
-    pub fn has_metadata_length(routing: &SoulseekRouting) -> bool {
+    pub fn has_metadata_length(routing: &OutsideRouting) -> bool {
         Self::shown(routing).1 >= LengthSource::LastFm
     }
 }
@@ -109,8 +109,8 @@ impl SongLength {
 mod tests {
     use super::*;
 
-    fn routing(artist: &str, title: &str) -> SoulseekRouting {
-        SoulseekRouting {
+    fn routing(artist: &str, title: &str) -> OutsideRouting {
+        OutsideRouting {
             artist: Some(artist.into()),
             title: Some(title.into()),
             ..Default::default()

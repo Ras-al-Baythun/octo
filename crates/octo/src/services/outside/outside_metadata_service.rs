@@ -1,5 +1,5 @@
 //! The outside-song metadata service. The routing model is
-//! `octo_core::soulseek::soulseek_metadata_service`.
+//! `octo_core::outside::routing`.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -18,7 +18,7 @@ use octo_core::metadata::deezer_metadata_service::{
 use octo_core::models::domain::{Album, Artist, Song, explicit_status};
 use octo_core::models::search::SearchResult;
 use octo_core::models::subsonic::ExternalPlaylist;
-use octo_core::soulseek::{LengthSource, RoutingKind, SongLength, SoulseekRouting};
+use octo_core::outside::{LengthSource, OutsideRouting, RoutingKind, SongLength};
 use parking_lot::Mutex;
 use tokio::sync::Semaphore;
 use tokio::task::JoinHandle;
@@ -50,14 +50,14 @@ pub trait LastFmTrackLengths: Send + Sync {
 /// Radio queue creation is YouTube-only and lightweight: one yt-dlp search per
 /// Last.fm similar track. Nothing is downloaded here: a permanent copy is the
 /// explicit "user wants to keep this" action (star / permanent download) in
-/// SoulseekDownloadService.
+/// OutsideDownloadService.
 ///
 /// External IDs are kept short (~30-80 chars) so Subsonic clients accept them.
 /// Format:  yt|{videoId}|{artist_b64}|{title_b64}|{durationSec}
 ///
 /// Cheap to clone: the clones share their gates and walks.
 #[derive(Clone)]
-pub struct SoulseekMetadataService {
+pub struct OutsideMetadataService {
     inner: Arc<Inner>,
 }
 
@@ -236,7 +236,7 @@ async fn bounded_wait(gate: &Semaphore) -> Option<tokio::sync::SemaphorePermit<'
 
 /// `string.Equals(a, PROVIDER_NAME, OrdinalIgnoreCase)`.
 fn is_ours(external_provider: &str) -> bool {
-    dotnet::eq_ignore_case(external_provider, SoulseekMetadataService::PROVIDER_NAME)
+    dotnet::eq_ignore_case(external_provider, OutsideMetadataService::PROVIDER_NAME)
 }
 
 fn non_empty(value: Option<&str>) -> Option<&str> {
@@ -326,7 +326,7 @@ fn parse_query(query: &str) -> (String, Option<String>) {
     }
 }
 
-impl SoulseekMetadataService {
+impl OutsideMetadataService {
     /// The provider name of every outside song Octo mints an id for.
     pub const PROVIDER_NAME: &'static str = "outside";
 
@@ -337,7 +337,7 @@ impl SoulseekMetadataService {
         cover_art: Arc<CoverArtAggregator>,
         last_fm: Option<Arc<dyn LastFmTrackLengths>>,
     ) -> Self {
-        SoulseekMetadataService {
+        OutsideMetadataService {
             inner: Arc::new(Inner {
                 youtube,
                 id_registry,
@@ -378,7 +378,7 @@ impl SoulseekMetadataService {
     //   yt|{videoId}|{artistB64}|{titleB64}|{durationSec}
     // Total length ~30-80 chars depending on artist/title length.
 
-    pub fn encode_external_id(r: &SoulseekRouting) -> String {
+    pub fn encode_external_id(r: &OutsideRouting) -> String {
         let artist = r.artist.as_deref().unwrap_or("");
         let title = r.title.as_deref().unwrap_or("");
         let dur = r.duration.map(|d| d.to_string()).unwrap_or_default();
@@ -390,14 +390,14 @@ impl SoulseekMetadataService {
         )
     }
 
-    pub fn try_decode_external_id(external_id: Option<&str>) -> Option<SoulseekRouting> {
+    pub fn try_decode_external_id(external_id: Option<&str>) -> Option<OutsideRouting> {
         let external_id = external_id.filter(|id| !dotnet::is_blank(id))?;
         let parts: Vec<&str> = external_id.split('|').collect();
         if parts.len() < 4 || parts[0] != "yt" {
             return None;
         }
         let duration = parts.get(4).and_then(|d| parse_int(d));
-        Some(SoulseekRouting {
+        Some(OutsideRouting {
             you_tube_id: Some(parts[1].to_string()),
             artist: Some(b64_url_decode(parts[2])?),
             title: Some(b64_url_decode(parts[3])?),
@@ -446,7 +446,7 @@ impl Inner {
             } else {
                 (hit.explicit_lyrics == Some(true)).then_some(explicit_status::EXPLICIT)
             };
-            let album_id = self.id_registry.register(SoulseekRouting {
+            let album_id = self.id_registry.register(OutsideRouting {
                 kind: RoutingKind::Album,
                 artist: Some(hit.artist.clone()),
                 album: Some(hit.title.clone()),
@@ -455,7 +455,7 @@ impl Inner {
                 version: explicit_status::version_of(words),
                 ..Default::default()
             });
-            let artist_id = self.id_registry.register(SoulseekRouting {
+            let artist_id = self.id_registry.register(OutsideRouting {
                 kind: RoutingKind::Artist,
                 artist: Some(hit.artist.clone()),
                 ..Default::default()
@@ -472,7 +472,7 @@ impl Inner {
                 release_types: release_type_list(hit.record_type.as_deref()),
                 explicit_content_lyrics: words,
                 is_local: false,
-                external_provider: Some(SoulseekMetadataService::PROVIDER_NAME.to_string()),
+                external_provider: Some(OutsideMetadataService::PROVIDER_NAME.to_string()),
                 external_id: Some(album_id),
                 ..Default::default()
             });
@@ -912,7 +912,7 @@ impl Inner {
     /// The catalog artist of this exact name an outside artist stands for: the one
     /// Octo already settled on, else the one more people follow. None when none has the name.
     /// The search is the one the album listing makes, so it costs nothing more.
-    async fn find_catalog_artist(&self, routing: &SoulseekRouting) -> Option<ArtistHit> {
+    async fn find_catalog_artist(&self, routing: &OutsideRouting) -> Option<ArtistHit> {
         let name = non_empty(routing.artist.as_deref())?;
         let candidates = same_name(self.deezer.search_artists(name, ARTIST_CANDIDATES).await, name);
         candidates
@@ -963,7 +963,7 @@ impl Inner {
             .zip(&walk.counts)
             .map(|(release, count)| {
                 let words = (release.explicit_lyrics == Some(true)).then_some(explicit_status::EXPLICIT);
-                let album_id = self.id_registry.register(SoulseekRouting {
+                let album_id = self.id_registry.register(OutsideRouting {
                     kind: RoutingKind::Album,
                     artist: Some(name.to_string()),
                     album: Some(release.title.clone()),
@@ -980,7 +980,7 @@ impl Inner {
                     release_types: release_type_list(release.record_type.as_deref()),
                     explicit_content_lyrics: words,
                     is_local: false,
-                    external_provider: Some(SoulseekMetadataService::PROVIDER_NAME.to_string()),
+                    external_provider: Some(OutsideMetadataService::PROVIDER_NAME.to_string()),
                     external_id: Some(album_id),
                     ..Default::default()
                 }
@@ -1069,11 +1069,11 @@ impl Inner {
     fn list_songs_filed_under(
         &self,
         album: &mut Album,
-        routing: &SoulseekRouting,
+        routing: &OutsideRouting,
         placeholder: &str,
         artist_id: &str,
     ) {
-        let mut filed: Vec<(String, SoulseekRouting)> = self
+        let mut filed: Vec<(String, OutsideRouting)> = self
             .id_registry
             .songs_filed_under(
                 routing.artist.as_deref(),
@@ -1100,7 +1100,7 @@ impl Inner {
                 year: album.year,
                 cover_art_url: album.cover_art_url.clone(),
                 is_local: false,
-                external_provider: Some(SoulseekMetadataService::PROVIDER_NAME.to_string()),
+                external_provider: Some(OutsideMetadataService::PROVIDER_NAME.to_string()),
                 external_id: Some(id),
                 ..Default::default()
             });
@@ -1117,7 +1117,7 @@ fn key_of(song: &Song) -> (String, String, String) {
 }
 
 #[async_trait]
-impl IMusicMetadataService for SoulseekMetadataService {
+impl IMusicMetadataService for OutsideMetadataService {
     async fn search_songs(&self, query: &str, _limit: i32) -> Vec<Song> {
         if dotnet::is_blank(query) {
             return Vec::new();
@@ -1143,7 +1143,7 @@ impl IMusicMetadataService for SoulseekMetadataService {
         // per radio session). YouTube resolution is deferred to /rest/stream where
         // it happens once per actual playback, sequentially as the user advances.
         let registry = &self.inner.id_registry;
-        let external_id = registry.register(SoulseekRouting {
+        let external_id = registry.register(OutsideRouting {
             // YouTubeId intentionally null: resolved lazily on play.
             artist: Some(artist.to_string()),
             title: Some(title.to_string()),
@@ -1619,7 +1619,7 @@ impl IMusicMetadataService for SoulseekMetadataService {
             };
             let routing = match inner.lookup(&song.id) {
                 Some(routing) => routing.snapshot(),
-                None => SoulseekRouting {
+                None => OutsideRouting {
                     kind: RoutingKind::Song,
                     artist: Some(song.artist.clone()),
                     title: Some(song.title.clone()),
@@ -1662,7 +1662,7 @@ impl IMusicMetadataService for SoulseekMetadataService {
             // Same registry id an album row mints for its artist, because the seed is the
             // artist name alone. So an artist found here and the same artist reached from
             // an album are one entity, and getArtist answers for both.
-            let id = inner.id_registry.register(SoulseekRouting {
+            let id = inner.id_registry.register(OutsideRouting {
                 kind: RoutingKind::Artist,
                 artist: Some(name),
                 ..Default::default()
@@ -1768,7 +1768,7 @@ impl IMusicMetadataService for SoulseekMetadataService {
         // Enrich by the track title (the placeholder "album" is the song title) so
         // Deezer returns the REAL album (e.g. "Creep" -> "Pablo Honey"). Degrades
         // to the placeholder name if Deezer misses or is unreachable.
-        let artist_id = inner.id_registry.register(SoulseekRouting {
+        let artist_id = inner.id_registry.register(OutsideRouting {
             kind: RoutingKind::Artist,
             artist: routing.artist.clone(),
             ..Default::default()
@@ -1870,7 +1870,7 @@ impl IMusicMetadataService for SoulseekMetadataService {
             // each track by id through `get_song`, and without this the tagger re-derives the
             // album from artist+title alone, which for a well known single often lands on a
             // greatest-hits record instead of this one.
-            let track_id = inner.id_registry.register(SoulseekRouting {
+            let track_id = inner.id_registry.register(OutsideRouting {
                 kind: RoutingKind::Song,
                 artist: Some(track.artist.clone()),
                 title: Some(track.title.clone()),
@@ -1975,7 +1975,7 @@ impl IMusicMetadataService for SoulseekMetadataService {
         let mut related = Vec::new();
         for other in inner.deezer.related_artists(&hit.deezer_id, limit).await {
             // The same id the artist's search row has, so the row opens that artist's page.
-            let id = inner.id_registry.register(SoulseekRouting {
+            let id = inner.id_registry.register(OutsideRouting {
                 kind: RoutingKind::Artist,
                 artist: Some(other.name.clone()),
                 ..Default::default()
@@ -2051,5 +2051,5 @@ impl IMusicMetadataService for SoulseekMetadataService {
 }
 
 #[cfg(test)]
-#[path = "soulseek_metadata_service_tests.rs"]
+#[path = "outside_metadata_service_tests.rs"]
 mod tests;

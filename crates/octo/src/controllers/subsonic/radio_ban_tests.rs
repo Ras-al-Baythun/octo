@@ -4,7 +4,7 @@
 
 use octo_core::last_fm::last_fm_radio_seed_normalizer::track_key;
 use octo_core::models::domain::Song;
-use octo_core::soulseek::{RoutingKind, SoulseekRouting};
+use octo_core::outside::{OutsideRouting, RoutingKind};
 use wiremock::{Mock, MockServer, Respond, ResponseTemplate};
 
 use super::test_app::*;
@@ -46,7 +46,7 @@ fn rate(id: &str, rating: i32) -> String {
 }
 
 fn online_song(state: &crate::app::AppState) -> String {
-    state.external_id_registry.register(SoulseekRouting {
+    state.external_id_registry.register(OutsideRouting {
         kind: RoutingKind::Song,
         artist: Some("Online Artist".into()),
         title: Some("Online Song".into()),

@@ -29,7 +29,7 @@ use crate::http::error::{AppError, validation_problem};
 use crate::http::routes::RouteSet;
 use crate::services::library::navidrome_song_path_resolver::{get_full_path, is_inside};
 use crate::services::lyrics::LyricsChoiceService;
-use crate::services::soulseek::SoulseekMetadataService;
+use crate::services::outside::OutsideMetadataService;
 
 pub fn routes() -> RouteSet {
     RouteSet::new()
@@ -491,7 +491,7 @@ async fn song_ref(state: &AppState, id: Option<&str>, path: Option<&str>) -> Opt
         .external_id_registry
         .lookup(id)
         .map(|shared| shared.snapshot())
-        .or_else(|| SoulseekMetadataService::try_decode_external_id(Some(id)));
+        .or_else(|| OutsideMetadataService::try_decode_external_id(Some(id)));
     if let Some(routing) = routing.filter(|r| r.has_artist_title()) {
         return Some(SongRef {
             id: Some(id.to_string()),

@@ -6,7 +6,7 @@ use serde_json::json;
 use wiremock::matchers::{method, path, query_param, query_param_is_missing};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-use octo_core::soulseek::soulseek_metadata_service::SoulseekRouting;
+use octo_core::outside::routing::OutsideRouting;
 
 use super::*;
 use crate::services::common::test_fakes::FakeMetadata;
@@ -221,7 +221,7 @@ async fn chart_songs_leave_artwork_hints() {
     let list = charts.service.chart("34").await;
 
     let song = &list.songs[0].song;
-    let routing = SoulseekRouting {
+    let routing = OutsideRouting {
         kind: RoutingKind::Song,
         artist: Some(song.artist.clone()),
         title: Some(song.title.clone()),

@@ -7,7 +7,7 @@ use axum::routing::get;
 use octo_core::charts::chart_settings::{self, ChartKind, OVERALL};
 use octo_core::charts::top_songs::MAX_ROWS;
 use octo_core::models::domain::Song;
-use octo_core::soulseek::soulseek_metadata_service::RoutingKind;
+use octo_core::outside::routing::RoutingKind;
 use octo_subsonic::subsonic_request_parser::Parameters;
 use octo_subsonic::subsonic_response_builder::{ChartChoiceRow, RankedRow, TopSongRow, TopSongsHeader};
 use serde_json::Value;

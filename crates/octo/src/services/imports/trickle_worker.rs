@@ -8,8 +8,8 @@ use futures::future::BoxFuture;
 use octo_core::common::Clock;
 use octo_core::common::acquisition_tracker::user_safe;
 use octo_core::common::dotnet::eq_ignore_case;
+use octo_core::outside::routing::{OutsideRouting, RoutingKind};
 use octo_core::settings::SettingsStore;
-use octo_core::soulseek::soulseek_metadata_service::{RoutingKind, SoulseekRouting};
 use parking_lot::Mutex;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -23,7 +23,7 @@ use crate::services::common::acquisition_tracker::{
 };
 use crate::services::common::{HeartAcquisitionCoordinator, TrackAcquisitionQueue};
 use crate::services::library::LibraryOwnership;
-use crate::services::soulseek::{ExternalIdRegistry, SoulseekMetadataService};
+use crate::services::outside::{ExternalIdRegistry, OutsideMetadataService};
 
 /// A song the trickle may not fetch for this person now (a family member whose library is full,
 /// or who only saves songs), with the words they read. The job is skipped rather than failed.
@@ -180,7 +180,7 @@ impl TrickleWorker {
                     // A family member's songs go to their own library; one whose library is full
                     // (or who only saves songs) gets nothing until that changes.
                     let target = hearts.import_target(&job.owner).map_err(TrickleHeld)?;
-                    let external_id = ids.register(SoulseekRouting {
+                    let external_id = ids.register(OutsideRouting {
                         kind: RoutingKind::Song,
                         artist: Some(job.artist.clone()),
                         title: Some(job.title.clone()),
@@ -189,7 +189,7 @@ impl TrickleWorker {
                         isrc: job.isrc.clone(),
                         ..Default::default()
                     });
-                    let provider = SoulseekMetadataService::PROVIDER_NAME;
+                    let provider = OutsideMetadataService::PROVIDER_NAME;
                     let key = key_of(provider, &external_id);
                     queue.update(&job.owner, &job.key, |j| j.acquisition_key = Some(key.clone()));
                     // The tracker follows only rows that were opened, so the download gets one,

@@ -37,8 +37,8 @@ use octo_core::family::abilities::{AddToLibrary, Preset, RequestQuality};
 use octo_core::family::policy::{self, RequestDecision, storage_full};
 use octo_core::family::request::{FamilyRequest, RequestKind, RequestOutcome, RequestState};
 use octo_core::models::domain::{Album, Song};
+use octo_core::outside::routing::RoutingKind;
 use octo_core::settings::{DownloadSource, SettingsStore};
-use octo_core::soulseek::soulseek_metadata_service::RoutingKind;
 use tokio::sync::broadcast;
 use tracing::{info, warn};
 
@@ -56,7 +56,7 @@ use crate::services::i_music_metadata_service::IMusicMetadataService;
 use crate::services::imports::ImportService;
 use crate::services::library::{LibraryOwnership, OwnedCopy, UpgradeAsk, UpgradeQueue};
 use crate::services::local::ILocalLibraryService;
-use crate::services::soulseek::{ExternalIdRegistry, SoulseekMetadataService};
+use crate::services::outside::{ExternalIdRegistry, OutsideMetadataService};
 
 /// One change to a request, for whoever tells people about it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1345,7 +1345,7 @@ impl RequestCatalog for LiveRequestCatalog {
         if album {
             return Some(OutsideTarget {
                 kind: RequestKind::Album,
-                provider: provider.unwrap_or_else(|| SoulseekMetadataService::PROVIDER_NAME.to_string()),
+                provider: provider.unwrap_or_else(|| OutsideMetadataService::PROVIDER_NAME.to_string()),
                 external_id: id.to_string(),
             });
         }

@@ -28,7 +28,7 @@ use crate::services::common::acquisition_tracker::{acquisition_event_kinds, acqu
 use crate::services::common::download_picks::{DownloadPicks, PickedCopy};
 use crate::services::common::{AcquisitionTracker, DownloadConcurrency};
 use crate::services::framework::DotnetDictionary;
-use crate::services::soulseek::SoulseekMetadataService;
+use crate::services::outside::OutsideMetadataService;
 use crate::services::state_file;
 
 /// The words a job's state goes by on the wire. A contract with the Octo apps.
@@ -768,7 +768,7 @@ impl UpgradeWorker {
                 _ => user_safe(outcome.detail.as_deref()),
             };
             tracker.log(
-                SoulseekMetadataService::PROVIDER_NAME,
+                OutsideMetadataService::PROVIDER_NAME,
                 acquired,
                 if state == UpgradeStates::UPGRADED {
                     acquisition_event_kinds::DONE

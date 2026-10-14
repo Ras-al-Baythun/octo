@@ -28,7 +28,7 @@ use serde_json::{Map, Value, json};
 
 use super::subsonic_response_builder::{SubsonicResponseBuilderExt, new_subsonic_response_builder};
 use crate::services::library::{LibraryActionOutcome, LibraryActionState};
-use crate::services::soulseek::ExternalIdRegistry;
+use crate::services::outside::ExternalIdRegistry;
 
 /// One recorded answer: its content type, its `Content-Length` when it had one, its body.
 struct Recorded {

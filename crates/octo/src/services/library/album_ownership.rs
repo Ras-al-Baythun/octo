@@ -22,7 +22,7 @@ use super::library_snapshot::LibrarySnapshot;
 use super::quality_upgrade_worker::LibrarySongRow;
 use crate::services::family::LibraryScope;
 use crate::services::metadata::DeezerMetadataService;
-use crate::services::soulseek::ExternalIdRegistry;
+use crate::services::outside::ExternalIdRegistry;
 
 /// One library album, with its songs as the index read them.
 #[derive(Debug, Clone, PartialEq)]

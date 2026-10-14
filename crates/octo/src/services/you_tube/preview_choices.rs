@@ -2,12 +2,12 @@
 //! listener picks. The pick is the video every later play streams and a YouTube download
 //! fetches, since both read the song's pinned video first.
 
-use octo_core::soulseek::{LengthSource, RoutingKind, SongLength};
+use octo_core::outside::{LengthSource, RoutingKind, SongLength};
 use serde::Serialize;
 
 use super::you_tube_music_client::PODCAST_EPISODE;
 use super::{YouTubeResolver, YtmRow};
-use crate::services::soulseek::ExternalIdRegistry;
+use crate::services::outside::ExternalIdRegistry;
 
 /// Where a choice was found.
 pub const YOUTUBE_MUSIC: &str = "YouTube Music";
@@ -160,9 +160,9 @@ mod tests {
 
     #[test]
     fn the_pick_is_pinned_with_its_length_when_it_is_a_videos() {
-        use octo_core::soulseek::SoulseekRouting;
+        use octo_core::outside::OutsideRouting;
         let registry = ExternalIdRegistry::in_memory();
-        let id = registry.register(SoulseekRouting {
+        let id = registry.register(OutsideRouting {
             kind: RoutingKind::Song,
             artist: Some("Drake".into()),
             title: Some("Passionfruit".into()),

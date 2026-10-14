@@ -55,7 +55,6 @@ pub struct AcquisitionEvent {
 pub struct AcquisitionCandidate {
     #[serde(deserialize_with = "null_as_default")]
     pub source: String,
-    pub peer: Option<String>,
     pub file: Option<String>,
     pub folder: Option<String>,
     pub format: Option<String>,
@@ -64,9 +63,6 @@ pub struct AcquisitionCandidate {
     pub sample_rate: Option<i32>,
     pub size: Option<i64>,
     pub length: Option<i32>,
-    pub queue_length: Option<i32>,
-    pub free_slot: Option<bool>,
-    pub speed: Option<i32>,
     pub rank: Option<i32>,
     pub note: Option<String>,
     pub title: Option<String>,
@@ -109,9 +105,8 @@ pub fn quality_text(
 
 impl Serialize for AcquisitionCandidate {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut s = serializer.serialize_struct("AcquisitionCandidate", 18)?;
+        let mut s = serializer.serialize_struct("AcquisitionCandidate", 14)?;
         s.serialize_field("Source", &self.source)?;
-        s.serialize_field("Peer", &self.peer)?;
         s.serialize_field("File", &self.file)?;
         s.serialize_field("Folder", &self.folder)?;
         s.serialize_field("Format", &self.format)?;
@@ -120,9 +115,6 @@ impl Serialize for AcquisitionCandidate {
         s.serialize_field("SampleRate", &self.sample_rate)?;
         s.serialize_field("Size", &self.size)?;
         s.serialize_field("Length", &self.length)?;
-        s.serialize_field("QueueLength", &self.queue_length)?;
-        s.serialize_field("FreeSlot", &self.free_slot)?;
-        s.serialize_field("Speed", &self.speed)?;
         s.serialize_field("Rank", &self.rank)?;
         s.serialize_field("Note", &self.note)?;
         s.serialize_field("Title", &self.title)?;

@@ -18,7 +18,7 @@ use super::{
 };
 use crate::services::common::{StarOnArrival, TrackAcquisitionQueue};
 use crate::services::local::{ILocalLibraryService, LocalSongMapping, ParsedExternalId, ParsedSongId};
-use crate::services::soulseek::ExternalIdRegistry;
+use crate::services::outside::ExternalIdRegistry;
 use crate::services::subsonic::NavidromeIdentityService;
 
 /// A queue that asked `user` about Teardrop, Navidrome's `navidrome_id`.

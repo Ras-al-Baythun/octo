@@ -34,7 +34,7 @@ use crate::services::common::acquisition_tracker::AcquisitionState;
 use crate::services::library::explicit_backfill::{
     ExplicitBackfill, ExplicitBackfillMode, ExplicitBackfillRequest,
 };
-use crate::services::soulseek::ExternalIdRegistry;
+use crate::services::outside::ExternalIdRegistry;
 
 /// A request error in the family's words: 10 missing or wrong, 50 not allowed, 70 not found.
 pub fn request_failure(e: RequestError) -> FamilyError {

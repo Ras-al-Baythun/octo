@@ -125,6 +125,9 @@ use crate::services::metadata::{
 };
 use crate::services::metadata::{GenreBackfillJournal, GenreBackfillStore, GenreBackfillWorker};
 use crate::services::notifications::{DiscordSink, INotificationSink, NotificationService, NtfySink};
+use crate::services::outside::outside_download_service::{OutsideDownloadParts, OutsideDownloadService};
+use crate::services::outside::outside_metadata_service::LastFmTrackLengths;
+use crate::services::outside::{ExternalIdRegistry, OutsideMetadataService, RadioQueueStore};
 use crate::services::radio::{
     IRadioSource, LastFmRadioSource, ListenBrainzRadioSource, RadioOutcomeStore, RadioSourceSet,
     SongRadioService, SoundsAlikeRadioSource, YouTubeMusicRadioSource,
@@ -132,9 +135,6 @@ use crate::services::radio::{
 use crate::services::sonic::{
     ISonicClient, NavidromeSonicLibrary, SonicAnalysisWorker, SonicClient, SonicStore, TransitionStore,
 };
-use crate::services::soulseek::soulseek_download_service::{SoulseekDownloadParts, SoulseekDownloadService};
-use crate::services::soulseek::soulseek_metadata_service::LastFmTrackLengths;
-use crate::services::soulseek::{ExternalIdRegistry, RadioQueueStore, SoulseekMetadataService};
 use crate::services::subsonic::{
     CredentialCheck, NavidromeIdentityService, RecentScrobbles, RequestIdentity, SearchSongOrderCache,
     SubsonicDiscoveryService, SubsonicProxyService, SyncCatalogService,
@@ -327,12 +327,12 @@ pub struct AppInner {
     /// `SubsonicResponseBuilder`: every Subsonic answer Octo writes itself, over the external id
     /// registry. The app-type answers come with `services::subsonic::SubsonicResponseBuilderExt`.
     pub subsonic_response_builder: Arc<SubsonicResponseBuilder>,
-    /// `SoulseekMetadataService`, the music metadata service.
-    pub music_metadata: Arc<SoulseekMetadataService>,
+    /// `OutsideMetadataService`, the music metadata service.
+    pub music_metadata: Arc<OutsideMetadataService>,
     /// `IMusicMetadataService` as the controllers use it: `music_metadata` in production,
     /// a test's fake in handler tests.
     pub metadata_service: Arc<dyn IMusicMetadataService>,
-    /// `SoulseekDownloadService`: the download base over the YouTube and Lidarr backend, which hearts,
+    /// `OutsideDownloadService`: the download base over the YouTube and Lidarr backend, which hearts,
     /// plays, upgrades, Lidarr and library actions all go through (a test's fake in handler
     /// tests that swap it).
     pub download_service: Arc<dyn IDownloadService>,
@@ -754,7 +754,7 @@ impl Acquisition {
         let download_service: Arc<dyn IDownloadService> = match download_service {
             Some(fake) => fake,
             None => {
-                let (download_base, _backend) = SoulseekDownloadService::build(
+                let (download_base, _backend) = OutsideDownloadService::build(
                     DownloadCore {
                         settings: settings.clone(),
                         local_library: navidrome.local_library.clone(),
@@ -785,7 +785,7 @@ impl Acquisition {
                         family: Some(navidrome.family_pool_service.clone() as Arc<dyn FamilyPlacement>),
                         arrivals: Some(stores.download_arrivals.clone()),
                     },
-                    SoulseekDownloadParts {
+                    OutsideDownloadParts {
                         verification: downloads.tagging.download_verification.clone(),
                         youtube: stores.you_tube_resolver.clone(),
                         id_registry: stores.external_id_registry.clone(),
@@ -1697,8 +1697,8 @@ fn build_music_metadata(
     stores: &Stores,
     clients: &MetadataClients,
     last_fm: &Arc<LastFmService>,
-) -> Arc<SoulseekMetadataService> {
-    Arc::new(SoulseekMetadataService::new(
+) -> Arc<OutsideMetadataService> {
+    Arc::new(OutsideMetadataService::new(
         Arc::clone(&stores.you_tube_resolver),
         Arc::clone(&stores.external_id_registry),
         Arc::clone(&clients.deezer_metadata),
@@ -2090,7 +2090,7 @@ pub struct TestServices {
     pub external_id_registry: Option<Arc<ExternalIdRegistry>>,
     /// Raw configuration keys, such as `YouTube:ShimUrl`.
     pub raw_settings: Vec<(String, String)>,
-    /// `IDownloadService` (the real one is `SoulseekDownloadService`).
+    /// `IDownloadService` (the real one is `OutsideDownloadService`).
     pub download_service: Option<Arc<dyn IDownloadService>>,
     /// `LibrarySnapshot`, with the test's own song pages.
     pub library_snapshot: Option<Arc<LibrarySnapshot>>,

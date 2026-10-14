@@ -120,7 +120,6 @@ fn line(at: chrono::DateTime<Utc>, kind: &str, text: &str, copies: usize) -> Acq
             (1..=copies)
                 .map(|i| AcquisitionCandidate {
                     source: "Lidarr".into(),
-                    peer: Some(format!("peer{i}")),
                     file: Some(format!("/share/{i}.flac")),
                     format: Some("flac".into()),
                     bit_depth: Some(16),
@@ -225,7 +224,7 @@ async fn the_list_leaves_logs_out_and_the_log_route_reads_the_saved_one_or_the_l
     let lines = saved["event"].as_array().expect("lines");
     assert_eq!(lines.len(), 1);
     assert_eq!(lines[0]["candidate"].as_array().map(Vec::len), Some(3));
-    assert_eq!(lines[0]["candidate"][0]["peer"], "peer1");
+    assert_eq!(lines[0]["candidate"][0]["file"], "/share/1.flac");
 
     let live = dash
         .get(token, "/api/admin/downloads/log?key=outside:live")
@@ -280,7 +279,6 @@ async fn find_songs_runs_as_the_signed_in_admin_and_only_they_can_follow_or_pick
                     vec![FoundCopy::new(
                         AcquisitionCandidate {
                             source: "Lidarr".into(),
-                            peer: Some("peer1".into()),
                             file: Some("/share/Digital Love.flac".into()),
                             format: Some("flac".into()),
                             bit_depth: Some(16),
@@ -412,7 +410,6 @@ async fn a_dashboard_pick_passes_anyway_through_and_relays_the_question() {
                     vec![FoundCopy::new(
                         AcquisitionCandidate {
                             source: "Lidarr".into(),
-                            peer: Some("peer1".into()),
                             file: Some("Digital Love.flac".into()),
                             format: Some("flac".into()),
                             ..Default::default()

@@ -11,10 +11,10 @@ use octo_core::common::acquisition_tracker::user_safe;
 use octo_core::common::{Clock, dotnet};
 use octo_core::lidarr::{LidarrRelease, LidarrTrackRequest};
 use octo_core::models::download::AcquisitionCandidate;
+use octo_core::outside::RoutingKind;
 use octo_core::settings::{
     DownloadSource, HeartDownloadSource, LibraryAction, LibraryActionSettings, SettingsStore,
 };
-use octo_core::soulseek::RoutingKind;
 use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
@@ -29,7 +29,7 @@ use crate::services::library::upgrade_queue::{AudioSummary, UpgradeAsk, UpgradeQ
 use crate::services::library::{NavidromeSongPathResolver, UpgradeSources};
 use crate::services::lidarr::{LidarrClient, LidarrTrackFetcher};
 use crate::services::local::ILocalLibraryService;
-use crate::services::soulseek::{ExternalIdRegistry, SoulseekMetadataService};
+use crate::services::outside::{ExternalIdRegistry, OutsideMetadataService};
 
 /// The song Find songs looks for: an outside song by its Octo id, or a library song by its
 /// Navidrome id, with what the library holds of it now.
@@ -803,7 +803,6 @@ impl SongFinder {
                 FoundCopy::new(
                     AcquisitionCandidate {
                         source: LIDARR_SOURCE.to_string(),
-                        peer: release.indexer.clone(),
                         file: Some(release.title.clone()),
                         format: release.quality.clone(),
                         size: release.size,
@@ -1023,7 +1022,7 @@ fn fetch(
     }
 
     let external_id = target.external_id.clone().unwrap_or_default();
-    let provider = SoulseekMetadataService::PROVIDER_NAME;
+    let provider = OutsideMetadataService::PROVIDER_NAME;
     let tracker = services.tracker.clone();
     let key = key_of(provider, &external_id);
     if tracker.as_ref().is_some_and(|t| t.is_running(&key)) {
@@ -1102,7 +1101,7 @@ async fn resolve(services: &SongFinderServices, id: &str, ct: &CancellationToken
     if dotnet::starts_with_ignore_case(raw, "find:") {
         raw = &raw[5..];
     }
-    let provider = SoulseekMetadataService::PROVIDER_NAME;
+    let provider = OutsideMetadataService::PROVIDER_NAME;
     let prefix = format!("{provider}:");
     if dotnet::starts_with_ignore_case(raw, &prefix) {
         raw = &raw[prefix.len()..];
@@ -1123,7 +1122,7 @@ async fn resolve(services: &SongFinderServices, id: &str, ct: &CancellationToken
         .as_ref()
         .and_then(|registry| registry.lookup(&raw))
         .map(|shared| shared.snapshot())
-        .or_else(|| SoulseekMetadataService::try_decode_external_id(Some(&raw)));
+        .or_else(|| OutsideMetadataService::try_decode_external_id(Some(&raw)));
     let resolver = services.resolver.as_ref();
     if let Some(routing) = routing.filter(|r| r.kind == RoutingKind::Song && r.has_artist_title()) {
         let artist = routing.artist.clone().unwrap_or_default();

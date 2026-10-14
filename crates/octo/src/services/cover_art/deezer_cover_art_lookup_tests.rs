@@ -74,7 +74,7 @@ async fn an_album_with_a_known_id_is_fetched_by_that_id() {
 
     let bytes = lookup
         .try_fetch(
-            &SoulseekRouting {
+            &OutsideRouting {
                 kind: RoutingKind::Album,
                 artist: Some("Daft Punk".into()),
                 album: Some("Discovery".into()),
@@ -113,7 +113,7 @@ async fn a_search_is_plain_and_takes_the_asked_for_title() {
 
     let bytes = lookup
         .try_fetch(
-            &SoulseekRouting {
+            &OutsideRouting {
                 kind: RoutingKind::Album,
                 artist: Some("Daft Punk".into()),
                 album: Some("Random Access Memories (Drumless Edition)".into()),
@@ -154,7 +154,7 @@ async fn a_songs_cover_comes_from_a_plain_track_search() {
 
     let bytes = lookup
         .try_fetch(
-            &SoulseekRouting {
+            &OutsideRouting {
                 kind: RoutingKind::Song,
                 artist: Some("Air".into()),
                 title: Some("Sexy Boy".into()),
@@ -198,7 +198,7 @@ async fn an_artists_picture_is_the_best_named_hit_and_the_language_is_sent() {
 
     let bytes = lookup
         .try_fetch(
-            &SoulseekRouting {
+            &OutsideRouting {
                 kind: RoutingKind::Artist,
                 artist: Some("Air".into()),
                 ..Default::default()
@@ -236,7 +236,7 @@ async fn an_artists_picture_is_never_a_name_that_only_starts_the_same() {
 
     let bytes = lookup
         .try_fetch(
-            &SoulseekRouting {
+            &OutsideRouting {
                 kind: RoutingKind::Artist,
                 artist: Some("Kino".into()),
                 ..Default::default()
@@ -268,7 +268,7 @@ async fn a_songs_cover_follows_the_artist_written_another_way() {
 
     let bytes = lookup
         .try_fetch(
-            &SoulseekRouting {
+            &OutsideRouting {
                 kind: RoutingKind::Song,
                 artist: Some("Luis Fonsi".into()),
                 title: Some("Despacito".into()),

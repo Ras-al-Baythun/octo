@@ -16,7 +16,7 @@ use crate::services::common::{AcquisitionActivity, AcquisitionWorker, TrackAcqui
 use crate::services::i_download_service::{AudioStream, DirectStreamInfo, IDownloadService};
 use crate::services::library::ReplacementHandoff;
 use crate::services::notifications::NotificationService;
-use crate::services::soulseek::ExternalIdRegistry;
+use crate::services::outside::ExternalIdRegistry;
 
 /// The download service of the pipeline tests: one acquisition answered when its arguments are
 /// the upgrade's, and transfers reported running or not.

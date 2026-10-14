@@ -49,7 +49,7 @@ const ALBUM_BUILD_TIMEOUT: Duration = Duration::from_secs(10);
 /// Every caller for the same query joins one execution and receives the same list. That
 /// is not an optimization, it is what keeps the search3 fix from re-creating issue #8.
 /// Clients routinely fire several search calls for one typed query, and registry ids are
-/// deterministic, so those calls resolve to the *same* SoulseekRouting objects and would
+/// deterministic, so those calls resolve to the *same* OutsideRouting objects and would
 /// each run the enrichment pipeline over them concurrently: three writers to a shared
 /// int? duration, and three times the Deezer fan-out against a budget that is already the
 /// tightest thing in the system.

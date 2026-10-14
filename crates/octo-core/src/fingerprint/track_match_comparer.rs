@@ -56,7 +56,7 @@ impl TrackMatchComparer {
     /// One-directional: a match carrying "dub" the request never asked for is a different take;
     /// a request that says "live" against a MusicBrainz title that does not is just MusicBrainz
     /// being tidy, since it writes a live recording's venue and date in the disambiguation and
-    /// not the title. The same reading SoulseekDownloadService ranks and filters peers by.
+    /// not the title. The same reading OutsideDownloadService ranks and filters peers by.
     pub fn has_unrequested_variant_marker(requested: &str, matched: &str) -> bool {
         !SongIdentity::added_versions(requested, matched, None).is_empty()
     }
