@@ -1393,6 +1393,177 @@ async fn remove_with_delete_off_is_skipped_and_moves_nothing() {
     t.assert_untouched().await;
 }
 
+// libraryAction?action=replace (octoPreview 2's Choose version on a library song)
+
+fn wrong_version_on(settings: &mut AppSettings) {
+    settings.library_actions.actions.push(LibraryActionDefinition {
+        action: LibraryAction::WrongVersion,
+        enabled: true,
+        ..Default::default()
+    });
+}
+
+/// The routing a replace of the library song pins its video on: the file's facts as
+/// Navidrome reports them, which is what a fresh registration of them hashes to.
+fn song_routing() -> String {
+    crate::services::outside::ExternalIdRegistry::make_short_id(&OutsideRouting {
+        kind: RoutingKind::Song,
+        artist: Some("Massive Attack".into()),
+        title: Some("Teardrop".into()),
+        duration: Some(330),
+        ..Default::default()
+    })
+}
+
+fn replace_url(user: &str, rest: &str) -> String {
+    format!(
+        "/rest/libraryAction?{}&id={SONG_ID}&action=replace{rest}",
+        lib_auth(user)
+    )
+}
+
+#[tokio::test]
+async fn replace_pins_the_picked_video_on_the_songs_routing_and_queues_its_download() {
+    let t = LibraryApp::new(wrong_version_on).await;
+
+    let doc = t.get_json(&replace_url("alice", "&videoId=v1&length=331")).await;
+
+    let action = action(&doc);
+    assert_eq!(action["id"], SONG_ID);
+    assert_eq!(action["action"], "replace");
+    assert_eq!(action["state"], "queued", "{doc}");
+    assert!(
+        action["detail"]
+            .as_str()
+            .expect("a detail")
+            .starts_with("Downloading the video you picked"),
+        "{doc}"
+    );
+    // The download is Wrong version by the routing the pick is on, so it fetches that video.
+    let routing = t
+        .state
+        .external_id_registry
+        .lookup(&song_routing())
+        .expect("the song's routing")
+        .snapshot();
+    assert_eq!(routing.you_tube_id.as_deref(), Some("v1"));
+    assert_eq!(routing.duration, Some(331));
+    assert!(!t.state.track_acquisition_queue.is_idle());
+    assert!(t.song_file().exists());
+    let journal = t.state.library_action_journal.recent(200);
+    assert_eq!(journal.len(), 1, "{journal:?}");
+    assert_eq!(journal[0].action, LibraryAction::WrongVersion);
+    assert_eq!(journal[0].state, LibraryActionState::Pending);
+    assert_eq!(journal[0].username, "alice");
+}
+
+#[tokio::test]
+async fn replace_in_a_dry_run_is_rehearsed_and_downloads_nothing() {
+    let t = LibraryApp::new(|s| {
+        wrong_version_on(s);
+        s.library_actions.dry_run = true;
+    })
+    .await;
+
+    let doc = t.get_json(&replace_url("alice", "&videoId=v1")).await;
+
+    let action = action(&doc);
+    assert_eq!(action["action"], "replace");
+    assert_eq!(action["state"], "rehearsed", "{doc}");
+    assert!(
+        action["detail"]
+            .as_str()
+            .expect("a detail")
+            .starts_with("Dry run: would "),
+        "{doc}"
+    );
+    assert!(t.state.track_acquisition_queue.is_idle());
+    assert!(t.song_file().exists());
+    // The pin is made before the executor is asked, so a rehearsal leaves it.
+    let routing = t
+        .state
+        .external_id_registry
+        .lookup(&song_routing())
+        .expect("the song's routing")
+        .snapshot();
+    assert_eq!(routing.you_tube_id.as_deref(), Some("v1"));
+}
+
+#[tokio::test]
+async fn replace_is_refused_without_a_video_and_for_a_song_from_outside_the_library() {
+    let t = LibraryApp::new(wrong_version_on).await;
+
+    let doc = t.get_json(&replace_url("alice", "")).await;
+    assert_failed(&doc, 10);
+    let doc = t.get_json(&replace_url("alice", "&videoId=%20")).await;
+    assert_failed(&doc, 10);
+
+    let outside = t.state.external_id_registry.register(OutsideRouting {
+        kind: RoutingKind::Song,
+        artist: Some("Massive Attack".into()),
+        title: Some("Teardrop".into()),
+        duration: Some(330),
+        ..Default::default()
+    });
+    let doc = t
+        .get_json(&format!(
+            "/rest/libraryAction?{}&id={outside}&action=replace&videoId=v1",
+            lib_auth("alice")
+        ))
+        .await;
+    assert_failed(&doc, 70);
+    t.assert_untouched().await;
+}
+
+#[tokio::test]
+async fn replace_by_the_gates_is_skipped_or_unresolved_as_remove_is() {
+    // Wrong version off.
+    let t = LibraryApp::new(|_| {}).await;
+    let doc = t.get_json(&replace_url("alice", "&videoId=v1")).await;
+    let off = action(&doc);
+    assert_eq!(off["state"], "skipped", "{doc}");
+    assert_eq!(off["detail"], "WrongVersion is not enabled.");
+    assert!(t.state.track_acquisition_queue.is_idle());
+
+    // An API key alone names nobody, and the executor is not asked: nothing is pinned.
+    let t = LibraryApp::new(wrong_version_on).await;
+    t.admin.store(false, std::sync::atomic::Ordering::SeqCst);
+    let doc = t
+        .get_json(&format!(
+            "/rest/libraryAction?apiKey=goodkey&v=1.16.1&c=octo-android&id={SONG_ID}&action=replace&videoId=v1"
+        ))
+        .await;
+    let unnamed = action(&doc);
+    assert_eq!(unnamed["state"], "skipped", "{doc}");
+    assert!(t.state.external_id_registry.lookup(&song_routing()).is_none());
+
+    // Not on the allowlist; no admin needed otherwise.
+    let doc = t.get_json(&replace_url("bob", "&videoId=v1")).await;
+    assert_eq!(action(&doc)["detail"], "bob is not on the allowlist.");
+
+    // A song Navidrome does not know has no file to replace.
+    let doc = t
+        .get_json(&format!(
+            "/rest/libraryAction?{}&id=nd-nobody&action=replace&videoId=v1",
+            lib_auth("alice")
+        ))
+        .await;
+    assert_eq!(action(&doc)["state"], "unresolved", "{doc}");
+    assert!(t.state.track_acquisition_queue.is_idle());
+}
+
+#[tokio::test]
+async fn get_library_actions_offers_replace_while_wrong_version_is_on_admin_or_not() {
+    let t = LibraryApp::new(wrong_version_on).await;
+    t.admin.store(false, std::sync::atomic::Ordering::SeqCst);
+    let doc = t
+        .get_json(&format!("/rest/getLibraryActions.view?{}", lib_auth("alice")))
+        .await;
+    let actions = &envelope(&doc)["libraryActions"];
+    assert_eq!(actions["admin"], false);
+    assert_eq!(actions["actions"], actions_then_edits(&["replace"]), "{doc}");
+}
+
 #[tokio::test]
 async fn wrong_lyrics_from_the_app_while_it_is_off_is_skipped_and_touches_nothing() {
     let t = LibraryApp::new(|_| {}).await;

@@ -45,8 +45,8 @@ use crate::services::family::family_playlists::{
 };
 use crate::services::family::{FamilyCaller, FamilyPlaylist, FamilyPlaylistEntry, family_caller, kid_filter};
 use crate::services::library::library_action_playlist_provisioner::{REMOVE_PLAYLIST, REQUEST_PLAYLIST};
+use crate::services::library::library_song_routing::outside_id_of;
 use crate::services::library::{GeneratedPlaylist, LibraryActionPlaylistProvisioner};
-use crate::services::outside::OutsideMetadataService;
 use crate::services::subsonic::SubsonicResponseBuilderExt;
 use octo_core::family::abilities::RequestQuality;
 use tracing::info;
@@ -1484,51 +1484,4 @@ async fn new_entry(state: &AppState, id: &str) -> Option<NewEntry> {
         duration,
         explicit_status,
     })
-}
-
-/// The outside id a library song was downloaded from: from Octo's record of downloaded songs,
-/// else from the download history by the file's path.
-async fn outside_id_of(state: &AppState, id: &str, path: Option<&str>) -> Option<String> {
-    let mapped = state
-        .local_library
-        .get_mappings()
-        .await
-        .into_iter()
-        .find(|mapping| {
-            mapping.local_subsonic_id.as_deref() == Some(id)
-                || path.is_some_and(|path| mapping.local_path == path)
-        });
-    if let Some(mapping) = mapped
-        && !mapping.external_provider.is_empty()
-        && !mapping.external_id.is_empty()
-    {
-        return Some(outside_song_id(
-            state,
-            &mapping.external_provider,
-            &mapping.external_id,
-        ));
-    }
-    let path = path?;
-    state
-        .download_history
-        .get_recent(i32::MAX)
-        .into_iter()
-        .find(|entry| entry.path == path)
-        .and_then(|entry| entry.key)
-        .and_then(|key| {
-            let (provider, external_id) = key.split_once(':')?;
-            (!provider.is_empty() && !external_id.is_empty())
-                .then(|| outside_song_id(state, provider, external_id))
-        })
-}
-
-/// The song id an outside song plays by: one Octo knows by its short id, any other as
-/// `ext-<provider>-song-<id>`.
-fn outside_song_id(state: &AppState, provider: &str, external_id: &str) -> String {
-    if eq_ignore_case(provider, OutsideMetadataService::PROVIDER_NAME)
-        && state.external_id_registry.lookup(external_id).is_some()
-    {
-        return external_id.to_string();
-    }
-    format!("ext-{provider}-song-{external_id}")
 }

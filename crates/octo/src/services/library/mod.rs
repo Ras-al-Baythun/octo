@@ -20,6 +20,7 @@ pub mod library_edit_service;
 pub mod library_ownership;
 pub mod library_review_sweep_worker;
 pub mod library_snapshot;
+pub mod library_song_routing;
 pub mod library_tag_edits;
 pub mod library_walk;
 pub mod library_write_gate;

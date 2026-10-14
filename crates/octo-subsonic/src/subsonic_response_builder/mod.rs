@@ -37,8 +37,8 @@ use crate::xml::{XElement, XValue};
 
 pub use library_actions::{
     COVER_ACTION, COVER_SWAP_ACTION, EDIT_ACTIONS, JOIN_ALBUM_ACTION, LIBRARY_ACTIONS_EXTENSION,
-    LIBRARY_ACTIONS_EXTENSION_VERSION, LOOKUP_ACTION, LYRICS_ACTION, REMOVE_ACTION, RESTORE_ACTION,
-    RETAG_ACTION, UNDO_ACTION, UPGRADE_ACTION,
+    LIBRARY_ACTIONS_EXTENSION_VERSION, LOOKUP_ACTION, LYRICS_ACTION, REMOVE_ACTION, REPLACE_ACTION,
+    RESTORE_ACTION, RETAG_ACTION, UNDO_ACTION, UPGRADE_ACTION,
 };
 pub use lyrics::{CueLineOut, CueWord, LYRICS_EXTENSION, LYRICS_EXTENSION_VERSION};
 pub use reply::{ReplyKind, SubsonicReply};
@@ -83,7 +83,7 @@ pub const OWN_EXTENSIONS: &[(&str, &[i32])] = &[
     (RADIO_SOURCES_EXTENSION, &[RADIO_SOURCES_EXTENSION_VERSION]),
     (LISTS_EXTENSION, &[LISTS_EXTENSION_VERSION]),
     (PLAYLISTS_EXTENSION, &[PLAYLISTS_EXTENSION_VERSION]),
-    (PREVIEW_EXTENSION, &[PREVIEW_EXTENSION_VERSION]),
+    (PREVIEW_EXTENSION, &[1, PREVIEW_EXTENSION_VERSION]),
     (TRANSITIONS_EXTENSION, &[TRANSITIONS_EXTENSION_VERSION]),
 ];
 
@@ -91,8 +91,11 @@ pub const OWN_EXTENSIONS: &[(&str, &[i32])] = &[
 /// choosing. `getPreviewChoices?id=` lists the videos it could play from (YouTube Music's rows
 /// first, the one playing now marked `current`), `setPreview?id=&videoId=[&length=]` picks one
 /// and answers the song as getSong does. The pick is also what a YouTube download fetches.
+/// Version 2 takes a library song's id too: its choices carry `library: true`, its pick is
+/// kept for a download, and `libraryAction?action=replace&videoId=` puts that video in the
+/// file's place.
 pub const PREVIEW_EXTENSION: &str = "octoPreview";
-pub const PREVIEW_EXTENSION_VERSION: i32 = 1;
+pub const PREVIEW_EXTENSION_VERSION: i32 = 2;
 
 /// octoPlaylists v1: playlists Octo keeps itself (`of` ids), which hold songs from outside the
 /// library beside library songs. `createPlaylist` with such a `songId`, or with `octo=true`,

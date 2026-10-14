@@ -115,8 +115,14 @@ pub trait SubsonicResponseBuilderExt {
     /// pickFoundSong: what picking did.
     fn create_pick_response(&self, outcome: &PickOutcome) -> SubsonicReply;
 
-    /// getPreviewChoices: the videos a song from outside the library could play from.
-    fn create_preview_choices_response(&self, id: &str, choices: &[PreviewChoice]) -> SubsonicReply;
+    /// getPreviewChoices: the videos a song could play from; `library` marks a song that is a
+    /// file in the library, whose pick a replace downloads.
+    fn create_preview_choices_response(
+        &self,
+        id: &str,
+        choices: &[PreviewChoice],
+        library: bool,
+    ) -> SubsonicReply;
 }
 
 impl SubsonicResponseBuilderExt for SubsonicResponseBuilder {
@@ -332,12 +338,22 @@ impl SubsonicResponseBuilderExt for SubsonicResponseBuilder {
         }))
     }
 
-    fn create_preview_choices_response(&self, id: &str, choices: &[PreviewChoice]) -> SubsonicReply {
+    fn create_preview_choices_response(
+        &self,
+        id: &str,
+        choices: &[PreviewChoice],
+        library: bool,
+    ) -> SubsonicReply {
+        let mut preview_choices = json!({ "id": id, "choice": choices });
+        // Only a library song says so: version 1's answer for an outside song is unchanged.
+        if library {
+            preview_choices["library"] = json!(true);
+        }
         self.create_json_response(json!({
             "status": "ok",
             "version": SUBSONIC_VERSION,
             "type": "octo",
-            "previewChoices": { "id": id, "choice": choices },
+            "previewChoices": preview_choices,
         }))
     }
 

@@ -45,6 +45,12 @@ pub const UNDO_ACTION: &str = "undo";
 /// Version 3: put a removed song back from the trash.
 pub const RESTORE_ACTION: &str = "restore";
 
+/// The Wrong version action for a video the person picked (octoPreview 2's Choose version on
+/// a library song): `libraryAction?action=replace&videoId=[&length=]` downloads exactly that
+/// video in the file's place, the song keeping its tags, favorites and playlist places.
+/// Queued, never run inside the request.
+pub const REPLACE_ACTION: &str = "replace";
+
 pub const EDIT_ACTIONS: [&str; 6] = [
     RETAG_ACTION,
     JOIN_ALBUM_ACTION,
@@ -136,6 +142,11 @@ fn offered_actions(
     }
     if enabled.contains(&LibraryAction::BetterQuality) && upgrade_ready {
         offered.push(UPGRADE_ACTION);
+    }
+    // A replacement by a picked video: the pick is what the song then plays from, so it can
+    // be offered to anyone the allowlist admits, admin or not.
+    if enabled.contains(&LibraryAction::WrongVersion) {
+        offered.push(REPLACE_ACTION);
     }
     if enabled.contains(&LibraryAction::WrongLyrics) {
         offered.push(LYRICS_ACTION);

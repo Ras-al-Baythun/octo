@@ -518,6 +518,8 @@ five stars means Keep, which removes nothing, so the top of the scale is never d
 A replacement (Better quality, Wrong version, Wrong song) takes the original's place in
 Navidrome: it keeps the original's file name, title, album and album artist tags, so its plays,
 favorites and playlist places stay with it. The action history says whether Navidrome kept it.
+Choose version… in the apps replaces a file with the video you pick: it is Wrong version for
+exactly that video (`libraryAction?action=replace&videoId=`), for anyone on the allowlist.
 
 `LIBRARY_ACTIONS_DRY_RUN` is on by default, so the first run of a newly enabled install is a
 rehearsal you can read before anything is real. Nothing is ever deleted outright: removed files
@@ -863,7 +865,7 @@ Octo hijacks these endpoints; everything else proxies to Navidrome unchanged:
 | `findSongs`, `getFoundSongs`, `pickFoundSong` | `octoAcquisitions` 2: a song's search run again on the caller's download sources, every copy found, and fetching the one picked |
 | `getImports`, `getImport`, `importAction` | the `octoImports` extension: the caller's Spotify sign-in, imported lists with what the library has of each, and the trickle |
 | `createPlaylist`, `updatePlaylist`, `deletePlaylist` | the `octoPlaylists` extension: playlists Octo keeps itself (`of` ids, `octoPlaylist: true`), which hold songs from outside the library beside library songs. `createPlaylist` with such a `songId`, or with `octo=true`, makes one; with its `playlistId` it replaces the songs. With Family off each account keeps its own; with Family on they are the family playlists. Navidrome's own playlists refuse an outside song (error 70) |
-| `getPreviewChoices`, `setPreview` | the `octoPreview` extension: the videos a song from outside the library could play from (YouTube Music's rows first, the one playing now marked `current`), and the pick, which every later play streams and a YouTube download fetches; `setPreview` answers the song as `getSong` does, with the video's length |
+| `getPreviewChoices`, `setPreview` | the `octoPreview` extension: the videos a song from outside the library could play from (YouTube Music's rows first, the one playing now marked `current`), and the pick, which every later play streams and a YouTube download fetches; `setPreview` answers the song as `getSong` does, with the video's length. Version 2 takes a library song's id too: its choices carry `library: true`, and `libraryAction?action=replace&videoId=` downloads the picked video in the file's place |
 | `getTopSongs` | the standard top songs of an artist (by name, or by id as Navidrome's `topSongsByArtistId`), for every app: ranked as `getArtistTopSongs` ranks them, songs you have as your library's own and the rest as outside songs (only yours while search discovery is off); Navidrome's answer when Octo has none |
 | `getArtistTopSongs`, `getTopChart` | the `octoTopSongs` extension: an artist's most played songs and the chart of the moment, each marked in the caller's library or playable from outside it |
 | `/api/artist/{id}`, `/api/album?artist_id=` | Navidrome's own API, for clients that use it (Feishin): an outside artist's page and its albums |

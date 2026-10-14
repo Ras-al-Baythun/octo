@@ -67,6 +67,10 @@ pub struct LibraryActionRequest {
     /// Better quality for a copy someone picked and said to take whatever its quality: the song
     /// the replacement is held to, and no quality check on it.
     pub anyway: Option<AnywaySong>,
+    /// Wrong version for a video someone picked (octoPreview's Choose version on a library
+    /// song): the registry id of the routing the pick is pinned on, which the replacement is
+    /// downloaded by instead of a fresh one made from the file's facts, and from YouTube only.
+    pub from: Option<String>,
 }
 
 impl LibraryActionRequest {
@@ -80,6 +84,7 @@ impl LibraryActionRequest {
             only_a_copy: false,
             only_source: None,
             anyway: None,
+            from: None,
         }
     }
 
@@ -91,6 +96,13 @@ impl LibraryActionRequest {
 
     pub fn with_credential(mut self, credential: Option<SubsonicCredential>) -> Self {
         self.credential = credential;
+        self
+    }
+
+    /// The registry id the replacement is downloaded by: a routing with the video the person
+    /// picked pinned on it.
+    pub fn from_routing(mut self, routing: impl Into<String>) -> Self {
+        self.from = Some(routing.into());
         self
     }
 }
@@ -1053,7 +1065,16 @@ impl LibraryActionExecutor {
                     ..Default::default()
                 },
             };
-            let external_id = self.ids.register(routing);
+            // A pick from the app names the routing its video is pinned on; the download reads
+            // the pin first. A routing the registry has since forgotten is made afresh.
+            let external_id = match request
+                .from
+                .as_deref()
+                .filter(|from| self.ids.lookup(from).is_some())
+            {
+                Some(from) => from.to_string(),
+                None => self.ids.register(routing),
+            };
             if let Some(listener) = &request.on_replacement_queued {
                 let told = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     listener(OutsideMetadataService::PROVIDER_NAME, &external_id)
@@ -1082,7 +1103,12 @@ impl LibraryActionExecutor {
             }
 
             // In order, and on to the next when one finds nothing or its copy fails the checks.
-            let sources = self.sources_for(request.action, request.only_source);
+            // A picked video is only ever on YouTube, so no Lidarr first for it.
+            let sources = if request.from.is_some() {
+                vec![None]
+            } else {
+                self.sources_for(request.action, request.only_source)
+            };
             let upgrade_search = request.action == LibraryAction::BetterQuality;
             let requested_by = self
                 .settings

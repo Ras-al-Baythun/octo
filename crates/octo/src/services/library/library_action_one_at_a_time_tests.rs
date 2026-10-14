@@ -120,7 +120,17 @@ impl Fixture {
         keep_originals: bool,
         sources: Option<Arc<UpgradeSources>>,
     ) -> Arc<LibraryActionExecutor> {
-        let settings = store(AppSettings {
+        self.executor_with(keep_originals, sources, |_| {})
+    }
+
+    /// `executor`, with the settings changed first.
+    fn executor_with(
+        &self,
+        keep_originals: bool,
+        sources: Option<Arc<UpgradeSources>>,
+        change: impl FnOnce(&mut AppSettings),
+    ) -> Arc<LibraryActionExecutor> {
+        let mut settings = AppSettings {
             library_actions: LibraryActionSettings {
                 enabled: true,
                 dry_run: false,
@@ -148,7 +158,9 @@ impl Fixture {
                 ..Default::default()
             },
             ..Default::default()
-        });
+        };
+        change(&mut settings);
+        let settings = store(settings);
         settings.set_raw("Library:DownloadPath", Some(&self.root.to_string_lossy()));
         let executor = executor(
             &settings,
@@ -452,6 +464,78 @@ async fn a_failure_after_the_replacement_moved_in_does_not_undo_it() {
     assert!(Path::new(&f.revealed()).exists());
     assert!(!Path::new(&f.original).exists());
     assert_eq!(f.quarantined().len(), 1);
+}
+
+// ---- A pick from the app (octoPreview's Choose version on a library song) ------------------
+
+/// The request is downloaded by the routing the pick is pinned on, so the download fetches
+/// that video, and from YouTube only, however hearts are set up.
+#[tokio::test]
+async fn a_picked_video_is_downloaded_by_its_own_routing_from_youtube() {
+    let f = Fixture::new().await;
+    let picked = f.ids.register(OutsideRouting {
+        kind: RoutingKind::Song,
+        artist: Some("Massive Attack".into()),
+        title: Some("Teardrop".into()),
+        album: Some("Mezzanine".into()),
+        duration: Some(330),
+        you_tube_id: Some("vid1".into()),
+        ..Default::default()
+    });
+    let queued: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let told = queued.clone();
+    let request = LibraryActionRequest {
+        on_replacement_queued: Some(Arc::new(move |provider: &str, id: &str| {
+            told.lock().push(format!("{provider}:{id}"));
+        })),
+        ..wrong_version().from_routing(picked.clone())
+    };
+    // Hearts go to Lidarr here, which puts Lidarr first for a plain Wrong version.
+    let executor = f.executor_with(false, lidarr_source(), |s| {
+        s.subsonic.download_source = DownloadSource::Lidarr;
+    });
+    let action = spawn_apply(&executor, request);
+    let download = f.next_download().await;
+
+    assert_eq!(download.external_id, picked);
+    assert_eq!(download.source_override, None);
+    assert!(download.replacement.is_some());
+    assert_eq!(
+        *queued.lock(),
+        [format!("{}:{picked}", OutsideMetadataService::PROVIDER_NAME)]
+    );
+    let r = f.ids.lookup(&picked).expect("still there").snapshot();
+    assert_eq!(r.you_tube_id.as_deref(), Some("vid1"));
+
+    let placed = reveal(&download, &f.staged(&flac(), ".flac"))
+        .await
+        .expect("admitted");
+    f.finish(&download, &placed);
+    let outcome = outcome_of(action).await;
+    assert_eq!(outcome.state, LibraryActionState::Applied);
+    assert!(Path::new(&f.revealed()).exists());
+    assert!(!Path::new(&f.original).exists());
+}
+
+/// A pick on a routing the registry has since forgotten is downloaded as a plain Wrong version:
+/// a fresh routing from the file's facts, with no video pinned.
+#[tokio::test]
+async fn a_pick_on_a_forgotten_routing_is_downloaded_afresh() {
+    let f = Fixture::new().await;
+    let action = spawn_apply(&f.plain_executor(), wrong_version().from_routing("gone"));
+    let download = f.next_download().await;
+
+    assert_ne!(download.external_id, "gone");
+    let r = f
+        .ids
+        .lookup(&download.external_id)
+        .expect("registered")
+        .snapshot();
+    assert_eq!(r.title.as_deref(), Some("Teardrop"));
+    assert_eq!(r.you_tube_id, None);
+
+    f.fail(&download, not_found("No YouTube match"));
+    assert_eq!(outcome_of(action).await.state, LibraryActionState::Failed);
 }
 
 fn lidarr_set_up() -> LidarrSettings {

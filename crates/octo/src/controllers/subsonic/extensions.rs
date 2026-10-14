@@ -10,25 +10,29 @@ use axum::routing::get;
 use indexmap::IndexMap;
 use octo_core::common::dotnet::{self, is_blank};
 use octo_core::settings::LibraryAction;
+use octo_subsonic::SubsonicCredential;
 use octo_subsonic::subsonic_response_builder::{
     COVER_ACTION, COVER_SWAP_ACTION, EDIT_ACTIONS, JOIN_ALBUM_ACTION, LOOKUP_ACTION, LYRICS_ACTION,
-    REMOVE_ACTION, RETAG_ACTION, UNDO_ACTION, UPGRADE_ACTION,
+    REMOVE_ACTION, REPLACE_ACTION, RETAG_ACTION, UNDO_ACTION, UPGRADE_ACTION,
 };
 use serde_json::Value;
 use tracing::info;
 
+use super::action_helpers::int_try_parse;
 use super::caller_checks::{SubsonicCall, check_caller, is_successful_subsonic_response, signed_in_user};
 use crate::app::AppState;
 use crate::http::error::{AppError, AppResult};
 use crate::http::routes::RouteSet;
 use crate::services::common::song_finder::UpgradeGate;
 use crate::services::family::{audio_gate, family_caller};
+use crate::services::library::library_song_routing::routing_for_library_song;
 use crate::services::library::library_tag_edits::song_tag_fields;
 use crate::services::library::{
     LibraryActionOutcome, LibraryActionRequest, LibraryActionState, LibraryEditOutcome, SongLookup,
     UpgradeAsk,
 };
 use crate::services::subsonic::SubsonicResponseBuilderExt;
+use crate::services::you_tube::preview_choices::set_preview;
 
 /// The state of an upgrade job that is running.
 const UPGRADE_WORKING: &str = "working";
@@ -284,13 +288,16 @@ pub async fn apply_library_action(State(state): State<AppState>, req: Request) -
     {
         return apply_song_answer(&state, &call, &id, answer, name).await;
     }
+    if dotnet::eq_ignore_case(&action, REPLACE_ACTION) {
+        return apply_replace(&state, &call, &id).await;
+    }
     if !dotnet::eq_ignore_case(&action, REMOVE_ACTION) {
         return Ok(builder
             .create_error(
                 FORMAT,
                 0,
                 &format!(
-                    "Unknown action \"{action}\"; this server knows remove, upgrade, {LYRICS_ACTION}, {COVER_SWAP_ACTION}, {}",
+                    "Unknown action \"{action}\"; this server knows remove, upgrade, {REPLACE_ACTION}, {LYRICS_ACTION}, {COVER_SWAP_ACTION}, {}",
                     EDIT_ACTIONS.join(", ")
                 ),
             )
@@ -351,6 +358,126 @@ pub async fn apply_library_action(State(state): State<AppState>, req: Request) -
     Ok(builder
         .create_library_action_outcome_response(&id, &outcome, REMOVE_ACTION)
         .into_response())
+}
+
+/// octoPreview 2's Choose version on a library song: Wrong version for exactly the video the
+/// person picked (`videoId`, with its `length` in seconds when the app knows it). The pick is
+/// pinned on the routing that stands for the song, and the executor runs Wrong version by that
+/// routing, so the download fetches that video and the file keeps its tags, favorites and
+/// playlist places as any replacement does. The executor applies every gate: the master
+/// switch, the allowlist, Wrong version being on, the dry run, and a file it can prove is
+/// this song. Answered the moment the download is queued (`queued`), since a download takes
+/// minutes; a gate that stops it answers its own outcome, as remove does.
+///
+/// The pin is made before the executor is asked: the download reads it, and a replacement
+/// cannot wait for an answer that only comes once it has been fetched. So a request a gate
+/// stops (a dry run, say) leaves the pin, which only says what a later download fetches.
+async fn apply_replace(state: &AppState, call: &SubsonicCall, id: &str) -> AppResult {
+    const FORMAT: &str = "json";
+    let builder = &state.subsonic_response_builder;
+    let skipped = |detail: &str| {
+        builder
+            .create_library_action_outcome_response(
+                id,
+                &LibraryActionOutcome::new(LibraryActionState::Skipped, Some(detail.into())),
+                REPLACE_ACTION,
+            )
+            .into_response()
+    };
+    let video = call.param("videoId").trim().to_string();
+    if video.is_empty() {
+        return Ok(builder
+            .create_error(FORMAT, 10, "Required parameter is missing: videoId")
+            .into_response());
+    }
+    let length = int_try_parse(call.param("length").trim());
+    // The name the ping just checked. An API key alone names nobody here, so it cannot be on
+    // the allowlist, and the executor is not asked at all.
+    let Some(username) = call.param_opt("u").filter(|u| !is_blank(u)).map(str::to_string) else {
+        return Ok(skipped(
+            "Sign in with a username to replace songs; an API key alone does not say who is asking.",
+        ));
+    };
+    // Only a file in the library has a place for the video to take; an outside song's pick is
+    // setPreview's.
+    let (outside, _, _) = state.local_library.parse_song_id(id);
+    if outside {
+        return Ok(builder
+            .create_error(
+                FORMAT,
+                70,
+                "Only a song in the library can be replaced; setPreview picks an outside song's video",
+            )
+            .into_response());
+    }
+    let Some(routing) = routing_for_library_song(state, id).await else {
+        return Ok(builder
+            .create_library_action_outcome_response(
+                id,
+                &LibraryActionOutcome::new(
+                    LibraryActionState::Unresolved,
+                    Some("Could not work out which file this is, so nothing was touched.".into()),
+                ),
+                REPLACE_ACTION,
+            )
+            .into_response());
+    };
+    if !set_preview(&state.external_id_registry, &routing, &video, length) {
+        return Ok(builder
+            .create_error(FORMAT, 70, "No song with this id")
+            .into_response());
+    }
+
+    // Told the moment the executor queues the download, which is the answer: the rest of the
+    // action runs on without the request, as a client that hangs up must not stop a swap.
+    let (queued_tx, queued_rx) = tokio::sync::oneshot::channel::<String>();
+    let queued_tx = std::sync::Mutex::new(Some(queued_tx));
+    let request = LibraryActionRequest::new(LibraryAction::WrongVersion, id.to_string(), username.clone())
+        .with_credential(SubsonicCredential::from(&call.parameters))
+        .from_routing(routing.clone());
+    let request = LibraryActionRequest {
+        on_replacement_queued: Some(Arc::new(move |_provider: &str, external_id: &str| {
+            if let Some(tx) = queued_tx.lock().ok().and_then(|mut slot| slot.take()) {
+                let _ = tx.send(external_id.to_string());
+            }
+        })),
+        ..request
+    };
+    let executor = Arc::clone(&state.library_action_executor);
+    let mut action = tokio::spawn(async move { executor.apply(request).await });
+    let outcome = tokio::select! {
+        done = &mut action => Some(done.map_err(|e| AppError::Internal(anyhow::Error::new(e)))?.map_err(AppError::Internal)?),
+        queued = queued_rx => match queued {
+            Ok(_) => None,
+            // The executor stopped before queueing: its outcome says why.
+            Err(_) => Some(action.await.map_err(|e| AppError::Internal(anyhow::Error::new(e)))?.map_err(AppError::Internal)?),
+        },
+    };
+    match outcome {
+        Some(outcome) => {
+            info!(
+                "Library action WrongVersion for {id} by {username} from the app, video {video}: {} - {}",
+                outcome.state.name(),
+                outcome.detail.as_deref().unwrap_or("")
+            );
+            Ok(builder
+                .create_library_action_outcome_response(id, &outcome, REPLACE_ACTION)
+                .into_response())
+        }
+        None => {
+            info!(
+                "Library action WrongVersion for {id} by {username} from the app: downloading video {video}"
+            );
+            Ok(builder
+                .create_library_action_response(
+                    id,
+                    "queued",
+                    Some("Downloading the video you picked; it takes the file's place once it has passed the checks."),
+                    REPLACE_ACTION,
+                )
+                .into_response())
+        }
+    }
 }
 
 /// Wrong lyrics or Wrong cover for one song, exactly as its action playlist or star does. The
