@@ -14,7 +14,7 @@ use octo_subsonic::SubsonicReply;
 use octo_subsonic::subsonic_response_builder::{SUBSONIC_NAMESPACE, SUBSONIC_VERSION};
 use octo_subsonic::xml::XElement;
 use serde_json::{Map, Value};
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 use super::action_helpers::{SubsonicCall, int_param, is_successful_subsonic_response};
 use crate::app::AppState;
@@ -66,7 +66,7 @@ pub async fn get_similar_songs(State(state): State<AppState>, req: Request) -> R
 
     // Check if radio is configured and enabled
     if !state.song_radio.enabled() {
-        debug!("Last.fm radio not configured, relaying to upstream server");
+        warn!("Song radio is off (LastFm.EnableRadio) or has no sources: relaying to the upstream server, which only knows the library");
         // The path keeps its leading slash, so the upstream URL has a double slash after the
         // server's address.
         return match call.proxy.relay(&path, &call.parameters).await {
@@ -186,6 +186,7 @@ pub async fn get_similar_songs(State(state): State<AppState>, req: Request) -> R
         )
         .await;
     if resolved_songs.is_empty() {
+        warn!(seed = %id, "Song radio: no song from any source, falling back to the upstream server's library radio");
         // Nothing from Octo's sources (no Last.fm key, say, and an artist none of the others
         // knows): Navidrome's own agents may still answer, as they did before Octo's radio.
         if !is_external
