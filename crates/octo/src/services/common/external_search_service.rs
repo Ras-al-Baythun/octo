@@ -11,14 +11,18 @@ use octo_core::last_fm::SimilarTrack;
 use octo_core::last_fm::last_fm_search_cleanup::LastFmSearchCleanup;
 use octo_core::last_fm::last_fm_search_ranking::LastFmSearchRanking;
 use octo_core::models::domain::{Album, Song};
+use octo_core::outside::routing::RoutingKind;
 use octo_core::settings::{SettingsStore, SubsonicSettings};
 use parking_lot::Mutex;
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
 
+use super::search_fusion::{self, FusedRow};
+use crate::services::cover_art::ArtworkHints;
 use crate::services::i_music_metadata_service::IMusicMetadataService;
 use crate::services::last_fm::LastFmService;
+use crate::services::you_tube::{YouTubeMusicClient, YtmRow};
 
 /// Rows built per query, regardless of how many the caller wants.
 ///
@@ -44,6 +48,19 @@ const ROWS_WAIT: Duration = Duration::from_secs(10);
 /// the call inside it; this is the ceiling on the whole build.
 const ALBUM_BUILD_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// The longest Last.fm's (or Deezer's) rows are waited for once YouTube Music has answered with
+/// songs: past it the search goes with YouTube Music's alone, as it goes with theirs alone when
+/// YouTube Music is late.
+const ROWS_WAIT_WITH_YOU_TUBE_MUSIC: Duration = Duration::from_secs(3);
+
+/// The longest a search waits for Deezer's album, cover and length of its rows. A Deezer that
+/// is slow then holds the answer up no more than this; rows it has not reached go out as they
+/// are, YouTube Music's with their video's length.
+const ENRICH_WAIT: Duration = Duration::from_secs(3);
+
+/// How many songs YouTube Music's search is asked for (the shim's most).
+const YOU_TUBE_MUSIC_ROWS: i32 = 20;
+
 /// Builds the external (discovery) half of a search, once per query.
 ///
 /// Every caller for the same query joins one execution and receives the same list. That
@@ -66,7 +83,7 @@ pub struct ExternalSearchService {
     // where each keystroke is a distinct key racing the same rate-limited lane as the
     // query the user actually meant. SupersedableBuildCoordinator adds prefix-based
     // cancellation on top of that collapsing.
-    song_builds: SupersedableBuildCoordinator<(Arc<Vec<Song>>, SongSource)>,
+    song_builds: SupersedableBuildCoordinator<(Arc<Vec<Song>>, SongSource, bool)>,
     album_builds: SupersedableBuildCoordinator<Arc<Vec<Album>>>,
     metadata: Arc<dyn IMusicMetadataService>,
     last_fm: Option<Arc<LastFmService>>,
@@ -78,6 +95,10 @@ pub struct ExternalSearchService {
     /// Last.fm answers that came too late for their search, for the next one.
     last_fm_answers: Arc<RecentResults<SimilarTrack>>,
     row_signals: RowSignals,
+    /// YouTube Music's song search, mixed into the rows when the shim is set.
+    you_tube_music: Option<Arc<YouTubeMusicClient>>,
+    /// Where the covers of songs only YouTube Music found are remembered.
+    artwork_hints: Option<Arc<ArtworkHints>>,
 }
 
 impl ExternalSearchService {
@@ -98,7 +119,21 @@ impl ExternalSearchService {
             recent_albums: RecentResults::new(RECENT_RESULTS_TTL, RECENT_RESULTS_MAX),
             last_fm_answers: Arc::new(RecentResults::new(RECENT_RESULTS_TTL, RECENT_RESULTS_MAX)),
             row_signals: RowSignals::default(),
+            you_tube_music: None,
+            artwork_hints: None,
         }
+    }
+
+    /// Mixes YouTube Music's song search into the rows (see [`search_fusion`]), and remembers
+    /// the covers of the songs only it found in `hints`.
+    pub fn with_you_tube_music(
+        mut self,
+        client: Arc<YouTubeMusicClient>,
+        hints: Option<Arc<ArtworkHints>>,
+    ) -> Self {
+        self.you_tube_music = Some(client).filter(|c| c.configured());
+        self.artwork_hints = hints;
+        self
     }
 
     /// Up to [`BUILD_SIZE`] enriched external songs for this query. Callers take
@@ -152,6 +187,13 @@ impl ExternalSearchService {
             .map_or_else(SubsonicSettings::default, |s| s.current().subsonic.clone());
         let wait = subsonic.effective_search_duration_wait();
         let last_fm_wait = subsonic.effective_search_last_fm_wait();
+        let ytm_wait = subsonic.effective_search_you_tube_music_wait();
+        let ytm = self.you_tube_music.clone().filter(|_| !ytm_wait.is_zero());
+        let extras = BuildExtras {
+            ytm,
+            ytm_wait,
+            hints: self.artwork_hints.clone(),
+        };
         let query_text = query.to_string();
         let shared = BuildShared {
             key: key.clone(),
@@ -162,20 +204,20 @@ impl ExternalSearchService {
             signals: self.row_signals.clone(),
             key: key.clone(),
         };
-        let (songs, source) = self
+        let (songs, source, partial) = self
             .song_builds
             .run(
                 query.trim(),
                 move |token: CancellationToken| async move {
                     tokio::select! {
-                        (built, source) = build(query_text, last_fm, metadata, wait, last_fm_wait, shared, rows_done) => Ok((Arc::new(built), source)),
+                        (built, source, partial) = build(query_text, last_fm, metadata, wait, last_fm_wait, shared, rows_done, extras) => Ok((Arc::new(built), source, partial)),
                         () = token.cancelled() => Err(anyhow::anyhow!("The operation was canceled.")),
                     }
                 },
                 // The waits for Last.fm and for lengths are on top of the deadline, so long
                 // ones never time the whole build out.
                 BUILD_TIMEOUT + wait + last_fm_wait,
-                (Arc::new(Vec::new()), SongSource::Nothing),
+                (Arc::new(Vec::new()), SongSource::Nothing, false),
                 // Discovery is an addition to search, never a precondition for it. The
                 // steps inside the build are individually best-effort, but the deadline is
                 // not, and a timeout must not take local results down with it.
@@ -183,8 +225,9 @@ impl ExternalSearchService {
             )
             .await;
         // A failed, timed-out or superseded build answers an empty list, which is not kept. A
-        // build from Deezer's rows gives way to Last.fm's answer once that is in.
-        if !songs.is_empty() {
+        // build from Deezer's rows gives way to Last.fm's answer once that is in. A build one of
+        // its searches was late for is not kept either, so the next search asks both again.
+        if !songs.is_empty() && !partial {
             self.recent_songs.put(key.clone(), songs.clone(), Instant::now());
             if source == SongSource::Deezer && self.last_fm_answers.get(&key, Instant::now()).is_some() {
                 self.recent_songs.remove(&key);
@@ -315,6 +358,8 @@ pub enum SongSource {
     Deezer,
     /// Last.fm, waited for after all: it did not answer in time and Deezer had nothing.
     LastFmLate,
+    /// YouTube Music's song search alone: Last.fm and Deezer did not answer in time.
+    YouTubeMusic,
 }
 
 impl SongSource {
@@ -325,6 +370,7 @@ impl SongSource {
             SongSource::LastFmKept => "Last.fm (kept from an earlier search)",
             SongSource::Deezer => "Deezer's track search (Last.fm did not answer in time)",
             SongSource::LastFmLate => "Last.fm (late; Deezer's track search had nothing)",
+            SongSource::YouTubeMusic => "YouTube Music alone (Last.fm and Deezer were late)",
         }
     }
 }
@@ -335,6 +381,23 @@ struct BuildShared {
     key: String,
     last_fm_answers: Arc<RecentResults<SimilarTrack>>,
     recent_songs: Arc<RecentResults<Song>>,
+}
+
+/// YouTube Music's part in a build: its client when it is asked, and how long it is waited for.
+struct BuildExtras {
+    ytm: Option<Arc<YouTubeMusicClient>>,
+    ytm_wait: Duration,
+    hints: Option<Arc<ArtworkHints>>,
+}
+
+/// What YouTube Music's search came to in a build.
+enum YtmPart {
+    /// Not asked: no shim, or its wait is 0.
+    Off,
+    /// Asked, but it did not answer in time (or could not answer).
+    Late,
+    /// Its rows, perhaps none.
+    Rows(Vec<YtmRow>),
 }
 
 /// Fans out to Last.fm, then fills in the metadata a client needs to render and play
@@ -358,24 +421,63 @@ async fn build(
     last_fm_wait: Duration,
     shared: BuildShared,
     rows_done: RowsDone,
-) -> (Vec<Song>, SongSource) {
+    extras: BuildExtras,
+) -> (Vec<Song>, SongSource, bool) {
     let started = Instant::now();
-    let (collected, source) = song_rows(&query, &last_fm, &metadata, last_fm_wait, &shared).await;
+    let (rows, source, ytm) =
+        both_searches(&query, &last_fm, &metadata, last_fm_wait, &shared, &extras).await;
     let searched = started.elapsed();
+    // A build missing a search it asked is not kept (see `songs`).
+    let partial = matches!(ytm, YtmPart::Late) || source == SongSource::YouTubeMusic;
+    let ytm_note = match &ytm {
+        YtmPart::Off => String::new(),
+        YtmPart::Late => ", YouTube Music late".to_string(),
+        YtmPart::Rows(found) => format!(", YouTube Music {} rows", found.len()),
+    };
+    let fused: Vec<FusedRow> = match &ytm {
+        YtmPart::Rows(found) if !found.is_empty() => {
+            search_fusion::fuse(&query, &rows, found, BUILD_SIZE as usize)
+        }
+        _ => rows
+            .into_iter()
+            .map(|(artist, title)| FusedRow {
+                artist,
+                title,
+                video: None,
+                length: None,
+                thumbnail: None,
+            })
+            .collect(),
+    };
 
-    let mut songs = Vec::with_capacity(collected.len());
-    for (artist, title) in &collected {
-        if let Some(hit) = metadata
-            .search_songs_by_artist_title(artist, title, 1, None)
+    let mut songs = Vec::with_capacity(fused.len());
+    let mut pinned = 0;
+    for row in &fused {
+        let Some(mut hit) = metadata
+            .search_songs_by_artist_title(&row.artist, &row.title, 1, None)
             .await
             .into_iter()
             .next()
+        else {
+            continue;
+        };
+        // YouTube Music's own audio for the song: pinned now, so a play needs no lookup.
+        if let Some(video) = &row.video
+            && let Some(length) = metadata.keep_search_video(&hit.id, video, row.length)
         {
-            songs.push(hit);
+            hit.duration = Some(length);
+            pinned += 1;
         }
+        if let (Some(url), Some(hints)) = (&row.thumbnail, &extras.hints) {
+            hints.remember(RoutingKind::Song, &row.artist, &row.title, url);
+        }
+        songs.push(hit);
     }
     let placed = started.elapsed();
-    info!("External search '{query}' -> {} placeholder songs", songs.len());
+    info!(
+        "External search '{query}' -> {} placeholder songs ({pinned} with YouTube Music's video{ytm_note})",
+        songs.len()
+    );
 
     // Album/art/year from Deezer (fast), then the ACCURATE duration for the top of the
     // list from the real YouTube video (so the scrub bar matches the audio and the
@@ -384,7 +486,23 @@ async fn build(
     // The video lookups start now, so they run while Deezer answers; the pick still waits
     // for Deezer's length.
     metadata.prefetch_top_videos(&songs);
-    metadata.enrich_search_rows(&mut songs).await;
+    if source == SongSource::YouTubeMusic {
+        // Deezer was too slow for the rows already: its lookups run after the answer, where
+        // getSong and the next search pick up what they find.
+        let mut later = songs.clone();
+        let deezer = metadata.clone();
+        tokio::spawn(async move { deezer.enrich_search_rows(&mut later).await });
+    } else if tokio::time::timeout(ENRICH_WAIT, metadata.enrich_search_rows(&mut songs))
+        .await
+        .is_err()
+    {
+        info!(
+            "External search '{query}': Deezer's row lookups took over {} s; the rest go without",
+            ENRICH_WAIT.as_secs()
+        );
+    }
+    // Rows with a video already show its length, which the lengths pass leaves be.
+    metadata.refresh_outside_songs(&mut songs);
     let enriched = started.elapsed();
     // Album ownership reads tracklists from the same Deezer budget; they start now.
     rows_done.mark();
@@ -456,7 +574,61 @@ async fn build(
     let covers = songs.clone();
     tokio::spawn(async move { metadata.prewarm_cover_art(&covers, 24).await });
 
-    (songs, source)
+    (songs, source, partial)
+}
+
+/// Last.fm's (or Deezer's) rows and YouTube Music's song search, asked at once. Whichever is
+/// late is gone without: YouTube Music past `ytm_wait`, and the others past
+/// [`ROWS_WAIT_WITH_YOU_TUBE_MUSIC`] once YouTube Music has songs (else they are waited for as
+/// before, so a search never comes back emptier than it did without YouTube Music).
+async fn both_searches(
+    query: &str,
+    last_fm: &Arc<LastFmService>,
+    metadata: &Arc<dyn IMusicMetadataService>,
+    last_fm_wait: Duration,
+    shared: &BuildShared,
+    extras: &BuildExtras,
+) -> (Vec<(String, String)>, SongSource, YtmPart) {
+    let Some(client) = extras.ytm.clone() else {
+        let (rows, source) = song_rows(query, last_fm, metadata, last_fm_wait, shared).await;
+        return (rows, source, YtmPart::Off);
+    };
+    let started = tokio::time::Instant::now();
+    let asked = query.to_string();
+    let mut ytm_answer =
+        tokio::spawn(async move { client.search_limited(&asked, "songs", YOU_TUBE_MUSIC_ROWS).await });
+    let ytm_deadline = started + extras.ytm_wait;
+    let rows = song_rows(query, last_fm, metadata, last_fm_wait, shared);
+    tokio::pin!(rows);
+
+    let mut ytm: Option<YtmPart> = None;
+    let mut rows_answer: Option<(Vec<(String, String)>, SongSource)> = None;
+    loop {
+        let ytm_songs = matches!(&ytm, Some(YtmPart::Rows(found)) if !found.is_empty());
+        tokio::select! {
+            answer = &mut rows, if rows_answer.is_none() => rows_answer = Some(answer),
+            answer = &mut ytm_answer, if ytm.is_none() => {
+                ytm = Some(match answer {
+                    Ok(Ok(Some(found))) => YtmPart::Rows(found),
+                    Ok(Err(e)) => {
+                        debug!("YouTube Music's search for '{query}' failed: {e}");
+                        YtmPart::Late
+                    }
+                    _ => YtmPart::Late,
+                });
+            }
+            () = tokio::time::sleep_until(ytm_deadline), if ytm.is_none() => {
+                ytm_answer.abort();
+                ytm = Some(YtmPart::Late);
+            }
+            () = tokio::time::sleep_until(started + ROWS_WAIT_WITH_YOU_TUBE_MUSIC), if rows_answer.is_none() && ytm_songs => {
+                return (Vec::new(), SongSource::YouTubeMusic, ytm.unwrap_or(YtmPart::Late));
+            }
+        }
+        if let (Some((rows, source)), Some(_)) = (&rows_answer, &ytm) {
+            return (rows.clone(), *source, ytm.take().unwrap_or(YtmPart::Late));
+        }
+    }
 }
 
 /// The artist and title of each row, deduped, at most [`BUILD_SIZE`]: Last.fm's, or Deezer's

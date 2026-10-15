@@ -186,6 +186,7 @@ async fn settings_list_how_long_search_waits_for_lengths() {
     let document = get(&app, "/api/admin/settings").await.json();
     assert_eq!(document["Subsonic"]["SearchDurationWaitMs"], 1000);
     assert_eq!(document["Subsonic"]["SearchLastFmWaitMs"], 1000);
+    assert_eq!(document["Subsonic"]["SearchYouTubeMusicWaitMs"], 1500);
 }
 
 #[tokio::test]
@@ -741,15 +742,17 @@ async fn config_sources_masks_secrets_and_lists_lists_as_empty() {
     // country mixes' four: :CountryMixes, :Countries, :MaxCountryPlaylists and
     // :CountryLookupsPerRefresh, Lidarr:WebhookSecret, the thirteen Downloads keys,
     // RadioSources:ListenBrainzRadioMode, Subsonic:StreamSizeWarmPerMinute,
-    // Subsonic:SearchDurationWaitMs, Subsonic:SearchLastFmWaitMs, Subsonic:CoverCacheMb,
-    // Subsonic:SizeFlagClients and Imports:KeepInNavidrome.
-    assert_eq!(rows.len(), 176);
+    // Subsonic:SearchDurationWaitMs, Subsonic:SearchLastFmWaitMs,
+    // Subsonic:SearchYouTubeMusicWaitMs, Subsonic:CoverCacheMb, Subsonic:SizeFlagClients and
+    // Imports:KeepInNavidrome.
+    assert_eq!(rows.len(), 177);
     assert_eq!(row("Imports:KeepInNavidrome")["IsSecret"], false);
     assert_eq!(row("Subsonic:SizeFlagClients")["IsSecret"], false);
     assert_eq!(row("Subsonic:StreamSizeWarmPerMinute")["IsSecret"], false);
     assert_eq!(row("Subsonic:CoverCacheMb")["IsSecret"], false);
     assert_eq!(row("Subsonic:SearchDurationWaitMs")["IsSecret"], false);
     assert_eq!(row("Subsonic:SearchLastFmWaitMs")["IsSecret"], false);
+    assert_eq!(row("Subsonic:SearchYouTubeMusicWaitMs")["IsSecret"], false);
     assert_eq!(row("GeneratedPlaylists:CountryMixes")["IsSecret"], false);
     assert_eq!(row("GeneratedPlaylists:LikedSongsName")["IsSecret"], false);
     assert_eq!(row("RadioSources:ListenBrainzRadioMode")["IsSecret"], false);

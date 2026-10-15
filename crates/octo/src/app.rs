@@ -859,11 +859,17 @@ impl Acquisition {
             family: Default::default(),
         }));
         song_finder.use_family(navidrome.family_write_gate.clone());
-        let external_search = Arc::new(ExternalSearchService::new(
-            music_metadata,
-            Some(integrations.last_fm.clone()),
-            Some(settings.clone()),
-        ));
+        let external_search = Arc::new(
+            ExternalSearchService::new(
+                music_metadata,
+                Some(integrations.last_fm.clone()),
+                Some(settings.clone()),
+            )
+            .with_you_tube_music(
+                Arc::new(YouTubeMusicClient::new(settings)),
+                Some(Arc::clone(&clients.artwork_hints)),
+            ),
+        );
         Acquisition {
             download_service,
             lidarr_client,

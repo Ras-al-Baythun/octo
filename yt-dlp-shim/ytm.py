@@ -1,6 +1,7 @@
 """YouTube Music search and radio for Octo's radio, through ytmusicapi (no sign-in)."""
 import http.client
 import logging
+import re
 import threading
 
 import requests
@@ -53,6 +54,16 @@ def seconds(length):
     return total
 
 
+def _thumbnail(item):
+    """The largest cover YouTube Music lists, asked of Google's image server at 544 px
+    (its own sizes stop at 120 for a song row)."""
+    pictures = [t for t in (item.get("thumbnails") or []) if t and t.get("url")]
+    if not pictures:
+        return None
+    url = max(pictures, key=lambda t: t.get("width") or 0)["url"]
+    return re.sub(r"=w\d+-h\d+", "=w544-h544", url)
+
+
 def _row(item):
     video_id = item.get("videoId")
     title = item.get("title")
@@ -66,6 +77,7 @@ def _row(item):
         "album": album.get("name") if isinstance(album, dict) else None,
         "durationSeconds": item.get("duration_seconds") or seconds(item.get("length") or item.get("duration")),
         "videoType": item.get("videoType") or ("MUSIC_VIDEO_TYPE_ATV" if item.get("resultType") == "song" else None),
+        "thumbnail": _thumbnail(item),
     }
 
 

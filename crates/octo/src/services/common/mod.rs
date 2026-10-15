@@ -12,6 +12,7 @@ pub mod download_picks;
 pub mod external_search_service;
 pub mod heart_acquisition_coordinator;
 pub mod replace_anyway;
+pub mod search_fusion;
 pub mod song_finder;
 pub mod star_on_arrival;
 pub mod top_songs_service;

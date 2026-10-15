@@ -334,6 +334,14 @@ struct LengthUpstream {
     deezer_artists: Arc<Mutex<HashMap<String, i64>>>,
     deezer_related: Arc<Mutex<HashMap<i64, Vec<(i64, String)>>>>,
     search_tracks: Arc<Mutex<Vec<(String, String)>>>,
+    /// YouTube Music's song search (`/shim/ytm/search`), whatever the words.
+    ytm_songs: Arc<Mutex<Vec<Value>>>,
+    /// How long YouTube Music's search takes to answer.
+    ytm_delay: Arc<Mutex<Option<std::time::Duration>>>,
+    /// How long Last.fm's track.search and Deezer's search take to answer.
+    rows_delay: Arc<Mutex<Option<std::time::Duration>>>,
+    /// Every path asked of the shim with its words (`q`), in order.
+    shim_calls: Arc<Mutex<Vec<String>>>,
 }
 
 fn find_ignore_case(map: &HashMap<String, i32>, key: &str) -> Option<(String, i32)> {
@@ -345,6 +353,33 @@ fn find_ignore_case(map: &HashMap<String, i32>, key: &str) -> Option<(String, i3
 impl Respond for LengthUpstream {
     fn respond(&self, request: &wiremock::Request) -> ResponseTemplate {
         let path = request.url.path().to_string();
+        if path.starts_with("/shim/") {
+            let words = query_value(request, "q").unwrap_or_default();
+            self.shim_calls.lock().push(format!("{path} {words}"));
+        }
+        let reply = self.answer(request, &path);
+        let delay = if path == "/shim/ytm/search" {
+            *self.ytm_delay.lock()
+        } else if path == "/deezer/search"
+            || (path.starts_with("/2.0") && query_value(request, "method").as_deref() == Some("track.search"))
+        {
+            *self.rows_delay.lock()
+        } else {
+            None
+        };
+        match delay {
+            Some(delay) => reply.set_delay(delay),
+            None => reply,
+        }
+    }
+}
+
+impl LengthUpstream {
+    fn answer(&self, request: &wiremock::Request, path: &str) -> ResponseTemplate {
+        let path = path.to_string();
+        if path == "/shim/ytm/search" {
+            return json_reply(json!({ "tracks": self.ytm_songs.lock().clone() }).to_string());
+        }
         if path.starts_with("/rest/") {
             let fields = if path.contains("search3") {
                 r#""searchResult3":{"song":[],"album":[],"artist":[]}"#
@@ -1100,4 +1135,134 @@ async fn get_artist_info2_a_biography_last_fm_gives_for_another_name_is_left_out
     let info = &body["subsonic-response"]["artistInfo2"];
     assert_eq!(info["biography"], "", "{body}");
     assert_eq!(info["similarArtist"].as_array().map(Vec::len), Some(2));
+}
+
+// ---------------------------------------------------------------------------------------
+// YouTube Music in search: its songs mixed with Last.fm's rows, and whichever is late left out.
+// ---------------------------------------------------------------------------------------
+
+fn ytm_song(id: &str, artist: &str, title: &str, seconds: i32, kind: &str) -> Value {
+    json!({"videoId": id, "title": title, "artists": [artist], "durationSeconds": seconds,
+        "videoType": kind, "thumbnail": format!("https://img.test/{id}")})
+}
+
+async fn search3_songs(fixture: &LengthFixture, query: &str) -> Vec<Value> {
+    let body = get(
+        &fixture.app,
+        &format!("/rest/search3?query={query}&songCount=50&albumCount=0&artistCount=0&u=alice&t=token&s=salt&f=json"),
+    )
+    .await
+    .json();
+    body["subsonic-response"]["searchResult3"]["song"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn titles(songs: &[Value]) -> Vec<String> {
+    songs
+        .iter()
+        .map(|s| s["title"].as_str().unwrap().to_string())
+        .collect()
+}
+
+#[tokio::test]
+async fn search3_mixes_in_youtube_musics_songs_and_plays_them_without_a_lookup() {
+    let fixture = length_fixture().await;
+    fixture
+        .upstream
+        .search_tracks
+        .lock()
+        .push(("Svetlana Loboda".into(), "Moloko".into()));
+    fixture
+        .upstream
+        .deezer
+        .lock()
+        .insert("Svetlana Loboda Moloko".into(), 200);
+    *fixture.upstream.ytm_songs.lock() = vec![
+        ytm_song("sv1", "NEXTIME", "СВЕТЛАНА!", 181, "MUSIC_VIDEO_TYPE_ATV"),
+        ytm_song("omv", "Someone", "A Music Video", 240, "MUSIC_VIDEO_TYPE_OMV"),
+    ];
+
+    let songs = search3_songs(&fixture, "svetlana").await;
+    let names = titles(&songs);
+    assert!(names.contains(&"Moloko".to_string()), "{names:?}");
+    assert!(names.contains(&"СВЕТЛАНА!".to_string()), "{names:?}");
+    assert!(!names.contains(&"A Music Video".to_string()), "{names:?}");
+
+    let found = songs.iter().find(|s| s["title"] == "СВЕТЛАНА!").unwrap();
+    assert_eq!(found["duration"], 181);
+    let id = found["id"].as_str().unwrap();
+    let routing = fixture.state.external_id_registry.lookup(id).expect("registered");
+    assert_eq!(routing.lock().you_tube_id.as_deref(), Some("sv1"));
+
+    fixture.upstream.shim_calls.lock().clear();
+    get(
+        &fixture.app,
+        &format!("/rest/stream?id={id}&u=alice&t=token&s=salt"),
+    )
+    .await;
+    let calls = fixture.upstream.shim_calls.lock().clone();
+    assert!(
+        !calls
+            .iter()
+            .any(|c| c.contains("NEXTIME") || c.contains("СВЕТЛАНА")),
+        "a pinned song is not looked up again: {calls:?}"
+    );
+    assert!(calls.iter().any(|c| c.starts_with("/shim/stream")), "{calls:?}");
+}
+
+#[tokio::test]
+async fn a_late_youtube_music_leaves_last_fms_rows_alone() {
+    let fixture = length_fixture().await;
+    fixture
+        .upstream
+        .search_tracks
+        .lock()
+        .push(("Tom Odell".into(), "Another Love".into()));
+    *fixture.upstream.ytm_songs.lock() =
+        vec![ytm_song("late", "Late", "Too Late", 200, "MUSIC_VIDEO_TYPE_ATV")];
+    *fixture.upstream.ytm_delay.lock() = Some(std::time::Duration::from_secs(5));
+
+    let started = std::time::Instant::now();
+    let songs = search3_songs(&fixture, "another%20love").await;
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(4),
+        "{:?}",
+        started.elapsed()
+    );
+    assert_eq!(titles(&songs), ["Another Love"]);
+}
+
+#[tokio::test]
+async fn late_last_fm_and_deezer_leave_youtube_musics_songs_alone() {
+    let fixture = length_fixture().await;
+    fixture
+        .upstream
+        .search_tracks
+        .lock()
+        .push(("Tom Odell".into(), "Another Love".into()));
+    fixture
+        .upstream
+        .deezer
+        .lock()
+        .insert("Tom Odell Another".into(), 200);
+    *fixture.upstream.ytm_songs.lock() = vec![ytm_song(
+        "ol",
+        "Tom Odell",
+        "Another Love",
+        244,
+        "MUSIC_VIDEO_TYPE_ATV",
+    )];
+    *fixture.upstream.rows_delay.lock() = Some(std::time::Duration::from_secs(8));
+
+    let started = std::time::Instant::now();
+    let songs = search3_songs(&fixture, "another%20love").await;
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(6),
+        "{:?}",
+        started.elapsed()
+    );
+    assert_eq!(titles(&songs), ["Another Love"]);
+    assert_eq!(songs[0]["duration"], 244);
 }

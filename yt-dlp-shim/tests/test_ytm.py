@@ -25,7 +25,16 @@ def test_a_watch_track_becomes_a_row():
         "videoType": "MUSIC_VIDEO_TYPE_ATV",
     })
     assert row == {"videoId": "v1", "title": "Murder In My Mind", "artists": ["Kordhell"],
-                   "album": "A Million Ways", "durationSeconds": 146, "videoType": "MUSIC_VIDEO_TYPE_ATV"}
+                   "album": "A Million Ways", "durationSeconds": 146, "videoType": "MUSIC_VIDEO_TYPE_ATV",
+                   "thumbnail": None}
+
+
+def test_a_row_carries_its_largest_cover_at_544_px():
+    row = ytm._row({"videoId": "v3", "title": "СВЕТЛАНА!", "resultType": "song", "thumbnails": [
+        {"url": "https://lh3.googleusercontent.com/a=w60-h60-l90-rj", "width": 60, "height": 60},
+        {"url": "https://lh3.googleusercontent.com/b=w120-h120-l90-rj", "width": 120, "height": 120},
+    ]})
+    assert row["thumbnail"] == "https://lh3.googleusercontent.com/b=w544-h544-l90-rj"
 
 
 def test_a_song_search_row_is_a_release_and_keeps_its_seconds():

@@ -204,6 +204,16 @@ pub struct SubsonicSettings {
     /// kept, and the next search for the same words uses it.
     pub search_last_fm_wait_ms: i32,
 
+    /// How long a search waits for YouTube Music's song search, in milliseconds (default:
+    /// 1500, range 0-10000). 0 leaves YouTube Music out of search.
+    /// Environment variable: SEARCH_YTMUSIC_WAIT_MS
+    ///
+    /// YouTube Music's songs are mixed with Last.fm's (or Deezer's) rows: a song both find
+    /// rises, and one only YouTube Music finds (a name written in another script, say) joins
+    /// them. Its video is pinned at once, so playing it needs no second lookup. Past the wait
+    /// the search goes without it.
+    pub search_you_tube_music_wait_ms: i32,
+
     /// Give clients that sync the library to the device a discovery catalog (default: true).
     /// Environment variable: ENABLE_SYNC_CATALOG
     ///
@@ -352,6 +362,7 @@ impl Default for SubsonicSettings {
             wait_for_search_durations: true,
             search_duration_wait_ms: 1000,
             search_last_fm_wait_ms: 1000,
+            search_you_tube_music_wait_ms: 1500,
             enable_sync_catalog: true,
             sync_catalog_clients: "Symfonium".to_string(),
             sync_catalog_max_songs: 1000,
@@ -392,6 +403,12 @@ impl SubsonicSettings {
     /// for Last.fm) at 0, else SearchLastFmWaitMs within 0 to 10 seconds.
     pub fn effective_search_last_fm_wait(&self) -> std::time::Duration {
         std::time::Duration::from_millis(self.search_last_fm_wait_ms.clamp(0, 10_000) as u64)
+    }
+
+    /// How long a search waits for YouTube Music's song search: off at 0, else
+    /// SearchYouTubeMusicWaitMs within 0 to 10 seconds.
+    pub fn effective_search_you_tube_music_wait(&self) -> std::time::Duration {
+        std::time::Duration::from_millis(self.search_you_tube_music_wait_ms.clamp(0, 10_000) as u64)
     }
 
     pub fn effective_stream_size_warm_per_minute(&self) -> usize {
@@ -687,6 +704,25 @@ mod tests {
                 s.effective_search_last_fm_wait(),
                 Duration::from_millis(expected),
                 "{configured}"
+            );
+        }
+    }
+
+    #[test]
+    fn search_waits_for_you_tube_music_a_second_and_a_half_by_default() {
+        use std::time::Duration;
+        assert_eq!(
+            SubsonicSettings::default().effective_search_you_tube_music_wait(),
+            Duration::from_millis(1500)
+        );
+        for (configured, expected) in [(0, 0), (-5, 0), (800, 800), (20_000, 10_000)] {
+            let s = SubsonicSettings {
+                search_you_tube_music_wait_ms: configured,
+                ..Default::default()
+            };
+            assert_eq!(
+                s.effective_search_you_tube_music_wait(),
+                Duration::from_millis(expected)
             );
         }
     }

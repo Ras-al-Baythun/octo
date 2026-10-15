@@ -485,6 +485,12 @@ impl Inner {
         self.id_registry.lookup(id)
     }
 
+    /// Whether the song under `id` has a video pinned.
+    fn has_video(&self, id: &str) -> bool {
+        self.lookup(id)
+            .is_some_and(|r| r.lock().you_tube_id.as_deref().is_some_and(|v| !v.is_empty()))
+    }
+
     /// Reflect a catalog answer onto the song and its shared routing, so getSong stays
     /// consistent, and remember its length. The catalog's album only fills a blank one: the
     /// track it matched can sit on a compilation, and the album the song already names is the
@@ -1355,9 +1361,21 @@ impl IMusicMetadataService for OutsideMetadataService {
             .iter()
             .filter(|s| !s.is_local)
             .take(TOP_DURATION_RESOLVE_LIMIT)
+            .filter(|s| !self.inner.has_video(&s.id))
         {
             self.inner.youtube.prefetch_music_song(&song.artist, &song.title);
         }
+    }
+
+    fn keep_search_video(&self, song_id: &str, video: &str, length: Option<i32>) -> Option<i32> {
+        let hit = YouTubeHit {
+            video_id: video.to_string(),
+            title: None,
+            duration: length,
+            channel: None,
+            stream: Default::default(),
+        };
+        self.inner.keep_video(song_id, &hit, false)
     }
 
     async fn resolve_top_durations_within(
@@ -1365,11 +1383,14 @@ impl IMusicMetadataService for OutsideMetadataService {
         songs: &mut [Song],
         budget: Duration,
     ) -> Option<JoinHandle<()>> {
+        // A row with a video already (the search's own find, a play's, or a version the
+        // listener chose) keeps it: its length came with it.
         let targets: Vec<(usize, Song)> = songs
             .iter()
             .enumerate()
             .filter(|(_, s)| !s.is_local)
             .take(TOP_DURATION_RESOLVE_LIMIT)
+            .filter(|(_, s)| !self.inner.has_video(&s.id))
             .map(|(index, song)| (index, song.clone()))
             .collect();
         if targets.is_empty() {

@@ -452,6 +452,7 @@ mod tests {
             album: None,
             duration_seconds: Some(seconds),
             video_type: Some(ATV.into()),
+            thumbnail: None,
         }
     }
 

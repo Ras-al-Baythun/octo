@@ -94,6 +94,13 @@ pub trait IMusicMetadataService: Send + Sync {
     /// what is known only; nothing is looked up.
     fn refresh_outside_songs(&self, _songs: &mut [Song]) {}
 
+    /// Pins `video`, which a search already found for the outside song under `song_id`, with
+    /// its `length`, so playing the song needs no lookup and the lengths pass leaves it be. The
+    /// length to show for it; None when nothing was pinned.
+    fn keep_search_video(&self, _song_id: &str, _video: &str, _length: Option<i32>) -> Option<i32> {
+        None
+    }
+
     /// Gives one outside song its album year when it has none, for a caller that answers with
     /// this one song (getSong, the native song detail): from what is already known, else one
     /// album lookup on the interactive lane, waited for a moment only. A lookup that takes

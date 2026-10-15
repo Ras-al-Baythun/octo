@@ -66,7 +66,9 @@ pub async fn get_similar_songs(State(state): State<AppState>, req: Request) -> R
 
     // Check if radio is configured and enabled
     if !state.song_radio.enabled() {
-        warn!("Song radio is off (LastFm.EnableRadio) or has no sources: relaying to the upstream server, which only knows the library");
+        warn!(
+            "Song radio is off (LastFm.EnableRadio) or has no sources: relaying to the upstream server, which only knows the library"
+        );
         // The path keeps its leading slash, so the upstream URL has a double slash after the
         // server's address.
         return match call.proxy.relay(&path, &call.parameters).await {

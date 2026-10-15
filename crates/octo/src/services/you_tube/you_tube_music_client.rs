@@ -22,6 +22,8 @@ pub struct YtmRow {
     pub album: Option<String>,
     pub duration_seconds: Option<i32>,
     pub video_type: Option<String>,
+    /// The largest cover YouTube Music shows for it, when the shim passes it on.
+    pub thumbnail: Option<String>,
 }
 
 pub struct YouTubeMusicClient {
@@ -160,6 +162,7 @@ pub fn rows(root: &Value) -> ElementResult<Vec<YtmRow>> {
             album: text(row, "album")?,
             duration_seconds: seconds,
             video_type: text(row, "videoType")?,
+            thumbnail: text(row, "thumbnail")?,
         });
     }
     Ok(rows)
@@ -253,6 +256,7 @@ mod tests {
             album: None,
             duration_seconds: seconds,
             video_type: kind.map(str::to_string),
+            thumbnail: None,
         }
     }
 
