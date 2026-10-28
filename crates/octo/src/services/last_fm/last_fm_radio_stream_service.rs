@@ -1003,6 +1003,10 @@ impl LastFmRadioStreamService {
                 ..Default::default()
             },
         );
+        // A YouTube video found as itself is not reported anywhere.
+        if !song.is_local && self.shared.registry.is_video(&song.id) {
+            return;
+        }
         if !song.is_local {
             // A local track's play is scrobbled by Navidrome below; an external one would
             // otherwise vanish from the listener's history. Not awaited: the stream is mid-song

@@ -129,6 +129,12 @@ impl LastFmRadioTrackResolver {
         Some(hit)
     }
 
+    /// A YouTube video a video's radio suggested, as itself: its channel the artist, its own
+    /// video pinned, however long it runs, and marked as a video (never a library song).
+    pub fn resolve_video(&self, video: &str, channel: &str, title: &str, duration: Option<i32>) -> Option<Song> {
+        self.metadata.video_song(video, channel, title, duration)
+    }
+
     /// Navidrome's search for the artist and title, as the listener; the first hit that is the
     /// same recording.
     pub async fn try_find_local_match(

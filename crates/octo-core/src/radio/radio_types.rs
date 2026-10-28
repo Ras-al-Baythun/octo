@@ -7,7 +7,8 @@ use crate::models::domain::Song;
 /// What a radio starts from.
 ///
 /// `title`: empty for an artist's radio. `library_song`: the library song, when it is one: its
-/// album, genre and file. `you_tube_id`: a video already known to play the seed.
+/// album, genre and file. `you_tube_id`: a video already known to play the seed. `is_video`: the
+/// seed is a YouTube video found as itself (an ambience, a mix), whose radio may suggest videos.
 #[derive(Debug, Clone, Default)]
 pub struct RadioSeed {
     pub artist: String,
@@ -15,6 +16,7 @@ pub struct RadioSeed {
     pub duration: Option<i32>,
     pub library_song: Option<Song>,
     pub you_tube_id: Option<String>,
+    pub is_video: bool,
 }
 
 impl RadioSeed {
@@ -30,6 +32,7 @@ impl RadioSeed {
             duration,
             library_song,
             you_tube_id: None,
+            is_video: false,
         }
     }
 

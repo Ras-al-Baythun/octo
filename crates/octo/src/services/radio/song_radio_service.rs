@@ -280,6 +280,14 @@ async fn resolve(
     let song = match (&pick.library_song, &pick.track) {
         (Some(library), _) if pick.needs_reading => resolver.read_library_song(&library.id, auth).await,
         (Some(library), _) => Some(library.clone()),
+        (None, Some(track)) if track.is_video && track.you_tube_id.as_deref().is_some_and(|v| !v.is_empty()) => {
+            resolver.resolve_video(
+                track.you_tube_id.as_deref().unwrap_or_default(),
+                &track.artist,
+                &track.title,
+                track.duration,
+            )
+        }
         (None, Some(track)) => {
             resolver
                 .resolve(

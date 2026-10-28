@@ -724,6 +724,12 @@ async fn learn_from_scrobbles(
         // Last.fm hears about outside songs, and library songs too unless the admin left
         // those to a Navidrome that scrobbles them itself (else they would count twice).
         let outside = state.local_library.parse_song_id(song_id).0;
+        // A YouTube video found as itself (an ambience, a mix) is not music Last.fm,
+        // ListenBrainz or the radio's taste should learn from.
+        if outside && state.external_id_registry.is_video(song_id) {
+            debug!("Scrobble of {song_id} for {username} is a video; not reported");
+            continue;
+        }
         let last_fm_takes = scrobbling && (outside || state.last_fm_scrobbles.takes_library_plays());
         if !completed && !last_fm_takes {
             continue;

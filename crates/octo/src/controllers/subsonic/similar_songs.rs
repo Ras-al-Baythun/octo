@@ -82,6 +82,7 @@ pub async fn get_similar_songs(State(state): State<AppState>, req: Request) -> R
     let mut track_title = String::new();
     let mut library_seed: Option<Song> = None;
     let mut seed_video: Option<String> = None;
+    let mut seed_is_video = false;
 
     let resolver = LastFmRadioTrackResolver::new(
         call.proxy.clone(),
@@ -115,10 +116,11 @@ pub async fn get_similar_songs(State(state): State<AppState>, req: Request) -> R
         }
         // An outside song already playing from YouTube names its video: its radio needs no
         // search.
-        seed_video = state
-            .external_id_registry
-            .lookup(&id)
-            .and_then(|routing| routing.lock().you_tube_id.clone());
+        if let Some(routing) = state.external_id_registry.lookup(&id) {
+            let routing = routing.lock();
+            seed_video = routing.you_tube_id.clone();
+            seed_is_video = routing.is_video;
+        }
     } else {
         // A library song, or an album or artist, which Subsonic's getSimilarSongs also takes.
         // Read with the caller's own credentials, so it is their library being asked.
@@ -174,6 +176,7 @@ pub async fn get_similar_songs(State(state): State<AppState>, req: Request) -> R
         duration: library_seed.as_ref().and_then(|song| song.duration),
         library_song: library_seed,
         you_tube_id: seed_video,
+        is_video: seed_is_video,
     };
     let mut resolved_songs = state
         .song_radio

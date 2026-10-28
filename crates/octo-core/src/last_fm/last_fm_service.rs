@@ -5,7 +5,8 @@
 ///
 /// `listeners`: how many people Last.fm counts for the row, where the call says.
 /// `you_tube_id`: the video a source already knows plays this song. `provider`: the
-/// `services::radio::radio_provider` key of the source that suggested it.
+/// `services::radio::radio_provider` key of the source that suggested it. `is_video`: a YouTube
+/// video found as itself (an upload a video's radio suggested), played and shown as one.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SimilarTrack {
     pub artist: String,
@@ -15,6 +16,7 @@ pub struct SimilarTrack {
     pub listeners: Option<i64>,
     pub you_tube_id: Option<String>,
     pub provider: Option<String>,
+    pub is_video: bool,
 }
 
 impl SimilarTrack {
@@ -28,6 +30,7 @@ impl SimilarTrack {
             listeners: None,
             you_tube_id: None,
             provider: None,
+            is_video: false,
         }
     }
 
@@ -46,6 +49,12 @@ impl SimilarTrack {
     /// The same track with its YouTube id set.
     pub fn with_you_tube_id(mut self, you_tube_id: Option<String>) -> Self {
         self.you_tube_id = you_tube_id;
+        self
+    }
+
+    /// The same track, a video found as itself or not.
+    pub fn with_video(mut self, is_video: bool) -> Self {
+        self.is_video = is_video;
         self
     }
 

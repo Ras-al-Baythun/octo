@@ -11,6 +11,7 @@ use octo_core::common::SongIdentity;
 use octo_core::common::song_identity::SongRef;
 use octo_core::last_fm::SimilarTrack;
 use octo_core::last_fm::last_fm_radio_seed_normalizer as seed_normalizer;
+use octo_core::outside::SongLength;
 use octo_core::radio::radio_provider::YOU_TUBE_MUSIC;
 use octo_core::radio::{RadioAnswer, RadioMatch, RadioSeed};
 use octo_core::settings::SettingsStore;
@@ -81,13 +82,22 @@ impl YouTubeMusicRadioSource {
     }
 }
 
-/// The rows as tracks this source suggested.
-fn tracks<'a>(rows: impl Iterator<Item = &'a YtmRow>, count: i32) -> Vec<SimilarTrack> {
+/// Whether a row is no longer than a song can be ([`SongLength::MAX_VIDEO_SECONDS`]), or of a
+/// length not given.
+fn song_length(row: &YtmRow) -> bool {
+    row.duration_seconds.is_none() || SongLength::sane_video_length(row.duration_seconds).is_some()
+}
+
+/// The rows as tracks this source suggested. In a video's radio (`videos`), uploads are videos
+/// found as themselves.
+fn tracks<'a>(rows: impl Iterator<Item = &'a YtmRow>, count: i32, videos: bool) -> Vec<SimilarTrack> {
     rows.map(|row| {
+        let upload = row.video_type.as_deref().is_none_or(|kind| kind == UPLOAD);
         SimilarTrack::new(row.artists.join(", "), row.title.clone(), 1.0)
             .with_duration(row.duration_seconds)
             .with_you_tube_id(Some(row.video_id.clone()))
             .with_provider(Some(YOU_TUBE_MUSIC.to_string()))
+            .with_video(videos && upload)
     })
     .take(count.max(0) as usize)
     .collect()
@@ -161,8 +171,10 @@ impl IRadioSource for YouTubeMusicRadioSource {
             }
             let found = tracks(
                 rows.iter()
-                    .filter(|row| row.video_type.as_deref() != Some(PODCAST) && !row.artists.is_empty()),
+                    .filter(|row| row.video_type.as_deref() != Some(PODCAST) && !row.artists.is_empty())
+                    .filter(|row| song_length(row)),
                 count,
+                false,
             );
             let r#match = if found.is_empty() {
                 RadioMatch::None
@@ -185,8 +197,11 @@ impl IRadioSource for YouTubeMusicRadioSource {
             rows.iter()
                 .filter(|row| row.video_id != found.video_id && row.video_type.as_deref() != Some(PODCAST))
                 .filter(|row| from_upload || row.video_type.as_deref() != Some(UPLOAD))
-                .filter(|row| !row.artists.is_empty()),
+                .filter(|row| !row.artists.is_empty())
+                // Beside songs, never an hour of ambience or a mix; a video's radio is videos.
+                .filter(|row| seed.is_video || song_length(row)),
             count,
+            seed.is_video,
         );
         let r#match = if found.exact {
             RadioMatch::Song
@@ -320,6 +335,40 @@ mod tests {
             ),
             ("Portishead", "Glory Box", Some("g"), Some(YOU_TUBE_MUSIC))
         );
+    }
+
+    #[tokio::test]
+    async fn a_videos_radio_suggests_videos_however_long_and_a_songs_never_an_hour_of_ambience() {
+        let (source, shim, _server) = source().await;
+        let radio = vec![
+            row("bss", "Ba Sing Se Ambience", "Ambience Academy", 4706, UGC),
+            row("ek", "Earth Kingdom Ambience", "SeriousChillz", 3601, UGC),
+            row("song", "Jasmine Dragon", "Some Artist", 210, ATV),
+        ];
+        shim.0.radio.lock().insert("bss".into(), radio.clone());
+        let video = RadioSeed {
+            you_tube_id: Some("bss".into()),
+            is_video: true,
+            ..seed("Ambience Academy", "Ba Sing Se Ambience", Some(4706))
+        };
+        let answer = ask(&source, &video).await;
+        let found: Vec<(&str, bool)> = answer
+            .tracks
+            .iter()
+            .map(|t| (t.you_tube_id.as_deref().unwrap(), t.is_video))
+            .collect();
+        assert_eq!(found, [("ek", true), ("song", false)]);
+
+        // The same radio from a song found online: the hour-long upload is left out.
+        shim.0.radio.lock().insert("pinned".into(), radio);
+        let song = RadioSeed {
+            you_tube_id: Some("pinned".into()),
+            ..seed("Some Artist", "A Song", Some(200))
+        };
+        let answer = ask(&source, &song).await;
+        let ids: Vec<&str> = answer.tracks.iter().filter_map(|t| t.you_tube_id.as_deref()).collect();
+        assert_eq!(ids, ["song"]);
+        assert!(answer.tracks.iter().all(|t| !t.is_video));
     }
 
     #[tokio::test]

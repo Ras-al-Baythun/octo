@@ -460,6 +460,32 @@ async fn outside_song_completed_play_is_scrobbled() {
 }
 
 #[tokio::test]
+async fn a_youtube_video_played_is_reported_nowhere() {
+    let fixture = Fixture::new(true, true).await;
+    let id = fixture.state.external_id_registry.register(OutsideRouting {
+        kind: RoutingKind::Song,
+        you_tube_id: Some("kJjDhKOZPQs".into()),
+        artist: Some("Ambience Academy".into()),
+        title: Some("Ba Sing Se | Bustling City Ambience".into()),
+        duration: Some(4706),
+        is_video: true,
+        ..Default::default()
+    });
+
+    for submission in ["false", "true"] {
+        let body = fixture
+            .get(&format!(
+                "/rest/scrobble?u=bob&t=token&s=salt&f=json&id={id}&submission={submission}"
+            ))
+            .await;
+        assert!(body.contains(r#""status":"ok""#), "{body}");
+    }
+    assert!(fixture.listens(1).await.is_empty());
+    assert!(fixture.last_fm.calls().is_empty(), "{:?}", fixture.last_fm.calls());
+    assert_eq!(fixture.plays("bob"), 0);
+}
+
+#[tokio::test]
 async fn outside_song_start_of_play_is_now_playing() {
     let fixture = Fixture::new(true, true).await;
     let id = fixture.outside_song();
