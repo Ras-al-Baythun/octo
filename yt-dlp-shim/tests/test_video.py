@@ -53,5 +53,6 @@ def test_a_long_video_is_given_longer_to_download():
     assert app.download_timeout("") == 300
     assert app.download_timeout("60") == 300
     assert app.download_timeout("200") == 520
-    assert app.download_timeout("4512") == 2 * 4512 + 120
+    assert app.download_timeout("1800") == 2 * 1800 + 120
+    assert app.download_timeout("4512") == 2 * 3600
     assert app.download_timeout("40000") == 2 * 3600
