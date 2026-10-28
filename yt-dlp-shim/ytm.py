@@ -86,6 +86,32 @@ def search(query, filter_name="songs", limit=10):
     return [r for r in (_row(item) for item in rows) if r]
 
 
+def video_row(details):
+    """One video as a row, from the player's videoDetails: any YouTube video, not only those
+    YouTube Music lists, its channel as the artist."""
+    video_id = (details or {}).get("videoId")
+    title = (details or {}).get("title")
+    if not video_id or not title:
+        return None
+    author = details.get("author") or ""
+    length = details.get("lengthSeconds")
+    return {
+        "videoId": video_id,
+        "title": title,
+        "artists": [author.removesuffix(" - Topic")] if author else [],
+        "album": None,
+        "durationSeconds": int(length) if str(length or "").isdigit() else None,
+        "videoType": details.get("musicVideoType") or "MUSIC_VIDEO_TYPE_UGC",
+        "thumbnail": _thumbnail(details.get("thumbnail") or {}),
+    }
+
+
+def video(video_id):
+    """The one video with this id, as a row (see video_row); [] when YouTube has none."""
+    row = video_row(_call(lambda ytm: ytm.get_song(video_id)).get("videoDetails"))
+    return [row] if row else []
+
+
 def radio(video_id, limit=50):
     playlist = _call(lambda ytm: ytm.get_watch_playlist(videoId=video_id, radio=True, limit=limit))
     return [r for r in (_row(item) for item in playlist.get("tracks") or []) if r]

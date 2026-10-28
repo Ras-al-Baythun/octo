@@ -7,6 +7,10 @@
 //! two miss, such as a name written in another script ("svetlana" for "СВЕТЛАНА!"), but only its
 //! releases' own audio tracks join, never music videos or uploads, and at most
 //! [`YOU_TUBE_MUSIC_ONLY_MAX`] of them. Versions nobody asked for (slowed, live, a remix) sink.
+//!
+//! YouTube's videos are a list of their own ([`video_rows`]): an ambience, a mix or a fan upload
+//! no catalog lists, found by its title, and a link pasted into the search
+//! ([`you_tube_video_id`]).
 
 use std::collections::HashMap;
 
@@ -14,7 +18,7 @@ use octo_core::common::SongIdentity;
 use octo_core::common::dotnet::ordinal_ignore_case_key;
 use octo_core::outside::SongLength;
 
-use crate::services::you_tube::you_tube_music_client::{RELEASE, YtmRow};
+use crate::services::you_tube::you_tube_music_client::{PODCAST_EPISODE, RELEASE, YtmRow};
 
 /// The rank damping of reciprocal rank fusion: the usual 60, so the first rows of a list do
 /// not drown the other list.
@@ -22,6 +26,19 @@ const K: f64 = 60.0;
 
 /// At most this many songs only YouTube Music found.
 pub const YOU_TUBE_MUSIC_ONLY_MAX: usize = 10;
+
+/// `video_type` of an official music video.
+const OFFICIAL_VIDEO: &str = "MUSIC_VIDEO_TYPE_OMV";
+
+/// At most this many YouTube videos follow the songs of a search.
+pub const YOU_TUBE_VIDEOS_WITH_SONGS: usize = 5;
+
+/// At most this many YouTube videos make a search for videos alone.
+pub const YOU_TUBE_VIDEOS_ALONE: usize = 20;
+
+/// The share of a query's words a video's title and channel must have between them: two of
+/// three, so a word misspelt ("ba sing sai") still finds it, and a loose match does not.
+const VIDEO_WORDS_NEEDED: f64 = 2.0 / 3.0;
 
 /// What a version nobody asked for keeps of its score.
 const OTHER_VERSION_FACTOR: f64 = 0.5;
@@ -166,6 +183,94 @@ pub fn fuse(query: &str, rows: &[(String, String)], ytm: &[YtmRow], max: usize) 
         .take(max)
         .map(|c| c.row)
         .collect()
+}
+
+/// YouTube's videos for `query` as rows, in YouTube's order, at most `max`: only those whose
+/// title and channel have most of the query's words ([`VIDEO_WORDS_NEEDED`]), since a video
+/// search answers something for any words. Each plays its own video, its channel as the
+/// artist, with its length when it is one to play through (up to four hours, see
+/// [`SongLength::sane_long_video_length`]); podcast episodes never. With `uploads_only` (videos
+/// after the songs of a search), a release's audio and an official music video are left out too:
+/// the songs already have them.
+pub fn video_rows(query: &str, videos: &[YtmRow], max: usize, uploads_only: bool) -> Vec<FusedRow> {
+    let asked = words(query);
+    let needed = (asked.len() as f64 * VIDEO_WORDS_NEEDED).ceil() as usize;
+    let mut seen = std::collections::HashSet::new();
+    videos
+        .iter()
+        .filter(|row| row.video_type.as_deref() != Some(PODCAST_EPISODE))
+        .filter(|row| !uploads_only || !matches!(row.video_type.as_deref(), Some(RELEASE | OFFICIAL_VIDEO)))
+        .filter(|row| {
+            let has = words(&format!("{} {}", row.title, row.artists.join(" ")));
+            asked
+                .iter()
+                .filter(|word| has.iter().any(|h| h == *word || h.starts_with(word.as_str())))
+                .count()
+                >= needed.max(1)
+        })
+        .filter(|row| seen.insert(row.video_id.clone()))
+        .take(max)
+        .map(video_row)
+        .collect()
+}
+
+/// A video as a row as it is: for a link pasted into the search, which asks for this video.
+pub fn video_row(row: &YtmRow) -> FusedRow {
+    let artist = row.artists.join(", ");
+    FusedRow {
+        artist: if artist.trim().is_empty() { "YouTube".to_string() } else { artist },
+        title: row.title.clone(),
+        video: Some(row.video_id.clone()),
+        length: SongLength::sane_long_video_length(row.duration_seconds),
+        thumbnail: row.thumbnail.clone(),
+    }
+}
+
+/// The lowercase words of `text`, split at everything that is not a letter or a digit.
+fn words(text: &str) -> Vec<String> {
+    text.to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+/// The video a YouTube link points at ("youtube.com/watch?v=", "youtu.be/", YouTube Music's,
+/// a short's, a live's or an embed's), when the whole query is one; else None.
+pub fn you_tube_video_id(query: &str) -> Option<String> {
+    let text = query.trim();
+    if text.contains(char::is_whitespace) {
+        return None;
+    }
+    let rest = text
+        .strip_prefix("https://")
+        .or_else(|| text.strip_prefix("http://"))
+        .unwrap_or(text);
+    let (host, path) = rest.split_once('/').unwrap_or((rest, ""));
+    let host = host.to_lowercase();
+    let host = host.strip_prefix("www.").unwrap_or(&host);
+    let candidate = match host {
+        "youtu.be" => path.split(['?', '&', '#', '/']).next(),
+        "youtube.com" | "m.youtube.com" | "music.youtube.com" => {
+            let (route, params) = path.split_once('?').unwrap_or((path, ""));
+            if route.trim_end_matches('/') == "watch" {
+                params
+                    .split(['&', '#'])
+                    .find_map(|pair| pair.strip_prefix("v="))
+            } else {
+                ["shorts/", "live/", "embed/"]
+                    .iter()
+                    .find_map(|prefix| route.strip_prefix(prefix))
+                    .and_then(|id| id.split(['/', '#']).next())
+            }
+        }
+        _ => None,
+    }?;
+    let is_id = candidate.len() == 11
+        && candidate
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    is_id.then(|| candidate.to_string())
 }
 
 fn score(rank: usize) -> f64 {
@@ -331,6 +436,84 @@ mod tests {
         assert!(!is_other_version("Alive", "alive"));
         assert!(is_other_version("Song - Sped Up", "song"));
         assert!(!is_other_version("Song - Sped Up", "song sped up"));
+    }
+
+    fn video(id: &str, channel: &str, title: &str, seconds: i32) -> YtmRow {
+        YtmRow {
+            duration_seconds: Some(seconds),
+            ..ytm(id, channel, title, "MUSIC_VIDEO_TYPE_UGC")
+        }
+    }
+
+    #[test]
+    fn a_video_whose_title_has_the_words_joins_with_its_hour_long_length() {
+        let videos = [
+            video(
+                "kJjDhKOZPQs",
+                "Ambience Academy",
+                "Ba Sing Se | Bustling City Ambience: Emotional Avatar - The Last Airbender Music",
+                4512,
+            ),
+            video("other", "Someone", "Rainy Tokyo Night", 3600),
+            video("day", "Loops", "Ba Sing Se ambience 24 hours", 24 * 3600),
+        ];
+        let rows = video_rows("ba sing se ambience", &videos, 5, true);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].artist, "Ambience Academy");
+        assert_eq!(rows[0].video.as_deref(), Some("kJjDhKOZPQs"));
+        assert_eq!(rows[0].length, Some(4512));
+        // A day-long loop is shown without a length rather than left out.
+        assert_eq!(rows[1].length, None);
+        // A word misspelt still finds it; most words missing does not.
+        assert_eq!(video_rows("ba sing sai", &videos, 5, true).len(), 2);
+        assert!(video_rows("tokyo ambience jazz cafe", &videos, 5, true).is_empty());
+    }
+
+    #[test]
+    fn videos_stop_at_max_each_once_and_never_a_podcast() {
+        let videos = [
+            video("a", "C", "Lofi beats 1", 3600),
+            video("a", "C", "Lofi beats 1", 3600),
+            video("b", "C", "Lofi beats 2", 3600),
+            YtmRow {
+                video_type: Some(PODCAST_EPISODE.into()),
+                ..video("p", "C", "Lofi beats talk", 3600)
+            },
+            video("c", "C", "Lofi beats 3", 3600),
+        ];
+        let ids: Vec<_> = video_rows("lofi beats", &videos, 2, false)
+            .into_iter()
+            .filter_map(|r| r.video)
+            .collect();
+        assert_eq!(ids, ["a", "b"]);
+    }
+
+    #[test]
+    fn after_songs_only_uploads_join_and_alone_every_video_may() {
+        let videos = [
+            ytm("omv", "Tom Odell", "Another Love (Official Video)", "MUSIC_VIDEO_TYPE_OMV"),
+            ytm("atv", "Tom Odell", "Another Love", RELEASE),
+            ytm("ugc", "Fan", "Another Love piano cover", "MUSIC_VIDEO_TYPE_UGC"),
+        ];
+        let ids = |rows: Vec<FusedRow>| rows.into_iter().filter_map(|r| r.video).collect::<Vec<_>>();
+        assert_eq!(ids(video_rows("another love", &videos, 5, true)), ["ugc"]);
+        assert_eq!(ids(video_rows("another love", &videos, 5, false)), ["omv", "atv", "ugc"]);
+    }
+
+    #[test]
+    fn a_pasted_link_names_its_video() {
+        let id = Some("kJjDhKOZPQs".to_string());
+        assert_eq!(
+            you_tube_video_id("https://www.youtube.com/watch?v=kJjDhKOZPQs&list=RDkJjDhKOZPQs&start_radio=1"),
+            id
+        );
+        assert_eq!(you_tube_video_id("youtu.be/kJjDhKOZPQs?t=42"), id);
+        assert_eq!(you_tube_video_id(" https://music.youtube.com/watch?v=kJjDhKOZPQs "), id);
+        assert_eq!(you_tube_video_id("https://m.youtube.com/watch?feature=share&v=kJjDhKOZPQs"), id);
+        assert_eq!(you_tube_video_id("https://youtube.com/shorts/kJjDhKOZPQs"), id);
+        assert_eq!(you_tube_video_id("ba sing se"), None);
+        assert_eq!(you_tube_video_id("https://example.com/watch?v=kJjDhKOZPQs"), None);
+        assert_eq!(you_tube_video_id("https://www.youtube.com/watch?v=short"), None);
     }
 
     #[test]

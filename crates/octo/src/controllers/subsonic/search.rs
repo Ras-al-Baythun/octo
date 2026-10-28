@@ -25,6 +25,7 @@ use super::album_ownership::{judge_albums, scope_of, settle_search_albums};
 use super::media::draws_its_own_marks_in;
 use crate::app::AppState;
 use crate::http::error::AppError;
+use crate::services::common::external_search_service::Find;
 use crate::services::library::Standing;
 use crate::services::subsonic::{
     SearchBudget, SearchSongOrder, SearchSongOrderCache, SearchSongPagePlanner, SyncCatalog, SyncCatalogKind,
@@ -76,6 +77,7 @@ pub async fn search3(State(state): State<AppState>, req: Request) -> Result<Resp
     // carries on from that instead of going to Navidrome at the same offset, which
     // made every outside song past page one unreachable. See search_later_song_page.
     let song_offset = int_param(&call.parameters, "songOffset", 0);
+    let find = find_of(&call, &clean_query, subsonic.search_you_tube_videos);
 
     // A client that copies the library to the device walks it with an empty query and
     // never searches the server, so the walk is the only place discovery can reach it.
@@ -93,6 +95,7 @@ pub async fn search3(State(state): State<AppState>, req: Request) -> Result<Resp
             &state,
             &call,
             &clean_query,
+            find,
             song_offset,
             search_endpoint,
             envelope,
@@ -128,6 +131,8 @@ pub async fn search3(State(state): State<AppState>, req: Request) -> Result<Resp
     // from the song count only when the client actually asked for songs, so a genuine
     // album-only search still gets album discovery.
     let is_type_ahead_probe = requested_songs > 0 && external_target == 0;
+    // A search for videos (or a pasted YouTube link) asks for no catalog's albums or artists.
+    let no_outside_lists = is_type_ahead_probe || find == Find::Videos;
 
     // Outside albums, artists and playlists are a fixed handful that all fit on the
     // first page of their own list. Adding them again to a later album or artist page
@@ -140,7 +145,7 @@ pub async fn search3(State(state): State<AppState>, req: Request) -> Result<Resp
     // still appear for a user who has not set one up.
     let album_task = (requested_albums > 0
         && album_offset <= 0
-        && !is_type_ahead_probe
+        && !no_outside_lists
         && subsonic.enable_search_discovery)
         .then(|| {
             let external_search = Arc::clone(&state.external_search);
@@ -166,7 +171,7 @@ pub async fn search3(State(state): State<AppState>, req: Request) -> Result<Resp
     // so it works without a Last.fm key.
     let artist_task = (requested_artists > 0
         && artist_offset <= 0
-        && !is_type_ahead_probe
+        && !no_outside_lists
         && subsonic.enable_search_discovery)
         .then(|| {
             let metadata = Arc::clone(&state.metadata_service);
@@ -184,7 +189,7 @@ pub async fn search3(State(state): State<AppState>, req: Request) -> Result<Resp
         let external_search = Arc::clone(&state.external_search);
         let query = clean_query.clone();
         tokio::spawn(async move {
-            let songs = external_search.get(&query).await;
+            let songs = external_search.get_with(&query, find).await;
             (songs, started.elapsed())
         })
     });
@@ -390,12 +395,28 @@ fn model_mapper(state: &AppState) -> SubsonicModelMapper {
 /// Where a search's order is kept: per user, so `None` when the request names nobody Octo
 /// can vouch for. An API key sign-in carries no `u`; before this every such user shared the
 /// one empty-name slot and could be handed another's order.
+/// What a search looks for outside the library: what the app asked for (`octoFind`), else
+/// the server's setting; a pasted YouTube link, its video.
+fn find_of(call: &SubsonicCall, clean_query: &str, videos_by_default: bool) -> Find {
+    Find::of(
+        clean_query,
+        call.param("octoFind").and_then(Find::parse),
+        videos_by_default,
+    )
+}
+
 async fn song_order_key(
     state: &AppState,
     call: &SubsonicCall,
     search_endpoint: &str,
     clean_query: &str,
 ) -> Result<Option<String>, AppError> {
+    // An app that says what it looks for keeps an order for each kind; any other search keeps
+    // the key it always had.
+    let clean_query = &match call.param("octoFind").and_then(Find::parse) {
+        Some(find) => format!("{clean_query}|{find:?}"),
+        None => clean_query.to_string(),
+    };
     let user = state
         .request_identity
         .username(&call.parameters, &call.proxy)
@@ -422,6 +443,7 @@ async fn search_later_song_page(
     state: &AppState,
     call: &SubsonicCall,
     clean_query: &str,
+    find: Find,
     song_offset: i32,
     search_endpoint: &str,
     envelope: &str,
@@ -456,7 +478,7 @@ async fn search_later_song_page(
         let built_task = {
             let external_search = Arc::clone(&state.external_search);
             let query = clean_query.to_string();
-            tokio::spawn(async move { external_search.get(&query).await })
+            tokio::spawn(async move { external_search.get_with(&query, find).await })
         };
         let mut prefix_params = call.parameters.clone();
         prefix_params.insert("songOffset".into(), "0".into());

@@ -840,10 +840,12 @@ _YTM_GATE = threading.BoundedSemaphore(int(os.environ.get("YTM_MAX_CONCURRENT", 
 # would only hold a gunicorn thread that playback needs.
 _YTM_GATE_WAIT = float(os.environ.get("YTM_GATE_WAIT_SEC", "5"))
 # One cache per kind, so a burst of radios never pushes the searches out.
-_YTM_CACHE: "dict[str, OrderedDict]" = {"search": OrderedDict(), "radio": OrderedDict(), "artist": OrderedDict()}
-_YTM_LIMIT = {"search": 2000, "radio": 500, "artist": 500}
+_YTM_CACHE: "dict[str, OrderedDict]" = {
+    "search": OrderedDict(), "radio": OrderedDict(), "artist": OrderedDict(), "video": OrderedDict(),
+}
+_YTM_LIMIT = {"search": 2000, "radio": 500, "artist": 500, "video": 2000}
 _YTM_LOCK = threading.Lock()
-_YTM_TTL = {"search": 24 * 3600, "radio": 3600, "artist": 3600}
+_YTM_TTL = {"search": 24 * 3600, "radio": 3600, "artist": 3600, "video": 24 * 3600}
 
 
 def _arg_int(name, default, low, high):
@@ -887,6 +889,26 @@ def ytm_search():
         rows = _ytm_cached("search", (q.lower(), filter_name, limit), lambda: ytm.search(q, filter_name, limit))
     except Exception as e:  # ytmusicapi raises plain exceptions when YouTube Music changes its pages
         log.warning("ytm search failed for %r: %s", q, e)
+        return jsonify(error="ytm_failed"), 502
+    if rows is None:
+        return jsonify(error="busy"), 503
+    return jsonify(tracks=rows)
+
+
+# A video id as YouTube writes it: 11 letters, digits, '-' and '_'.
+_VIDEO_ID = re.compile(r"[A-Za-z0-9_-]{11}")
+
+
+@app.get("/ytm/video")
+def ytm_video():
+    """One video by id (a link pasted into a search), as a one-row answer like /ytm/search's."""
+    video_id = request.args.get("id", "").strip()
+    if not _VIDEO_ID.fullmatch(video_id):
+        abort(400, "id must be a YouTube video id")
+    try:
+        rows = _ytm_cached("video", video_id, lambda: ytm.video(video_id))
+    except Exception as e:  # ytmusicapi raises plain exceptions when YouTube changes its pages
+        log.warning("ytm video failed for %r: %s", video_id, e)
         return jsonify(error="ytm_failed"), 502
     if rows is None:
         return jsonify(error="busy"), 503
@@ -1099,17 +1121,33 @@ def stream():
     return Response(generator(), headers=headers, status=response_status)
 
 
+# A song's download gets five minutes; a video given as `duration` seconds long, twice its
+# length and two minutes more, up to two hours.
+_DOWNLOAD_TIMEOUT_SEC = 300
+_LONGEST_DOWNLOAD_SEC = 2 * 3600
+
+
+def download_timeout(duration):
+    try:
+        seconds = int(duration)
+    except (TypeError, ValueError):
+        return _DOWNLOAD_TIMEOUT_SEC
+    return max(_DOWNLOAD_TIMEOUT_SEC, min(_LONGEST_DOWNLOAD_SEC, 2 * seconds + 120))
+
+
 @app.get("/download")
 def download():
     """Download a YouTube video as a tagged MP3 to <dest>.mp3.
 
-    GET /download?id=<videoId>&dest=<path_no_ext>[&artist=<a>&title=<t>]
-    Returns {"path": "<dest>.mp3"} on success.
+    GET /download?id=<videoId>&dest=<path_no_ext>[&artist=<a>&title=<t>&duration=<s>]
+    Returns {"path": "<dest>.mp3"} on success. A long video (an hour of ambience) is given
+    longer to fetch and convert (see download_timeout).
     """
     video_id = request.args.get("id", "").strip()
     dest = request.args.get("dest", "").strip()
     artist = request.args.get("artist", "").strip()
     title = request.args.get("title", "").strip()
+    timeout = download_timeout(request.args.get("duration", ""))
     if not video_id or not dest:
         abort(400, "missing id or dest")
 
@@ -1145,7 +1183,7 @@ def download():
         # Background on purpose, regardless of what triggered it: this holds its
         # slot for up to five minutes, and a single star-triggered download must
         # never be able to sit in a slot a play is waiting for.
-        return _run(ytdlp_args, timeout=300, label="download", bg=True, capture=True)
+        return _run(ytdlp_args, timeout=timeout, label="download", bg=True, capture=True)
 
     cp = _attempt()
     if cp is None or cp.returncode != 0 or not os.path.exists(path):

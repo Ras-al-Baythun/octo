@@ -78,6 +78,15 @@ impl YouTubeMusicClient {
             .map(|(_, rows)| rows))
     }
 
+    /// The one video with this id, as a row (a link pasted into a search); any YouTube video,
+    /// its channel as the artist.
+    pub async fn video(&self, video_id: &str) -> anyhow::Result<Option<Vec<YtmRow>>> {
+        Ok(self
+            .get_rows(&format!("/ytm/video?id={}", dotnet::escape_data_string(video_id)))
+            .await?
+            .map(|(_, rows)| rows))
+    }
+
     pub async fn radio(&self, video_id: &str, limit: i32) -> anyhow::Result<Vec<YtmRow>> {
         Ok(self
             .get_rows(&format!(

@@ -103,6 +103,12 @@ pub struct OutsideRouting {
 
     /// ReplayGain track peak (linear) of the pinned video's audio, measured with the gain.
     pub track_peak: Option<f64>,
+
+    /// A YouTube video found as itself (a search's video row, a pasted link) rather than a
+    /// song's audio: an ambience, a mix or a fan upload no catalog lists. Its artist is the
+    /// channel, it may run for hours ([`crate::outside::SongLength::MAX_LONG_VIDEO_SECONDS`]),
+    /// and clients mark it. Written only when true, so other routings are written as before.
+    pub is_video: bool,
 }
 
 /// The gain and peak are plain measured numbers, never NaN, so equality is total.
@@ -198,8 +204,10 @@ impl Serialize for OutsideRouting {
         .filter(|known| *known)
         .count();
         let from_file = self.shown_duration_source == LengthSource::File;
-        let mut s =
-            serializer.serialize_struct("OutsideRouting", 18 + stream_fields + usize::from(from_file))?;
+        let mut s = serializer.serialize_struct(
+            "OutsideRouting",
+            18 + stream_fields + usize::from(from_file) + usize::from(self.is_video),
+        )?;
         s.serialize_field("Kind", &self.kind)?;
         s.serialize_field("YouTubeId", &self.you_tube_id)?;
         s.serialize_field("Artist", &self.artist)?;
@@ -244,6 +252,9 @@ impl Serialize for OutsideRouting {
         if from_file {
             s.serialize_field(SHOWN_FROM_FILE, &true)?;
         }
+        if self.is_video {
+            s.serialize_field("IsVideo", &true)?;
+        }
         s.serialize_field("HasYouTube", &self.has_you_tube())?;
         s.serialize_field("HasArtistTitle", &self.has_artist_title())?;
         s.end()
@@ -271,6 +282,23 @@ mod tests {
         );
         let back: OutsideRouting = serde_json::from_str(&json).expect("reads back");
         assert_eq!(back, routing);
+    }
+
+    #[test]
+    fn a_video_found_as_itself_says_so_and_reads_back() {
+        let video = OutsideRouting {
+            you_tube_id: Some("kJjDhKOZPQs".into()),
+            artist: Some("Ambience Academy".into()),
+            title: Some("Ba Sing Se".into()),
+            is_video: true,
+            ..Default::default()
+        };
+        let json = crate::json::to_string(&video);
+        assert!(json.contains(r#""IsVideo":true"#), "{json}");
+        let back: OutsideRouting = serde_json::from_str(&json).expect("reads back");
+        assert!(back.is_video);
+        // Any other routing is written as before.
+        assert!(!crate::json::to_string(&OutsideRouting::default()).contains("IsVideo"));
     }
 
     #[test]

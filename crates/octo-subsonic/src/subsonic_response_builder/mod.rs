@@ -85,6 +85,7 @@ pub const OWN_EXTENSIONS: &[(&str, &[i32])] = &[
     (PLAYLISTS_EXTENSION, &[PLAYLISTS_EXTENSION_VERSION]),
     (PREVIEW_EXTENSION, &[1, PREVIEW_EXTENSION_VERSION]),
     (TRANSITIONS_EXTENSION, &[TRANSITIONS_EXTENSION_VERSION]),
+    (VIDEOS_EXTENSION, &[VIDEOS_EXTENSION_VERSION]),
 ];
 
 /// octoPreview v1: a song from outside the library plays from a video of the listener's
@@ -125,6 +126,12 @@ pub const LISTS_EXTENSION_VERSION: i32 = 1;
 pub const TRANSITIONS_EXTENSION: &str = "octoTransitions";
 pub const TRANSITIONS_EXTENSION_VERSION: i32 = 1;
 
+/// search3 also finds YouTube videos no catalog lists (an ambience, a mix, an upload) and the
+/// video a pasted YouTube link points at; `octoFind=songs|videos|both` picks what it looks for,
+/// and such a video's row says `octoVideo: true`.
+pub const VIDEOS_EXTENSION: &str = "octoVideos";
+pub const VIDEOS_EXTENSION_VERSION: i32 = 1;
+
 /// Fields only a file in the library can truthfully have.
 pub const FILE_ONLY_FIELDS: &[&str] = &[
     "path",
@@ -152,6 +159,12 @@ pub trait IdRegistry: Send + Sync {
     /// An outside song that streams from YouTube is in the answer being built, with its size
     /// or without, so the registry knows how many such rows one answer lists.
     fn outside_listed(&self, _song_id: &str) {}
+
+    /// Whether the outside song under `song_id` is a YouTube video found as itself (an
+    /// ambience, a mix, an upload), which its row says as `octoVideo` (octoVideos).
+    fn is_video(&self, _song_id: &str) -> bool {
+        false
+    }
 }
 
 /// Handles building Subsonic API responses in both XML and JSON formats.
@@ -875,6 +888,9 @@ impl SubsonicResponseBuilder {
         }
 
         if !song.is_local {
+            if self.id_registry.is_video(&song.id) {
+                fields.insert("octoVideo".into(), true.into());
+            }
             let size = self.declare_outside_stream(&mut fields, &song.id);
             // No file on the server, so nothing about one; the size of the stream it relays is
             // the one fact it can truthfully give, once known.

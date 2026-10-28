@@ -101,6 +101,13 @@ pub trait IMusicMetadataService: Send + Sync {
         None
     }
 
+    /// A YouTube video found as itself (a search's video row, a pasted link) as an outside song:
+    /// `channel` as its artist, the video pinned so it plays without a lookup, and its length
+    /// even when it runs for hours. None when outside songs are not offered.
+    fn video_song(&self, _video: &str, _channel: &str, _title: &str, _length: Option<i32>) -> Option<Song> {
+        None
+    }
+
     /// Gives one outside song its album year when it has none, for a caller that answers with
     /// this one song (getSong, the native song detail): from what is already known, else one
     /// album lookup on the interactive lane, waited for a moment only. A lookup that takes

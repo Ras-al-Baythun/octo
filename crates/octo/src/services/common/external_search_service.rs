@@ -61,6 +61,45 @@ const ENRICH_WAIT: Duration = Duration::from_secs(3);
 /// How many songs YouTube Music's search is asked for (the shim's most).
 const YOU_TUBE_MUSIC_ROWS: i32 = 20;
 
+/// The longest a search waits for YouTube's videos. It runs beside the songs' build, so it
+/// adds nothing to a search for both until the songs are in.
+const VIDEOS_WAIT: Duration = Duration::from_secs(8);
+
+/// How many songs of a search for both go before its videos.
+const SONGS_BEFORE_VIDEOS: usize = 5;
+
+/// What a search looks for outside the library (`octoFind`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Find {
+    /// Songs from the catalogs, as always.
+    Songs,
+    /// YouTube's videos alone: an ambience, a mix, an upload.
+    Videos,
+    /// Songs, then the videos whose titles have the words.
+    Both,
+}
+
+impl Find {
+    /// `octoFind` as an app sends it; None for anything else, which then takes the setting.
+    pub fn parse(text: &str) -> Option<Find> {
+        match text.trim().to_ascii_lowercase().as_str() {
+            "songs" => Some(Find::Songs),
+            "videos" => Some(Find::Videos),
+            "both" => Some(Find::Both),
+            _ => None,
+        }
+    }
+
+    /// What a search looks for: a pasted YouTube link its video alone, else what the app asked
+    /// for, else what the server is set to.
+    pub fn of(query: &str, asked: Option<Find>, videos_by_default: bool) -> Find {
+        if search_fusion::you_tube_video_id(query).is_some() {
+            return Find::Videos;
+        }
+        asked.unwrap_or(if videos_by_default { Find::Both } else { Find::Songs })
+    }
+}
+
 /// Builds the external (discovery) half of a search, once per query.
 ///
 /// Every caller for the same query joins one execution and receives the same list. That
@@ -99,6 +138,8 @@ pub struct ExternalSearchService {
     you_tube_music: Option<Arc<YouTubeMusicClient>>,
     /// Where the covers of songs only YouTube Music found are remembered.
     artwork_hints: Option<Arc<ArtworkHints>>,
+    /// The last videos found, by query.
+    recent_videos: RecentResults<Song>,
 }
 
 impl ExternalSearchService {
@@ -121,6 +162,7 @@ impl ExternalSearchService {
             row_signals: RowSignals::default(),
             you_tube_music: None,
             artwork_hints: None,
+            recent_videos: RecentResults::new(RECENT_RESULTS_TTL, RECENT_RESULTS_MAX),
         }
     }
 
@@ -143,6 +185,101 @@ impl ExternalSearchService {
         let songs = self.songs(query, &key).await;
         // However the songs were had, nothing more of this query's rows will be looked up.
         self.row_signals.done(&key);
+        songs
+    }
+
+    /// What `find` looks for outside the library: [`Self::get`]'s songs, YouTube's videos, or
+    /// both, the first [`SONGS_BEFORE_VIDEOS`] songs ahead of the videos and the rest after.
+    pub async fn get_with(&self, query: &str, find: Find) -> Arc<Vec<Song>> {
+        match find {
+            Find::Songs => self.get(query).await,
+            Find::Videos => self.videos(query, search_fusion::YOU_TUBE_VIDEOS_ALONE, false).await,
+            Find::Both => {
+                // Beside songs, videos are waited for as long as the songs take, and at least as
+                // long as YouTube Music's songs are (0 leaves them out): never longer.
+                let wait = self
+                    .settings
+                    .as_ref()
+                    .map_or_else(SubsonicSettings::default, |s| s.current().subsonic.clone())
+                    .effective_search_you_tube_music_wait();
+                if wait.is_zero() {
+                    return self.get(query).await;
+                }
+                let deadline = tokio::time::Instant::now() + wait;
+                let songs = self.get(query);
+                let videos = self.videos(query, search_fusion::YOU_TUBE_VIDEOS_WITH_SONGS, true);
+                tokio::pin!(songs, videos);
+                let mut found = None;
+                let songs = loop {
+                    tokio::select! {
+                        songs = &mut songs => break songs,
+                        videos = &mut videos, if found.is_none() => found = Some(videos),
+                    }
+                };
+                let videos = match found {
+                    Some(videos) => videos,
+                    None => tokio::time::timeout_at(deadline, videos).await.unwrap_or_default(),
+                };
+                if videos.is_empty() {
+                    return songs;
+                }
+                Arc::new(songs_then_videos(&songs, &videos))
+            }
+        }
+    }
+
+    /// YouTube's videos for `query`, at most `max`: the one a pasted link points at, else those
+    /// whose titles have the words (see [`search_fusion::video_rows`]; `uploads_only` beside
+    /// songs). Each is an outside song that plays its own video. None without the shim.
+    async fn videos(&self, query: &str, max: usize, uploads_only: bool) -> Arc<Vec<Song>> {
+        let Some(client) = self.you_tube_music.clone() else {
+            return Arc::new(Vec::new());
+        };
+        if dotnet::is_blank(query) {
+            return Arc::new(Vec::new());
+        }
+        let key = format!("{}|{max}", recent_key(query));
+        if let Some(kept) = self.recent_videos.get(&key, Instant::now()) {
+            return kept;
+        }
+        let linked = search_fusion::you_tube_video_id(query);
+        let asked = async {
+            match &linked {
+                Some(id) => client.video(id).await,
+                None => client.search_limited(query.trim(), "videos", YOU_TUBE_MUSIC_ROWS).await,
+            }
+        };
+        let found = match tokio::time::timeout(VIDEOS_WAIT, asked).await {
+            Ok(Ok(Some(found))) => found,
+            Ok(Err(e)) => {
+                debug!("YouTube's videos for '{query}' failed: {e}");
+                Vec::new()
+            }
+            _ => Vec::new(),
+        };
+        let rows: Vec<FusedRow> = match linked {
+            Some(_) => found.iter().take(1).map(search_fusion::video_row).collect(),
+            None => search_fusion::video_rows(query, &found, max, uploads_only),
+        };
+        let mut songs = Vec::with_capacity(rows.len());
+        for row in &rows {
+            let Some(video) = &row.video else { continue };
+            let Some(song) = self.metadata.video_song(video, &row.artist, &row.title, row.length) else {
+                continue;
+            };
+            if let (Some(url), Some(hints)) = (&row.thumbnail, &self.artwork_hints) {
+                hints.remember(RoutingKind::Song, &row.artist, &row.title, url);
+            }
+            songs.push(song);
+        }
+        info!("External search '{query}' -> {} YouTube videos", songs.len());
+        let songs = Arc::new(songs);
+        if !songs.is_empty() {
+            self.recent_videos.put(key, songs.clone(), Instant::now());
+            let warm = self.metadata.clone();
+            let first = songs.as_ref().clone();
+            tokio::spawn(async move { warm.prewarm_you_tube_ids(&first, 3).await });
+        }
         songs
     }
 
@@ -268,6 +405,19 @@ impl ExternalSearchService {
         }
         albums
     }
+}
+
+/// The first [`SONGS_BEFORE_VIDEOS`] of `songs`, then `videos`, then the rest of the songs;
+/// a video already among the songs once.
+fn songs_then_videos(songs: &[Song], videos: &[Song]) -> Vec<Song> {
+    let ahead = songs.len().min(SONGS_BEFORE_VIDEOS);
+    let listed: HashSet<&str> = songs.iter().map(|s| s.id.as_str()).collect();
+    songs[..ahead]
+        .iter()
+        .chain(videos.iter().filter(|v| !listed.contains(v.id.as_str())))
+        .chain(&songs[ahead..])
+        .cloned()
+        .collect()
 }
 
 /// How long a finished build answers the same query again.

@@ -81,7 +81,7 @@ fn recorded_with_ported_extensions(file: &str, name: &str) -> Recorded {
         let at = want.body.rfind("]}}").expect("the end of the list");
         want.body.insert_str(
             at,
-            r#",{"name":"octoImports","versions":[1,2]},{"name":"octoLists","versions":[1]},{"name":"octoPlaylists","versions":[1]},{"name":"octoPreview","versions":[1,2]}"#,
+            r#",{"name":"octoImports","versions":[1,2]},{"name":"octoLists","versions":[1]},{"name":"octoPlaylists","versions":[1]},{"name":"octoPreview","versions":[1,2]},{"name":"octoVideos","versions":[1]}"#,
         );
         (
             r#"{"name":"octoAcquisitions","versions":[1]}"#,
@@ -99,6 +99,7 @@ fn recorded_with_ported_extensions(file: &str, name: &str) -> Recorded {
                 "  <openSubsonicExtensions name=\"octoLists\">\n    <versions>1</versions>\n  </openSubsonicExtensions>\n",
                 "  <openSubsonicExtensions name=\"octoPlaylists\">\n    <versions>1</versions>\n  </openSubsonicExtensions>\n",
                 "  <openSubsonicExtensions name=\"octoPreview\">\n    <versions>1</versions>\n    <versions>2</versions>\n  </openSubsonicExtensions>\n",
+                "  <openSubsonicExtensions name=\"octoVideos\">\n    <versions>1</versions>\n  </openSubsonicExtensions>\n",
             ),
         );
         (

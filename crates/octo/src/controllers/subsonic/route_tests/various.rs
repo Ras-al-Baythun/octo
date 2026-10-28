@@ -336,6 +336,9 @@ struct LengthUpstream {
     search_tracks: Arc<Mutex<Vec<(String, String)>>>,
     /// YouTube Music's song search (`/shim/ytm/search`), whatever the words.
     ytm_songs: Arc<Mutex<Vec<Value>>>,
+    /// YouTube's video search (`/shim/ytm/search?filter=videos`) and its videos by id
+    /// (`/shim/ytm/video`), whatever the words.
+    ytm_videos: Arc<Mutex<Vec<Value>>>,
     /// How long YouTube Music's search takes to answer.
     ytm_delay: Arc<Mutex<Option<std::time::Duration>>>,
     /// How long Last.fm's track.search and Deezer's search take to answer.
@@ -377,8 +380,22 @@ impl Respond for LengthUpstream {
 impl LengthUpstream {
     fn answer(&self, request: &wiremock::Request, path: &str) -> ResponseTemplate {
         let path = path.to_string();
+        if path == "/shim/ytm/search" && query_value(request, "filter").as_deref() == Some("videos") {
+            return json_reply(json!({ "tracks": self.ytm_videos.lock().clone() }).to_string());
+        }
         if path == "/shim/ytm/search" {
             return json_reply(json!({ "tracks": self.ytm_songs.lock().clone() }).to_string());
+        }
+        if path == "/shim/ytm/video" {
+            let id = query_value(request, "id").unwrap_or_default();
+            let found: Vec<Value> = self
+                .ytm_videos
+                .lock()
+                .iter()
+                .filter(|v| v["videoId"] == id.as_str())
+                .cloned()
+                .collect();
+            return json_reply(json!({ "tracks": found }).to_string());
         }
         if path.starts_with("/rest/") {
             let fields = if path.contains("search3") {
@@ -1265,4 +1282,106 @@ async fn late_last_fm_and_deezer_leave_youtube_musics_songs_alone() {
     );
     assert_eq!(titles(&songs), ["Another Love"]);
     assert_eq!(songs[0]["duration"], 244);
+}
+
+async fn search3_find(fixture: &LengthFixture, query: &str, find: &str) -> Vec<Value> {
+    let body = get(
+        &fixture.app,
+        &format!(
+            "/rest/search3?query={query}&octoFind={find}&songCount=50&albumCount=0&artistCount=0&u=alice&t=token&s=salt&f=json"
+        ),
+    )
+    .await
+    .json();
+    body["subsonic-response"]["searchResult3"]["song"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn ba_sing_se() -> Value {
+    ytm_song(
+        "kJjDhKOZPQs",
+        "Ambience Academy",
+        "Ba Sing Se | Bustling City Ambience: Emotional Avatar - The Last Airbender Music",
+        4512,
+        "MUSIC_VIDEO_TYPE_UGC",
+    )
+}
+
+#[tokio::test]
+async fn search3_finds_youtube_videos_after_the_songs_marked_and_hours_long() {
+    let fixture = length_fixture().await;
+    fixture
+        .upstream
+        .search_tracks
+        .lock()
+        .push(("Avatar".into(), "Ba Sing Se Theme".into()));
+    *fixture.upstream.ytm_videos.lock() = vec![
+        ba_sing_se(),
+        ytm_song("other", "Someone", "Rainy Tokyo Night", 3600, "MUSIC_VIDEO_TYPE_UGC"),
+    ];
+
+    let songs = search3_songs(&fixture, "ba%20sing%20se").await;
+    assert_eq!(titles(&songs)[0], "Ba Sing Se Theme");
+    let video = songs
+        .iter()
+        .find(|s| s["artist"] == "Ambience Academy")
+        .expect("the video joins");
+    assert_eq!(video["octoVideo"], true);
+    assert_eq!(video["duration"], 4512);
+    assert!(songs[0].get("octoVideo").is_none());
+    assert!(!titles(&songs).contains(&"Rainy Tokyo Night".to_string()));
+
+    // Songs alone: no video. Videos alone: no song.
+    let only_songs = search3_find(&fixture, "ba%20sing%20se", "songs").await;
+    assert!(only_songs.iter().all(|s| s.get("octoVideo").is_none()), "{only_songs:?}");
+    let only_videos = search3_find(&fixture, "ba%20sing%20se", "videos").await;
+    assert_eq!(only_videos.len(), 1, "{only_videos:?}");
+    assert_eq!(only_videos[0]["octoVideo"], true);
+
+    // It plays its own video, with no lookup.
+    let id = video["id"].as_str().unwrap();
+    fixture.upstream.shim_calls.lock().clear();
+    get(&fixture.app, &format!("/rest/stream?id={id}&u=alice&t=token&s=salt")).await;
+    let calls = fixture.upstream.shim_calls.lock().clone();
+    assert!(calls.iter().any(|c| c.starts_with("/shim/stream")), "{calls:?}");
+    assert!(!calls.iter().any(|c| c.starts_with("/shim/search") || c.starts_with("/shim/meta")), "{calls:?}");
+}
+
+#[tokio::test]
+async fn a_pasted_youtube_link_finds_its_video_alone() {
+    let fixture = length_fixture().await;
+    fixture
+        .upstream
+        .search_tracks
+        .lock()
+        .push(("Somebody".into(), "Something".into()));
+    *fixture.upstream.ytm_videos.lock() = vec![ba_sing_se()];
+
+    let link = "https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DkJjDhKOZPQs%26list%3DRDkJjDhKOZPQs%26start_radio%3D1";
+    let songs = search3_find(&fixture, link, "songs").await;
+    assert_eq!(songs.len(), 1, "{songs:?}");
+    assert_eq!(songs[0]["artist"], "Ambience Academy");
+    assert_eq!(songs[0]["octoVideo"], true);
+    let calls = fixture.upstream.shim_calls.lock().clone();
+    assert!(calls.iter().any(|c| c.starts_with("/shim/ytm/video")), "{calls:?}");
+}
+
+#[tokio::test]
+async fn the_apps_learn_that_search_finds_videos() {
+    let fixture = length_fixture().await;
+    let body = get(
+        &fixture.app,
+        "/rest/getOpenSubsonicExtensions?u=alice&t=token&s=salt&f=json",
+    )
+    .await
+    .json();
+    let names: Vec<&str> = body["subsonic-response"]["openSubsonicExtensions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|e| e["name"].as_str())
+        .collect();
+    assert!(names.contains(&"octoVideos"), "{names:?}");
 }

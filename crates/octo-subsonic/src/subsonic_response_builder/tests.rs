@@ -324,6 +324,7 @@ fn external_song_declares_the_lossy_stream() {
 #[derive(Default)]
 struct StreamIds {
     facts: std::collections::HashMap<String, StreamFacts>,
+    videos: std::collections::HashSet<String>,
     wanted: std::sync::Mutex<Vec<String>>,
     listed: std::sync::Mutex<Vec<String>>,
 }
@@ -335,6 +336,10 @@ impl IdRegistry for StreamIds {
 
     fn stream_facts(&self, song_id: &str) -> Option<StreamFacts> {
         self.facts.get(song_id).cloned()
+    }
+
+    fn is_video(&self, song_id: &str) -> bool {
+        self.videos.contains(song_id)
     }
 
     fn size_wanted(&self, song_id: &str) {
@@ -471,6 +476,16 @@ fn an_outside_song_with_measured_loudness_sends_its_replay_gain() {
     // Not measured yet: the empty object every row carries.
     let row = builder_over(Arc::new(StreamIds::default())).convert_song_to_json(&external_song());
     assert_eq!(row["replayGain"], json!({}));
+}
+
+#[test]
+fn a_video_found_as_itself_says_so_and_a_song_does_not() {
+    let mut ids = StreamIds::default();
+    ids.videos.insert("abc123".into());
+    let row = builder_over(Arc::new(ids)).convert_song_to_json(&external_song());
+    assert_eq!(row["octoVideo"], true);
+    let row = builder_over(Arc::new(StreamIds::default())).convert_song_to_json(&external_song());
+    assert!(row.get("octoVideo").is_none());
 }
 
 #[test]
@@ -1382,7 +1397,7 @@ fn extensions_json_adds_octos_own_and_missing_versions() {
     assert_eq!(reply.content_type, "application/json");
     assert_eq!(
         reply.text(),
-        r#"{"subsonic-response":{"status":"ok","version":"1.16.1","type":"navidrome","openSubsonic":true,"openSubsonicExtensions":[{"name":"songLyrics","versions":[1,2]},{"name":"octoLyrics","versions":[1]},{"name":"octoAcquisitions","versions":[1,2,3]},{"name":"octoLibraryActions","versions":[1,2,3]},{"name":"octoImports","versions":[1,2]},{"name":"octoLists","versions":[1]},{"name":"octoPlaylists","versions":[1]},{"name":"octoPreview","versions":[1,2]}]}}"#
+        r#"{"subsonic-response":{"status":"ok","version":"1.16.1","type":"navidrome","openSubsonic":true,"openSubsonicExtensions":[{"name":"songLyrics","versions":[1,2]},{"name":"octoLyrics","versions":[1]},{"name":"octoAcquisitions","versions":[1,2,3]},{"name":"octoLibraryActions","versions":[1,2,3]},{"name":"octoImports","versions":[1,2]},{"name":"octoLists","versions":[1]},{"name":"octoPlaylists","versions":[1]},{"name":"octoPreview","versions":[1,2]},{"name":"octoVideos","versions":[1]}]}}"#
     );
     // Lyrics choices off and library actions off leave those two out.
     let reply = builder().merge_open_subsonic_extensions(
@@ -1394,7 +1409,7 @@ fn extensions_json_adds_octos_own_and_missing_versions() {
     );
     assert_eq!(
         reply.text(),
-        r#"{"subsonic-response":{"status":"ok","openSubsonicExtensions":[{"name":"octoAcquisitions","versions":[1,2,3]},{"name":"songLyrics","versions":[1,2]},{"name":"octoImports","versions":[1,2]},{"name":"octoLists","versions":[1]},{"name":"octoPlaylists","versions":[1]},{"name":"octoPreview","versions":[1,2]}]}}"#
+        r#"{"subsonic-response":{"status":"ok","openSubsonicExtensions":[{"name":"octoAcquisitions","versions":[1,2,3]},{"name":"songLyrics","versions":[1,2]},{"name":"octoImports","versions":[1,2]},{"name":"octoLists","versions":[1]},{"name":"octoPlaylists","versions":[1]},{"name":"octoPreview","versions":[1,2]},{"name":"octoVideos","versions":[1]}]}}"#
     );
     // A failed answer is written back as it was read.
     let failed = r#"{"subsonic-response":{"status":"failed","error":{"code":40,"message":"isn't"}}}"#;
@@ -1444,6 +1459,9 @@ fn extensions_xml_adds_octos_own_and_reindents() {
             "    <versions>1</versions>\n",
             "    <versions>2</versions>\n",
             "  </openSubsonicExtensions>\n",
+            "  <openSubsonicExtensions name=\"octoVideos\">\n",
+            "    <versions>1</versions>\n",
+            "  </openSubsonicExtensions>\n",
             "</subsonic-response>"
         )
     );
@@ -1487,7 +1505,7 @@ fn extensions_without_an_answer_list_octos_own() {
         builder()
             .merge_open_subsonic_extensions("json", None, None, true, true)
             .text(),
-        r#"{"subsonic-response":{"status":"ok","version":"1.16.1","type":"octo","openSubsonicExtensions":[{"name":"octoAcquisitions","versions":[1,2,3]},{"name":"octoLyrics","versions":[1]},{"name":"octoLibraryActions","versions":[1,2,3]},{"name":"songLyrics","versions":[1,2]},{"name":"octoImports","versions":[1,2]},{"name":"octoLists","versions":[1]},{"name":"octoPlaylists","versions":[1]},{"name":"octoPreview","versions":[1,2]}]}}"#
+        r#"{"subsonic-response":{"status":"ok","version":"1.16.1","type":"octo","openSubsonicExtensions":[{"name":"octoAcquisitions","versions":[1,2,3]},{"name":"octoLyrics","versions":[1]},{"name":"octoLibraryActions","versions":[1,2,3]},{"name":"songLyrics","versions":[1,2]},{"name":"octoImports","versions":[1,2]},{"name":"octoLists","versions":[1]},{"name":"octoPlaylists","versions":[1]},{"name":"octoPreview","versions":[1,2]},{"name":"octoVideos","versions":[1]}]}}"#
     );
     assert_eq!(
         builder()
@@ -1517,6 +1535,9 @@ fn extensions_without_an_answer_list_octos_own() {
             "  <openSubsonicExtensions name=\"octoPreview\">\n",
             "    <versions>1</versions>\n",
             "    <versions>2</versions>\n",
+            "  </openSubsonicExtensions>\n",
+            "  <openSubsonicExtensions name=\"octoVideos\">\n",
+            "    <versions>1</versions>\n",
             "  </openSubsonicExtensions>\n",
             "</subsonic-response>"
         )

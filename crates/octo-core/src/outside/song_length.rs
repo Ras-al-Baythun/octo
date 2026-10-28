@@ -54,6 +54,16 @@ impl SongLength {
         seconds.filter(|&s| (Self::MIN_VIDEO_SECONDS..=Self::MAX_VIDEO_SECONDS).contains(&s))
     }
 
+    /// Longer than this, even a video found as itself (an ambience, a mix) is a live stream or a
+    /// day-long loop rather than something to play through.
+    pub const MAX_LONG_VIDEO_SECONDS: i32 = 4 * 60 * 60;
+
+    /// The length of a video found as itself ([`OutsideRouting::is_video`]), which may run for
+    /// hours, or None.
+    pub fn sane_long_video_length(seconds: Option<i32>) -> Option<i32> {
+        seconds.filter(|&s| (Self::MIN_VIDEO_SECONDS..=Self::MAX_LONG_VIDEO_SECONDS).contains(&s))
+    }
+
     /// How far a stream's length may sit from a known length and still replace it: 7 seconds,
     /// or 7 % of a long song.
     pub const STREAM_LENGTH_SLACK_SECONDS: i32 = 7;
@@ -82,7 +92,12 @@ impl SongLength {
         if s <= 0 || source == LengthSource::None {
             return false;
         }
-        if source == LengthSource::Video && Self::sane_video_length(Some(s)).is_none() {
+        let sane = if routing.is_video {
+            Self::sane_long_video_length(Some(s))
+        } else {
+            Self::sane_video_length(Some(s))
+        };
+        if source == LengthSource::Video && sane.is_none() {
             return false;
         }
         if routing.shown_duration_source > source {
@@ -154,6 +169,21 @@ mod tests {
                 "{seconds}"
             );
         }
+    }
+
+    #[test]
+    fn a_video_found_as_itself_keeps_its_hours_long_length() {
+        let hour = 75 * 60;
+        let mut song = routing("A", "Song");
+        assert!(!SongLength::remember(&mut song, Some(hour), LengthSource::Video));
+        let mut video = OutsideRouting {
+            is_video: true,
+            ..routing("Ambience Academy", "Ba Sing Se")
+        };
+        assert!(SongLength::remember(&mut video, Some(hour), LengthSource::Video));
+        assert_eq!(SongLength::shown(&video).0, Some(hour));
+        assert_eq!(SongLength::sane_long_video_length(Some(5 * 60 * 60)), None);
+        assert_eq!(SongLength::sane_long_video_length(Some(10)), None);
     }
 
     #[test]

@@ -39,6 +39,10 @@ impl IdRegistry for ExternalIdRegistry {
     fn register(&self, routing: OutsideRouting) -> String {
         ExternalIdRegistry::register(self, routing)
     }
+
+    fn is_video(&self, song_id: &str) -> bool {
+        ExternalIdRegistry::is_video(self, song_id)
+    }
 }
 
 /// The app's builder: over the app's id registry.

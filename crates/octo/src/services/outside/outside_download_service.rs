@@ -391,6 +391,7 @@ impl OutsideDownloadService {
                     &dest_without_ext,
                     r.artist.as_deref(),
                     r.title.as_deref(),
+                    r.shown_duration.or(r.duration),
                 )
                 .await)
         })

@@ -146,6 +146,10 @@ pub fn effective_document(state: &AppState, raw_config: bool) -> JsonObject {
                 "SearchYouTubeMusicWaitMs",
                 n_num(subsonic.search_you_tube_music_wait_ms),
             ),
+            (
+                "SearchYouTubeVideos",
+                Node::Bool(subsonic.search_you_tube_videos),
+            ),
             ("EnableSyncCatalog", Node::Bool(subsonic.enable_sync_catalog)),
             ("SyncCatalogClients", n_str(&subsonic.sync_catalog_clients)),
             ("SyncCatalogMaxSongs", n_num(subsonic.sync_catalog_max_songs)),

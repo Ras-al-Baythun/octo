@@ -430,6 +430,17 @@ impl ExternalIdRegistry {
         Some(r.stream_facts()).filter(|facts| !facts.is_empty())
     }
 
+    /// Whether the song under `short_id` is a YouTube video found as itself
+    /// ([`OutsideRouting::is_video`]), for clients to mark. Asked for every row an answer
+    /// carries, so it leaves the order of use alone, as [`Self::stream_facts`] does.
+    pub fn is_video(&self, short_id: &str) -> bool {
+        if short_id.is_empty() {
+            return false;
+        }
+        let routing = self.lru.lock().by_id.get(short_id).map(|(r, _)| r.clone());
+        routing.is_some_and(|r| r.lock().is_video)
+    }
+
     /// Derive 22 base62 chars from sha256 of routing fields. Same input -> same id.
     /// The Kind prefix is critical: a song "Drake - Hotline Bling" must hash to a
     /// different id than the album "Hotline Bling" or the artist "Drake", or

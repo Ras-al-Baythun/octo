@@ -67,6 +67,7 @@ services:
       Subsonic__SearchDurationWaitMs: ${SEARCH_DURATION_WAIT_MS:-1000}
       Subsonic__SearchLastFmWaitMs: ${SEARCH_LASTFM_WAIT_MS:-1000}
       Subsonic__SearchYouTubeMusicWaitMs: ${SEARCH_YTMUSIC_WAIT_MS:-1500}
+      Subsonic__SearchYouTubeVideos: ${SEARCH_YTVIDEOS:-true}
       Subsonic__StreamSizeWarmPerMinute: ${STREAM_SIZE_WARM_PER_MINUTE:-5}
       Subsonic__CoverCacheMb: ${COVER_CACHE_MB:-1024}
       # Apps that hide a song with no size (Amperfy) get 1 for an outside song until its

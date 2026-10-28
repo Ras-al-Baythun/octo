@@ -214,6 +214,15 @@ pub struct SubsonicSettings {
     /// the search goes without it.
     pub search_you_tube_music_wait_ms: i32,
 
+    /// Whether a search also finds YouTube videos no catalog lists, such as an ambience, a mix
+    /// or a fan upload, when the app does not say what it looks for (default: true).
+    /// Environment variable: SEARCH_YTVIDEOS
+    ///
+    /// Up to five videos whose title has the words follow the first songs, each playing its
+    /// own video, however long. A YouTube link pasted into the search finds its video either
+    /// way. Apps that know octoVideos choose songs, videos or both themselves (`octoFind`).
+    pub search_you_tube_videos: bool,
+
     /// Give clients that sync the library to the device a discovery catalog (default: true).
     /// Environment variable: ENABLE_SYNC_CATALOG
     ///
@@ -363,6 +372,7 @@ impl Default for SubsonicSettings {
             search_duration_wait_ms: 1000,
             search_last_fm_wait_ms: 1000,
             search_you_tube_music_wait_ms: 1500,
+            search_you_tube_videos: true,
             enable_sync_catalog: true,
             sync_catalog_clients: "Symfonium".to_string(),
             sync_catalog_max_songs: 1000,

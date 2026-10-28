@@ -471,14 +471,16 @@ impl YouTubeResolver {
 
     /// Downloads a YouTube video as MP3 to `{dest_without_ext}.mp3` via the shim's
     /// /download endpoint, passing clean artist/title so the file is tagged for
-    /// the library. Returns the saved path, or None on failure. Uses the
-    /// no-timeout stream client because a download can take a while.
+    /// the library, and the video's length when known, so a long one is given longer.
+    /// Returns the saved path, or None on failure. Uses the no-timeout stream client
+    /// because a download can take a while.
     pub async fn download(
         &self,
         video_id: &str,
         dest_without_ext: &str,
         artist: Option<&str>,
         title: Option<&str>,
+        seconds: Option<i32>,
     ) -> Option<String> {
         if video_id.trim().is_empty() || dest_without_ext.trim().is_empty() {
             return None;
@@ -494,6 +496,9 @@ impl YouTubeResolver {
         }
         if let Some(title) = title.filter(|t| !t.is_empty()) {
             url.push_str(&format!("&title={}", escape(title)));
+        }
+        if let Some(seconds) = seconds.filter(|&s| s > 0) {
+            url.push_str(&format!("&duration={seconds}"));
         }
         let outcome: anyhow::Result<Option<String>> = async {
             let resp = self.stream_client.get(&url).send().await?;
@@ -852,24 +857,25 @@ mod tests {
             .and(query_param("dest", "/music/A/B"))
             .and(query_param("artist", "A & B"))
             .and(query_param("title", "T"))
+            .and(query_param("duration", "4512"))
             .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"path":"/music/A/B.mp3"}"#))
             .mount(&shim)
             .await;
         let resolver = YouTubeResolver::with_base_url(Some(&shim.uri()));
         assert_eq!(
             resolver
-                .download("abc", "/music/A/B", Some("A & B"), Some("T"))
+                .download("abc", "/music/A/B", Some("A & B"), Some("T"), Some(4512))
                 .await
                 .as_deref(),
             Some("/music/A/B.mp3")
         );
         assert!(
             resolver
-                .download("abc", "/elsewhere", None, Some(""))
+                .download("abc", "/elsewhere", None, Some(""), None)
                 .await
                 .is_none()
         );
-        assert!(resolver.download("", "/x", None, None).await.is_none());
+        assert!(resolver.download("", "/x", None, None, None).await.is_none());
     }
 
     #[tokio::test]

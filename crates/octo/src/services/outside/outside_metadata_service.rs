@@ -1367,6 +1367,34 @@ impl IMusicMetadataService for OutsideMetadataService {
         }
     }
 
+    fn video_song(&self, video: &str, channel: &str, title: &str, length: Option<i32>) -> Option<Song> {
+        if video.is_empty() || dotnet::is_blank(title) {
+            return None;
+        }
+        let registry = &self.inner.id_registry;
+        // The video is part of the id, so it never shares one with a song of the same names.
+        let id = registry.register(OutsideRouting {
+            you_tube_id: Some(video.to_string()),
+            artist: Some(channel.to_string()),
+            title: Some(title.to_string()),
+            duration: length,
+            is_video: true,
+            ..Default::default()
+        });
+        registry.remember_length(&id, length, LengthSource::Video);
+        Some(Song {
+            id: id.clone(),
+            title: title.to_string(),
+            artist: channel.to_string(),
+            album: String::new(),
+            duration: length,
+            is_local: false,
+            external_provider: Some(Self::PROVIDER_NAME.to_string()),
+            external_id: Some(id),
+            ..Default::default()
+        })
+    }
+
     fn keep_search_video(&self, song_id: &str, video: &str, length: Option<i32>) -> Option<i32> {
         let hit = YouTubeHit {
             video_id: video.to_string(),

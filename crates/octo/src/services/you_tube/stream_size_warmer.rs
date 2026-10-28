@@ -451,6 +451,10 @@ impl IdRegistry for StreamSizeWarmer {
     fn outside_listed(&self, _song_id: &str) {
         let _ = LISTING.try_with(|listing| listing.borrow_mut().rows += 1);
     }
+
+    fn is_video(&self, song_id: &str) -> bool {
+        self.registry.is_video(song_id)
+    }
 }
 
 /// Middleware: each request's answer is one listing (see [`StreamSizeWarmer::listing`]).
